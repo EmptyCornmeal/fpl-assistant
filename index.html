@@ -13,16 +13,19 @@
 <body>
   <header class="topbar">
     <div class="brand">⚽ FPL Dashboard <span class="season">2025/26</span></div>
-    <nav class="nav">
-      <a href="#/my-team" data-route>My Team</a>
-      <a href="#/all-players" data-route>All Players</a>
-      <a href="#/fixtures" data-route>Fixtures</a>
-      <a href="#/gw-explorer" data-route>GW Explorer</a>
-      <a href="#/planner" data-route>Planner</a>
-      <a href="#/mini-league" data-route>Mini-League</a>
-      <a href="#/help" data-route>Help</a>
+
+    <nav class="nav" aria-label="Primary">
+      <a href="#/my-team"      class="nav-link" data-route>My Team</a>
+      <a href="#/all-players"  class="nav-link" data-route>All Players</a>
+      <a href="#/fixtures"     class="nav-link" data-route>Fixtures</a>
+      <a href="#/gw-explorer"  class="nav-link" data-route>GW Explorer</a>
+      <a href="#/planner"      class="nav-link" data-route>Planner</a>
+      <a href="#/mini-league"  class="nav-link" data-route>Mini-League</a>
+      <a href="#/meta"         class="nav-link" data-route>Meta</a>
+      <a href="#/help"         class="nav-link" data-route>Help</a>
     </nav>
-    <button id="themeToggleBtn" class="btn-ghost" title="Toggle theme">🌓 Theme</button>
+
+    <button id="themeToggleBtn" class="btn-ghost topbar-theme" title="Toggle theme" aria-label="Toggle theme">🌓</button>
   </header>
 
   <aside class="sidebar">

@@ -17,6 +17,17 @@ export const GLOSSARY = {
     "FH": "Free Hit chip.",
     "TC": "Triple Captain chip.",
     "WC": "Wildcard chip",
-    "H/A": "Home/Away indicator (H = home; A = away)."
+    "H/A": "Home/Away indicator (H = home; A = away).",
+    EO: "Effective Ownership. % of teams (and captaincy) effectively owning a player in your meta.",
+    FDR: "Fixture Difficulty Rating (2 = easy, 5 = very hard).",
+    CS: "Clean sheets.",
+    GC: "Goals conceded.",
+    YC: "Yellow cards.",
+    RC: "Red cards.",
+    BPS: "Bonus Point System (underlies bonus points).",
+    xGI: "Expected Goal Involvements (xG + xA).",
+    "xGI/90": "Expected goal involvements per 90 minutes (recent form).",
+    xP: "Expected Points from appearance, attacking returns, clean sheet and bonus proxies.",
+    xMins: "Projected minutes for the next match based on recent average and status.",
   };
   
