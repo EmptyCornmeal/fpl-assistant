@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FPL Dashboard — 2025/26</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">⚽ FPL Dashboard <span class="season">2025/26</span></div>
+    <nav class="nav">
+      <a href="#/my-team" data-route>My Team</a>
+      <a href="#/all-players" data-route>All Players</a>
+      <a href="#/fixtures" data-route>Fixtures</a>
+      <a href="#/gw-explorer" data-route>GW Explorer</a>
+      <a href="#/planner" data-route>Planner</a>
+      <a href="#/mini-league" data-route>Mini-League</a>
+      <a href="#/help" data-route>Help</a>
+    </nav>
+    <button id="themeToggleBtn" class="btn-ghost" title="Toggle theme">🌓 Theme</button>
+  </header>
+
+  <aside class="sidebar">
+    <h3>Settings</h3>
+    <label>FPL Entry ID
+      <input id="entryIdInput" placeholder="e.g., 1234567" inputmode="numeric" />
+    </label>
+    <label>Classic League IDs (comma-separated)
+      <input id="leagueIdInput" placeholder="e.g., 12345, 67890" />
+    </label>
+    <button id="saveIdsBtn" class="btn">Save</button>
+    <div class="sidebar-note">Confirmed GWs only (FPL <code>data_checked</code>).</div>
+    <div class="sidebar-meta">
+      <div><span id="teamsCount">—</span> teams</div>
+      <div><span id="playersCount">—</span> players</div>
+      <div>Last finished GW: <span id="lastFinishedGw">—</span></div>
+    </div>
+  </aside>
+
+  <main id="app" class="app"></main>
+
+  <footer class="footer">
+    <span>Built for personal FPL analysis — public FPL API via CF Worker proxy.</span>
+  </footer>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

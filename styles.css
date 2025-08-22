@@ -1,0 +1,173 @@
+:root{
+    --bg:#0b1220; --bg2:#0f172a; --text:#e5e7eb; --muted:#94a3b8;
+    --brand:#22c55e; --card:#0b1220; --border:#1f2937; --red:#ef4444; --yellow:#f59e0b;
+    --good:#16a34a; --ok:#22c55e; --mid:#eab308; --hard:#f97316; --pain:#ef4444;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+  a{color:#93c5fd;text-decoration:none}
+  a:hover{text-decoration:underline}
+  
+  .topbar{
+    position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px;background:linear-gradient(180deg,#0d1426,#0b1220);
+    border-bottom:1px solid var(--border)
+  }
+  .brand{font-weight:700}
+  .season{color:var(--muted);font-weight:600;margin-left:4px}
+  .nav a{margin:0 8px;padding:6px 10px;border-radius:8px}
+  .nav a:hover{background:var(--bg2)}
+  
+  .sidebar{
+    position:fixed;left:0;top:56px;bottom:32px;width:280px;padding:16px;overflow:auto;background:var(--bg2);border-right:1px solid var(--border)
+  }
+  .sidebar h3{margin:0 0 12px 0}
+  .sidebar label{display:block;font-size:14px;margin:10px 0;color:var(--muted)}
+  .sidebar input{width:100%;margin-top:6px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text)}
+  .sidebar .btn{width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--brand);background:transparent;color:var(--brand);cursor:pointer}
+  .sidebar .btn:hover{background:rgba(34,197,94,0.1)}
+  .sidebar-note{margin-top:12px;color:var(--muted);font-size:13px}
+  .sidebar-meta{margin-top:16px;font-size:13px;color:var(--muted);display:grid;gap:6px}
+  
+  .app{margin-left:280px;padding:16px 16px 96px;min-height:calc(100vh - 88px)}
+  @media (max-width:700px){.app{margin-left:0}.sidebar{position:static;width:auto;top:auto;bottom:auto;border-right:none}}
+  
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin:10px 0}
+  .card h3{margin:0 0 6px 0}
+  
+  .grid{display:grid;gap:12px}
+  .grid.cols-2{grid-template-columns:repeat(2,1fr)}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr)}
+  .grid.cols-4{grid-template-columns:repeat(4,1fr)}
+  @media (max-width:1100px){.grid.cols-4{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:900px){.grid.cols-3{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:700px){.grid.cols-2{grid-template-columns:1fr}}
+  
+  .metric{display:flex;align-items:center;justify-content:space-between;background:var(--card);padding:12px;border:1px solid var(--border);border-radius:12px}
+  .metric .label{color:var(--muted);font-size:12px}
+  .metric .value{font-size:18px;font-weight:600}
+  
+  .table{width:100%;border-collapse:collapse}
+  .table th,.table td{padding:10px;border-bottom:1px solid var(--border);text-align:left}
+  .table th{color:var(--muted);font-weight:600;font-size:12px}
+  .table tr:hover{background:#0c1528}
+  .badge{display:inline-block;padding:2px 6px;border-radius:8px;font-size:12px;border:1px solid var(--border);color:var(--muted)}
+  .tag{font-size:12px;color:var(--muted);margin-left:6px}
+  
+  .controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  input,select,button{font:inherit}
+  .btn-primary{background:var(--brand);border:none;color:#00210e;padding:8px 12px;border-radius:10px;cursor:pointer}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
+  .btn-ghost:hover{background:#0c1528}
+  
+  .footer{position:fixed;left:280px;right:0;bottom:0;padding:10px 16px;font-size:12px;color:var(--muted);background:var(--bg2);border-top:1px solid var(--border)}
+  @media (max-width:700px){.footer{left:0}}
+  
+  .status-a{color:#22c55e}.status-d{color:var(--yellow)}.status-i{color:var(--red)}.status-n{color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--border);border-radius:999px;background:var(--bg);font-size:12px}
+  canvas.spark{height:28px!important}
+  
+  /* Modal */
+  .modal__backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:1000}
+  .modal{width:min(720px,92vw);background:var(--bg2);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);overflow:hidden}
+  .modal__head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border)}
+  .modal__title{font-weight:600}
+  .modal__close{background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+  .modal__body{padding:14px;max-height:72vh;overflow:auto}
+  
+  /* Difficulty chips 1-5 */
+  .fdr{display:inline-block;min-width:36px;text-align:center;padding:4px 6px;border-radius:8px;font-weight:600;border:1px solid var(--border)}
+  .fdr-1{background:#05361a;color:#a7f3d0}
+  .fdr-2{background:#0e3b22;color:#86efac}
+  .fdr-3{background:#3a2f06;color:#fde68a}
+  .fdr-4{background:#4a1e0a;color:#fdba74}
+  .fdr-5{background:#3b0a0a;color:#fecaca}
+  
+  /* --- tooltips for abbreviations --- */
+.abbr-tip{
+    position:relative;
+    border-bottom:1px dotted var(--muted);
+    cursor:help;
+    transition:color .15s ease;
+  }
+  .abbr-tip:hover{ color:#c7d2fe; }
+  .abbr-tip::after{
+    content: attr(data-tooltip);
+    position:absolute;
+    left:50%; top:-8px;
+    transform: translate(-50%, -100%) scale(.98);
+    white-space:nowrap;
+    background:#0b1220;
+    color:var(--text);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:8px 10px;
+    font-size:12px;
+    line-height:1.2;
+    box-shadow:0 8px 20px rgba(0,0,0,.35);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .12s ease, transform .12s ease;
+  }
+  .abbr-tip:hover::after{
+    opacity:1;
+    transform: translate(-50%, -110%) scale(1);
+  }
+  
+  /* floating tooltip for mobile / mousemove follow */
+  .tooltip-floating{
+    position:absolute;
+    z-index:2000;
+    display:none;
+    max-width:280px;
+    background:#0b1220;
+    color:var(--text);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:8px 10px;
+    font-size:12px;
+    line-height:1.2;
+    box-shadow:0 8px 20px rgba(0,0,0,.35);
+    pointer-events:none;
+  }
+  
+  /* subtle polish */
+  .btn-primary{ transition: transform .06s ease, box-shadow .2s ease; box-shadow:0 2px 0 #146c3a inset; }
+  .btn-primary:active{ transform: translateY(1px); }
+  .card{ transition: border-color .2s ease, box-shadow .2s ease; }
+  .card:hover{ border-color:#2b3647; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .table tbody tr{ transition: background .12s ease; }
+  
+  /* THEME: light */
+:root[data-theme="light"]{
+    --bg:#f6f7fb; --bg2:#ffffff; --text:#0b0f19; --muted:#5b6473;
+    --brand:#10b981; --card:#ffffff; --border:#e5e7eb; --red:#dc2626; --yellow:#d97706;
+    --good:#16a34a; --ok:#22c55e; --mid:#f59e0b; --hard:#f97316; --pain:#ef4444;
+  }
+  :root[data-theme="light"] .topbar{background:linear-gradient(180deg,#fff,#f7f9fc)}
+  :root[data-theme="light"] .sidebar{background:#fff}
+  
+  /* sortable headers */
+  .table th.th-sortable{cursor:pointer; user-select:none; position:relative; padding-right:18px}
+  .table th.th-sortable::after{
+    content:"⇅"; position:absolute; right:6px; top:50%; transform:translateY(-50%); opacity:.35; font-size:11px
+  }
+  .table th.th-sortable.active.asc::after{content:"↑"; opacity:.9}
+  .table th.th-sortable.active.desc::after{content:"↓"; opacity:.9}
+  
+  /* My Team highlights */
+  .badge.c-badge{background:#064e3b; border-color:#065f46; color:#a7f3d0; padding:2px 8px}
+  .badge.vc-badge{background:#1f2937; border-color:#374151; color:#d1d5db; padding:2px 8px}
+  .status-a{color:#16a34a}.status-d{color:#eab308}.status-i{color:#ef4444}.status-n{color:#9ca3af}
+  .table td.points-high{background:rgba(34,197,94,.08)}
+  .table td.points-low{background:rgba(239,68,68,.08)}
+  .table td.minutes-zero{color:#ef4444}
+  
+  /* GW Explorer conditional formatting */
+  .cell-good{background:rgba(34,197,94,.08)}
+  .cell-warn{background:rgba(234,179,8,.08)}
+  .cell-bad{background:rgba(239,68,68,.08)}
+  
+  /* tooltip polish already present; tiny tweak */
+  .abbr-tip{border-bottom:1px dashed var(--muted)}
+  
