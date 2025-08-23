@@ -249,6 +249,11 @@ export async function renderAllPlayers(main){
     ]);
     card.prepend(progress);
 
+    // Dedicated slots prevent accidental canvas deletion mid-render
+    const chartSlot = utils.el("div",{id:"ap-chart-slot", style:"min-height:360px"});
+    const tableSlot = utils.el("div",{id:"ap-table-slot"});
+    card.append(chartSlot, tableSlot);
+
     /* ---- Mount ---- */
     ui.mount(main, utils.el("div",{}, [toolbar, card]));
 
@@ -345,56 +350,109 @@ export async function renderAllPlayers(main){
         { header:"xGI/90 (L5)", accessor:r=> r._xgi90!=null ? r._xgi90.toFixed(2) : "", sortBy:r=> r._xgi90 ?? -1 },
         { header:"Ease (Next 5)", accessor:r=> r._ease!=null ? r._ease.toFixed(2) : "", sortBy:r=> r._ease ?? 999 }
       ];
-      card.append(ui.table(cols, rows));
+      tableSlot.append(ui.table(cols, rows));
     }
 
-    function renderChart(rows){
-      const canvas = utils.el("canvas");
-      const ds = rows
-        .map(r=>({
-          x: r.price_m,
-          y: chartMode==="points" ? r.total_points : (r._xp_win ?? null),
-          label: `${r.web_name} (${r.team_short})`,
-          own: r.selected_by_percent || 0,
-          pos: r.element_type
-        }))
-        .filter(p=> p.y != null);
+// replace your existing renderChart with this version
+function renderChart(rows){
+  // Build dataset only from rows that have a usable Y
+  const ds = rows.map(r => ({
+      x: r.price_m,
+      y: (chartMode === "points" ? r.total_points : r._xp_win),
+      label: `${r.web_name} (${r.team_short})`,
+      own: r.selected_by_percent || 0,
+      pos: r.element_type
+    }))
+    .filter(p => Number.isFinite(p.y));
 
-      const xs = rows.map(r=>r.price_m);
-      const ys = (chartMode==="points" ? rows.map(r=>r.total_points) : rows.map(r=>r._xp_win||0)).filter(v=>v!=null);
-      const xmin = Math.min(...xs), xmax = Math.max(...xs);
-      const ymin = Math.min(...ys), ymax = Math.max(...ys);
-      const padX = Math.max(0.1, (xmax-xmin)*0.04), padY = Math.max(1, (ymax-ymin)*0.08);
+  // If nothing to plot, show a note and bail
+  if (!ds.length){
+    chartSlot.innerHTML = "";
+    if (chartInstance) { try { chartInstance.destroy(); } catch {} chartInstance = null; }
+    chartSlot.append(
+      utils.el("h3",{}, chartMode==="points" ? "Price vs Total Points (filtered)" : "Price vs xP (Next 5) — filtered"),
+      utils.el("div",{class:"tag"}, "No data to chart. Adjust filters or compute xP.")
+    );
+    return Promise.resolve();
+  }
 
-      const colors = {1:"#60a5fa", 2:"#34d399", 3:"#f472b6", 4:"#f59e0b"};
-      const cfg = {
-        type: "scatter",
-        data: { datasets: [{
-          data: ds,
-          parsing: false,
-          pointRadius: (ctx)=> Math.max(3, Math.sqrt((ctx.raw.own||0)) + 2),
-          pointHoverRadius: (ctx)=> Math.max(5, Math.sqrt((ctx.raw.own||0)) + 5),
-          pointBackgroundColor:(ctx)=> colors[ctx.raw.pos] || "#93c5fd"
-        }]},
-        options:{
-          animation:false,
-          plugins:{
-            legend:{display:false},
-            tooltip:{ callbacks:{ label: (ctx)=>{
+  // Compute bounds from actual dataset
+  const xs = ds.map(p => p.x);
+  const ys = ds.map(p => p.y);
+  const xmin = Math.min(...xs), xmax = Math.max(...xs);
+  const ymin = Math.min(...ys), ymax = Math.max(...ys);
+  const rangeX = xmax - xmin;
+  const rangeY = ymax - ymin;
+  const padX = rangeX > 0 ? rangeX * 0.06 : 0.5;
+  const padY = rangeY > 0 ? rangeY * 0.10 : 1;
+
+  // Clean previous chart & DOM
+  if (chartInstance) { try { chartInstance.destroy(); } catch {} chartInstance = null; }
+  chartSlot.innerHTML = "";
+
+  // Fix the canvas size so it won't resize/loop
+  const slotWidth = Math.max(320, Math.floor(chartSlot.getBoundingClientRect().width || chartSlot.clientWidth || 900));
+  const canvas = utils.el("canvas", {
+    width: slotWidth,         // explicit pixels -> no resize observer
+    height: 340,              // fixed height
+    style: "max-width:100%;display:block" // scale down if container is smaller
+  });
+
+  chartSlot.append(
+    utils.el("h3",{}, chartMode==="points" ? "Price vs Total Points (filtered)" : "Price vs xP (Next 5) — filtered"),
+    canvas
+  );
+
+  const colors = {1:"#60a5fa", 2:"#34d399", 3:"#f472b6", 4:"#f59e0b"};
+
+  const cfg = {
+    type: "scatter",
+    data: {
+      datasets: [{
+        data: ds,
+        parsing: false,
+        pointRadius:        ctx => Math.max(3, Math.sqrt(ctx.raw.own || 0) + 2),
+        pointHoverRadius:   ctx => Math.max(5, Math.sqrt(ctx.raw.own || 0) + 5),
+        pointBackgroundColor: ctx => colors[ctx.raw.pos] || "#93c5fd"
+      }]
+    },
+    options: {
+      // IMPORTANT: turn responsiveness off to stop the expansion loop
+      responsive: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: "nearest",
+          intersect: true,
+          callbacks: {
+            label: (ctx) => {
               const r = ctx.raw;
-              const yLab = chartMode==="points" ? `${r.y} pts` : `xP ${r.y.toFixed(2)} (Next 5)`;
+              const yLab = chartMode === "points" ? `${r.y} pts` : `xP ${r.y.toFixed(2)} (Next 5)`;
               return `${r.label}: £${r.x}m, ${yLab}, Own ${Math.round(r.own)}%`;
-            }}}
-          },
-          scales:{
-            x:{title:{text:"Price (£m)",display:true}, min: xmin - padX, max: xmax + padX},
-            y:{title:{text: chartMode==="points" ? "Total Points" : "xP (Next 5)" ,display:true}, min: ymin - padY, max: ymax + padY}
+            }
           }
         }
-      };
-      card.append(utils.el("h3",{}, chartMode==="points" ? "Price vs Total Points (filtered)" : "Price vs xP (Next 5) — filtered"), canvas);
-      return ui.chart(canvas, cfg, chartInstance).then((inst)=>{ chartInstance = inst; });
+      },
+      scales: {
+        x: {
+          title: { text: "Price (£m)", display: true },
+          min: xmin - padX,
+          max: xmax + padX,
+          ticks: { maxTicksLimit: 10 }
+        },
+        y: {
+          title: { text: chartMode === "points" ? "Total Points" : "xP (Next 5)", display: true },
+          min: ymin - padY,
+          max: ymax + padY,
+          ticks: { maxTicksLimit: 8 }
+        }
+      }
     }
+  };
+
+  return ui.chart(canvas, cfg).then(inst => { chartInstance = inst; });
+}
 
     async function computeEase(rows, gws){
       for (const r of rows){
@@ -475,8 +533,9 @@ export async function renderAllPlayers(main){
     }
 
     async function update(){
-      // Clear card except the progress element
-      card.querySelectorAll("h3, canvas, table, .tag").forEach(n=>n.remove());
+      // Clear only the safe slots
+      chartSlot.innerHTML = "";
+      tableSlot.innerHTML = "";
 
       // 1) Base filter/sort
       let rows = filteredRows();
