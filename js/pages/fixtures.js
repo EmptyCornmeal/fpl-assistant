@@ -1,9 +1,9 @@
+// js/pages/fixtures.js
 import { api } from "../api.js";
 import { state } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { makeSelect } from "../components/select.js";
-
 
 /* ───────── helpers ───────── */
 
@@ -26,16 +26,6 @@ async function getFixturesForEvents(eventIds){
     await utils.sleep(60);
   }
   return out;
-}
-
-function aggLast5(historyRows){
-  const last5 = historyRows.slice(-5);
-  const mins = last5.reduce((a,b)=>a+(b.minutes||0),0);
-  const pts  = last5.reduce((a,b)=>a+(b.total_points||0),0);
-  const g    = last5.reduce((a,b)=>a+(b.goals_scored||0),0);
-  const a    = last5.reduce((a,b)=>a+(b.assists||0),0);
-  const cs   = last5.reduce((a,b)=>a+(b.clean_sheets||0),0);
-  return { mins, pts, g, a, cs, per90: mins ? +(pts/(mins/90)).toFixed(2) : 0 };
 }
 
 /* xFDR model */
@@ -83,10 +73,9 @@ function attachHoverTip(node, html){
   const move = (e)=>{
     tip.innerHTML = html;
     tip.style.display = "block";
-    // Position near cursor, clamped to viewport
     const pad = 12;
     const vw = window.innerWidth, vh = window.innerHeight;
-    tip.style.left = "0px"; tip.style.top = "0px"; // reset to measure
+    tip.style.left = "0px"; tip.style.top = "0px";
     const r = tip.getBoundingClientRect();
     let x = e.clientX + pad, y = e.clientY + pad;
     if (x + r.width + pad > vw) x = vw - r.width - pad;
@@ -100,9 +89,30 @@ function attachHoverTip(node, html){
   node.addEventListener("mouseleave", leave);
 }
 
+/* inject minimal styles once (badges + chart fit) */
+function ensureFixtureStyles(){
+  if (document.getElementById("fixture-extras")) return;
+  const css = `
+  .fx-status{ margin-left:.5rem; font-size:.75rem; padding:.15rem .45rem; border-radius:999px; border:1px solid var(--border); opacity:.9 }
+  .fx-done .fx-status{ opacity:.8 }
+  .fx-done-badge{ background:rgba(255,255,255,.06) }
+  .fx-live-badge{ background:rgba(255,0,0,.12); border-color:rgba(255,0,0,.35) }
+  .fx-soon-badge{ background:rgba(255,255,255,.04) }
+  .fx-blank{ opacity:.7 }
+  .matrix .cell-line{ display:flex; align-items:center; gap:.4rem; }
+  .matrix .cell-note{ margin-top:.25rem; font-size:.7rem; opacity:.8 }
+  `;
+  const style = document.createElement("style");
+  style.id = "fixture-extras";
+  style.textContent = css;
+  document.head.appendChild(style);
+}
+
 /* ───────── page ───────── */
 
 export async function renderFixtures(main){
+  ensureFixtureStyles();
+
   const shell = utils.el("div");
   shell.append(ui.spinner("Loading fixtures & difficulty…"));
   ui.mount(main, shell);
@@ -142,16 +152,16 @@ export async function renderFixtures(main){
 
     /* Toolbar */
     const windowSel = makeSelect({
-        options: [{label:"Next 3", value:3}, {label:"Next 5", value:5}, {label:"Next 8", value:8}],
-        value: 5,
-        onChange: () => render()
-      });
-      const viewSel = makeSelect({
-        options: [{label:"Official FDR", value:"OFFICIAL"}, {label:"xFDR (model)", value:"XMODEL"}],
-        value: "OFFICIAL",
-        onChange: () => render()
-      });
-      
+      options: [{label:"Next 3", value:3}, {label:"Next 5", value:5}, {label:"Next 8", value:8}],
+      value: 5,
+      onChange: () => render()
+    });
+    const viewSel = makeSelect({
+      options: [{label:"Official FDR", value:"OFFICIAL"}, {label:"xFDR (model)", value:"XMODEL"}],
+      value: "OFFICIAL",
+      onChange: () => render()
+    });
+
     const seg = utils.el("div",{class:"segmented"});
     const segAll = utils.el("button",{class:"seg-btn active"},"All");
     const segDef = utils.el("button",{class:"seg-btn"},"GKP+DEF");
@@ -178,20 +188,17 @@ export async function renderFixtures(main){
       utils.el("input",{type:"checkbox"}), utils.el("span",{style:"margin-left:6px"},"Show swings")
     ]);
 
-    const buildBtn = utils.el("button",{class:"btn-primary"},"Build Prompt");
     const toolbar = utils.el("div",{class:"controls fx-toolbar"},[
-        utils.el("span",{class:"chip chip-dim"},"Window:"), windowSel.el,
-        utils.el("span",{class:"chip chip-dim"},"View:"),   viewSel.el,
-        utils.el("span",{class:"chip chip-dim"},"Position:"), seg,
-        pinMine, onlyDoubles, showSwings,
-        utils.el("span",{style:"flex:1"},""),
-        buildBtn
-      ]);
-      
+      utils.el("span",{class:"chip chip-dim"},"Window:"), windowSel.el,
+      utils.el("span",{class:"chip chip-dim"},"View:"),   viewSel.el,
+      utils.el("span",{class:"chip chip-dim"},"Position:"), seg,
+      pinMine, onlyDoubles, showSwings,
+      utils.el("span",{style:"flex:1"},"")
+    ]);
+
     /* Cards */
     const matrixCard = utils.el("div",{class:"card"});
     const chartCard  = utils.el("div",{class:"card"});
-    const promptCard = utils.el("div",{class:"card"});
 
     shell.innerHTML = "";
     shell.append(
@@ -200,8 +207,7 @@ export async function renderFixtures(main){
         utils.el("div",{class:"tag"},"Legend: FDR 1 easiest → 5 hardest. Switch to xFDR for model-based difficulty. Position view adjusts xFDR logic."),
         toolbar
       ]),
-      utils.el("div",{class:"grid cols-2"}, [matrixCard, chartCard]),
-      promptCard
+      utils.el("div",{class:"grid cols-2"}, [matrixCard, chartCard])
     );
 
     const { bucket } = buildXFDRScaler(teams);
@@ -210,14 +216,15 @@ export async function renderFixtures(main){
     let sortDir = "asc";
 
     async function render(){
-        const n = +windowSel.value;
-        const useModel = (viewSel.value === "XMODEL") || (viewPos !== "ALL");
-              const windowEvents = events.filter(e=>e.id>=nextGw).slice(0,n);
+      const n = +windowSel.value;
+      const useModel = (viewSel.value === "XMODEL") || (viewPos !== "ALL");
+      const windowEvents = events.filter(e=>e.id>=nextGw).slice(0,n);
       const windowIds = windowEvents.map(e=>e.id);
       const fixtures = await getFixturesForEvents(windowIds);
 
       const ranked = teams.slice().sort((a,b)=> (b.strength||0)-(a.strength||0));
       const top6Ids = new Set(ranked.slice(0,6).map(t=>t.id));
+      const showSwingArrows = showSwings.querySelector("input").checked;
 
       const rows = teams.map(t=>{
         const cells = [];
@@ -226,7 +233,8 @@ export async function renderFixtures(main){
         for (const gw of windowIds){
           const matches = fixtures.filter(f => f.event===gw && (f.team_h===t.id || f.team_a===t.id));
           if (matches.length === 0){
-            cells.push({ type:"blank", node: utils.el("span",{class:"tag"},"Blank"), fdrs:[], avg:null, swing:null });
+            const blank = utils.el("span",{class:"tag fx-blank"},"Blank");
+            cells.push({ type:"blank", node: blank, fdrs:[], avg:null, swing:null });
             continue;
           }
           if (matches.length > 1) doublesCount++;
@@ -244,25 +252,47 @@ export async function renderFixtures(main){
             const useFdr = useModel
               ? xFDRForMatch({ homeTeam: teamById.get(m.team_h), awayTeam: teamById.get(m.team_a), isHome, viewPos, bucket })
               : offFdr;
-
             fdrs.push(useFdr);
-            const homeAwayIcon = isHome ? "🏠" : "✈️";
-            lines.push(utils.el("div",{class:"cell-line"},[
+
+            const line = utils.el("div",{class:"cell-line"});
+            line.append(
               fdrChip(useFdr),
-              utils.el("span",{class:"abbr-tip","data-tooltip":`${opp.name}`}, `${homeAwayIcon} ${opp.short_name}`)
-            ]));
+              utils.el("span",{class:"abbr-tip","data-tooltip":`${opp.name}`}, `${isHome ? "H" : "A"} ${opp.short_name}`)
+            );
+
+            const hasScore = Number.isFinite(m.team_h_score) && Number.isFinite(m.team_a_score);
+            if (m.finished || m.finished_provisional){
+              line.classList.add("fx-done");
+              const score = hasScore ? `${m.team_h_score}–${m.team_a_score}` : "";
+              const ft = utils.el("span",{class:"fx-status fx-done-badge"}, score ? `${score} FT` : "FT");
+              ft.dataset.tooltip = `Finished • ${toLocal(m.kickoff_time)}`;
+              line.append(ft);
+            } else if (m.started){
+              const live = utils.el("span",{class:"fx-status fx-live-badge"},"LIVE");
+              live.dataset.tooltip = `In progress • ${toLocal(m.kickoff_time)}`;
+              line.append(live);
+            } else if (m.kickoff_time){
+              const soon = utils.el("span",{class:"fx-status fx-soon-badge"}, toLocal(m.kickoff_time).split(",").slice(-1)[0].trim());
+              soon.dataset.tooltip = `Kickoff • ${toLocal(m.kickoff_time)}`;
+              line.append(soon);
+            }
+
+            lines.push(line);
           }
 
-          const tdBox = utils.el("div"); lines.forEach(l => tdBox.append(l));
+          const tdBox = utils.el("div");
+          lines.forEach(l => tdBox.append(l));
           const avg = fdrs.length ? fdrs.reduce((a,b)=>a+b,0)/fdrs.length : null;
           cells.push({ type: matches.length>1 ? "double" : "single", node: tdBox, fdrs, avg });
         }
 
-        for (let i=1;i<cells.length;i++){
-          const a=cells[i-1].avg, b=cells[i].avg;
-          if (a!=null && b!=null){
-            const delta = b - a;
-            cells[i].swing = Math.abs(delta)>=2 ? (delta>0?"down":"up") : null;
+        if (showSwingArrows){
+          for (let i=1;i<cells.length;i++){
+            const a=cells[i-1].avg, b=cells[i].avg;
+            if (a!=null && b!=null){
+              const delta = b - a;
+              cells[i].swing = Math.abs(delta)>=2 ? (delta>0?"down":"up") : null;
+            }
           }
         }
 
@@ -295,7 +325,7 @@ export async function renderFixtures(main){
         });
       }
 
-      /* Sort */
+      /* Sort rows for matrix (user-controlled) */
       filtered.sort((a,b)=>{
         let av, bv;
         if (sortKey==="team"){ av=a.team; bv=b.team; }
@@ -311,6 +341,7 @@ export async function renderFixtures(main){
         utils.el("div",{class:"chips", style:"margin-bottom:6px"},[
           utils.el("span",{class:"summary-chip"}, "FDR: 1 easiest → 5 hardest"),
           utils.el("span",{class:"summary-chip"}, (viewSel.value==="XMODEL" || viewPos!=="ALL") ? `View: xFDR (${viewPos==="ALL"?"balanced":"pos-specific"})` : "View: Official FDR"),
+          utils.el("span",{class:"summary-chip"}, "✓ Completed and LIVE fixtures are marked")
         ])
       );
 
@@ -348,7 +379,6 @@ export async function renderFixtures(main){
       for (const r of filtered){
         const tr = utils.el("tr");
 
-        /* Team cell with owned chip + floating tooltip */
         const teamCell = utils.el("div",{style:"display:flex;align-items:center;gap:6px"});
         teamCell.append(utils.el("span",{}, r.team));
         const owned = ownedByTeam.get(r.teamId);
@@ -361,7 +391,6 @@ export async function renderFixtures(main){
         const tdTeam = utils.el("td",{class:"sticky"}, teamCell);
         tr.append(tdTeam);
 
-        /* GW cells */
         r.cells.forEach(c=>{
           const td = utils.el("td");
           td.append(c.node);
@@ -373,7 +402,6 @@ export async function renderFixtures(main){
           tr.append(td);
         });
 
-        /* summaries */
         const s=r.summary;
         tr.append(
           utils.el("td",{}, s.avg===99? "—" : s.avg.toFixed(2)),
@@ -388,63 +416,118 @@ export async function renderFixtures(main){
       table.append(thead, tbody);
       matrixCard.append(utils.el("div",{class:"matrix-wrap"}, table));
 
-      /* Side chart */
-      chartCard.innerHTML = "";
-      chartCard.append(utils.el("h3",{},"Avg Difficulty (lower is easier)"));
-      const canvas = utils.el("canvas");
-      chartCard.append(canvas);
+/* Side chart (horizontal, packed, easiest → hardest) */
+chartCard.innerHTML = "";
+chartCard.append(utils.el("h3",{},"Avg Difficulty (easiest → hardest)"));
 
-      const labels = filtered.map(r=>r.team);
-      const data = filtered.map(r=> (r.summary.avg===99? null : +r.summary.avg.toFixed(2)) );
-      const cfg = {
-        type:"bar",
-        data:{ labels, datasets:[{ label:"Avg Difficulty", data }] },
-        options:{
-          animation:false,
-          responsive:true,
-          scales:{ y:{ beginAtZero:true, suggestedMax:5, title:{display:true,text:"1 (easiest) → 5 (hardest)"} } },
-          plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=> `Avg: ${ctx.parsed.y ?? "—"}` } } }
-        }
-      };
-      await ui.chart(canvas, cfg);
+// Build + sort for chart
+const chartRows = filtered.map(r => ({
+  team: r.team,
+  avg:  (r.summary.avg===99? null : +r.summary.avg.toFixed(2))
+})).sort((a,b)=>{
+  const av = (a.avg==null? Infinity : a.avg);
+  const bv = (b.avg==null? Infinity : b.avg);
+  return av - bv; // ascending: easiest first
+});
 
-      /* Prompt builder */
-      promptCard.innerHTML = "";
-      const nextDeadline = events.find(e=>e.id===nextGw)?.deadline_time || null;
-      const runLines = filtered.map(r=>{
-        const avg = (r.summary.avg===99? "—" : r.summary.avg.toFixed(2));
-        const mine = ownedByTeam.get(r.teamId)?.length || 0;
-        return `${r.team}: avg ${avg}, H${r.summary.home}, D${r.summary.doubles}, Top6 ${r.summary.top6}${mine?` — you own ${mine}`:""}`;
-      }).join("\n- ");
+const labels = chartRows.map(r=>r.team);
+const data = chartRows.map(r=>r.avg);
 
-      const readable = [
-        `You are my FPL assistant. Plan for GW${nextGw}. Consider fixture difficulty (${(viewSel.value==="XMODEL"||viewPos!=="ALL") ? `xFDR model${viewPos!=="ALL"?" for "+viewPos:""}` : "Official FDR"}), doubles/blanks, my squad & budget.`,
-        `\nDEADLINE\n- GW${nextGw}: ${toLocal(nextDeadline, "Europe/London")} (London) / ${nextDeadline || "—"} UTC`,
-        `\nTEAM RUNS (GW window)\n- ${runLines}`,
-        `\nRETURN EXACTLY\n1) Three ranked transfer plans (with budget math & upside).\n2) Captain & vice (upside vs safety; mention EO if relevant).\n3) Start/Sit + bench order (call 50/50s).\n4) Watchlist (flags, price risks, minutes risk).`
-      ].join("\n");
+// Dynamic height: set on WRAPPER (not on canvas)
+const barHeight = 22;   // adjust to taste
+const barGap    = 8;
+const rowsCount = labels.length || 1;
+const height    = Math.max(260, rowsCount * (barHeight + barGap) + 40);
 
-      const ta = utils.el("textarea",{
-        style:"width:100%;height:260px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px"
-      }, readable);
-      ta.value = readable;
-      const copyBtn = ui.copyButton(()=>ta.value, "Copy prompt");
-      promptCard.append(ta, utils.el("div",{style:"height:6px"}), copyBtn);
+// wrapper controls size; Chart.js reads parent size
+const wrap   = utils.el("div",{style:"width:100%;position:relative;height:"+height+"px"});
+const canvas = utils.el("canvas");
+wrap.append(canvas);
+chartCard.append(wrap);
+
+// color ramp green(1) → red(5)
+const colors = data.map(v=>{
+  if (v==null) return "rgba(255,255,255,.25)";
+  const t = Math.min(1, Math.max(0, (v-1)/4)); // 0..1 for 1..5
+  const hue = 120 - 120*t; // 120=green → 0=red
+  return `hsl(${hue} 60% 45%)`;
+});
+
+// tiny value labels at bar end
+const valueLabels = {
+  id: "valueLabels",
+  afterDatasetsDraw(chart){
+    const { ctx, scales:{ x, y } } = chart;
+    ctx.save();
+    ctx.font = "12px sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,.9)";
+    chart.getDatasetMeta(0).data.forEach((bar, i)=>{
+      const v = data[i];
+      if (v == null) return;
+      const xPos = x.getPixelForValue(v) + 8;
+      const yPos = bar.y; // centered
+      ctx.fillText(v.toFixed(2), xPos, yPos + 4);
+    });
+    ctx.restore();
+  }
+};
+
+const maxVal = Math.max(...data.filter(v=>v!=null));
+const cfg = {
+  type:"bar",
+  data:{ labels, datasets:[{
+    label:"Avg Difficulty",
+    data,
+    backgroundColor: colors,
+    borderWidth: 0,
+    barThickness: barHeight,
+    maxBarThickness: barHeight,
+    categoryPercentage: 1.0,
+    barPercentage: 0.9
+  }] },
+  options:{
+    maintainAspectRatio:false,   // key: let parent (wrap) drive height
+    animation:false,
+    responsive:true,
+    indexAxis: 'y',
+    layout:{ padding:{ left:8, right:16, top:4, bottom:4 } },
+    scales:{
+      x:{
+        min: 1,
+        max: (isFinite(maxVal) ? Math.min(5, Math.max(2.5, maxVal + 0.2)) : 5),
+        grid:{ display:true, drawTicks:false, color:"rgba(255,255,255,.06)" },
+        ticks:{ stepSize:0.5 },
+        title:{ display:true, text:"1 (easiest) → 5 (hardest)" }
+      },
+      y:{
+        grid:{ display:false },
+        ticks:{ autoSkip:false }
+      }
+    },
+    plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=> `Avg: ${ctx.parsed.x ?? "—"}` } } }
+  },
+  plugins:[valueLabels]
+};
+
+await ui.chart(canvas, cfg);
+
     }
 
-    windowSel.onchange = render;
-    viewSel.onchange  = render;
-    pinMine.querySelector("input").onchange  = render;
-    onlyDoubles.querySelector("input").onchange = render;
-    showSwings.querySelector("input").onchange  = render;
-    // seg buttons also trigger render
-    const _setSeg = (k)=>{ setSeg(k); render(); };
-    segAll.onclick = ()=> _setSeg("ALL");
-    segDef.onclick = ()=> _setSeg("DEF");
-    segAtt.onclick = ()=> _setSeg("ATT");
+// sorting toggles (sortKey/sortDir are already declared above)
+const rerender = ()=>render();
+windowSel.onchange = rerender;
+viewSel.onchange  = rerender;
+pinMine.querySelector("input").onchange  = rerender;
+onlyDoubles.querySelector("input").onchange = rerender;
+showSwings.querySelector("input").onchange  = rerender;
+const _setSeg = (k)=>{ setSeg(k); rerender(); };
+segAll.onclick = ()=> _setSeg("ALL");
+segDef.onclick = ()=> _setSeg("DEF");
+segAtt.onclick = ()=> _setSeg("ATT");
 
-    buildBtn.onclick = render;
-    render();
+// initial paint
+render();
+
   }catch(err){
     ui.mount(main, ui.error("Failed to load Fixtures", err));
   }

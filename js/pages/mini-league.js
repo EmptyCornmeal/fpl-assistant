@@ -5,16 +5,14 @@ import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 
 /**
- * Mini-League
- * - Table of standings (page 1 of each classic league you added)
- * - Line chart: cumulative TOTAL points by GW (0 → max)
- * - Line chart: GW POINTS by GW (0 → max)
- * - League Top XI (most-picked 3-4-3 from that league for last finished GW)
- *
- * Notes:
- * - We keep requests polite via a small concurrency pool.
- * - Tooltips show: Manager — Team
- * - Works with multiple league IDs (comma in sidebar)
+ * Mini-League (live-aware + deltas + my-team highlight)
+ * - Standings (page 1 of each classic league)
+ *   • GW column = current live GW if applicable
+ *   • Manager cell shows rank movement badge vs last finished GW
+ *   • "You" chip if your entry is present
+ * - Charts (x2): totals & per-GW, include live point,
+ *   very translucent lines, visible hoverable points, double height
+ * - League Top XI: most-picked 3-4-3 in current GW if live, else last finished
  */
 
 export async function renderMiniLeague(main){
@@ -27,10 +25,15 @@ export async function renderMiniLeague(main){
     state.bootstrap = bs;
     const { events, elements: players, teams, element_types: positions } = bs;
 
-    const finished = events.filter(e=>e.data_checked);
-    const lastFinished = finished.length ? Math.max(...finished.map(e=>e.id)) : 0;
-    if (!lastFinished){
-      ui.mount(main, utils.el("div",{class:"card"},"No finished Gameweeks yet."));
+    // GW markers
+    const prevEvent = events.find(e=>e.is_previous) || null;
+    const currEvent = events.find(e=>e.is_current)  || null;
+    const lastFinished = prevEvent?.id || (events.filter(e=>e.data_checked).map(e=>e.id).pop() ?? 0);
+    const liveNow = !!(currEvent && !currEvent.data_checked);
+    const gwLiveId = currEvent?.id || null;
+
+    if (!lastFinished && !liveNow){
+      ui.mount(main, utils.el("div",{class:"card"},"No Gameweeks yet."));
       return;
     }
 
@@ -46,10 +49,9 @@ export async function renderMiniLeague(main){
     const posShort    = new Map(positions.map(p=>[p.id,p.singular_name_short]));
 
     function safeManager(r){
-      // FPL returns player_name (preferred); fall back to "First Last" if available later, else "—"
-      return r.player_name || r.player_first_name && r.player_last_name
+      return r.player_name || (r.player_first_name || r.player_last_name
         ? `${r.player_first_name||""} ${r.player_last_name||""}`.trim()
-        : "—";
+        : "—");
     }
 
     async function poolMap(items, limit, worker){
@@ -66,7 +68,26 @@ export async function renderMiniLeague(main){
       return res;
     }
 
-    // UI container for all leagues
+    // Preload live map once if needed
+    let liveMap = null; // Map<elementId, stats>
+    if (liveNow && gwLiveId){
+      try{
+        const live = await api.eventLive(gwLiveId);
+        liveMap = new Map((live?.elements||[]).map(e=>[e.id, e.stats||{}]));
+      }catch{ liveMap = new Map(); }
+    }
+
+    // Color generator: very translucent lines + stronger points
+    const colorFor = (i, strong=false)=>{
+      const hue = (i * 137.508) % 360; // golden angle
+      const lineA  = strong ? 0.35 : 0.12;
+      const pointA = strong ? 0.9  : 0.55;
+      return {
+        line:  `hsla(${hue}, 70%, 45%, ${lineA})`,
+        point: `hsla(${hue}, 70%, 45%, ${pointA})`
+      };
+    };
+
     const deck = utils.el("div");
     wrap.innerHTML = "";
     wrap.append(deck);
@@ -74,7 +95,11 @@ export async function renderMiniLeague(main){
 
     for (const lid of leagues){
       const card = utils.el("div",{class:"card"});
-      card.append(utils.el("h3",{},`League ${lid}`), ui.spinner("Loading…"));
+      const headRow = utils.el("div",{class:"chips"},[
+        utils.el("span",{class:"chip chip-dim"}, `League ID: ${lid}`),
+        liveNow ? utils.el("span",{class:"chip chip-accent"}, `LIVE — GW${gwLiveId}`) : utils.el("span",{class:"chip"}, `Last finished: GW${lastFinished}`)
+      ]);
+      card.append(utils.el("h3",{},`League ${lid}`), headRow, ui.spinner("Loading…"));
       deck.append(card);
 
       try{
@@ -82,99 +107,206 @@ export async function renderMiniLeague(main){
         const leagueName = data?.league?.name || `League ${lid}`;
         const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
 
-        // --------- table rows
+        // ---- build rows skeleton from league table
         const rows = results.map(r=>({
           rank: r.rank,
           manager: safeManager(r),
           team: r.entry_name || "—",
-          gw: r.event_total ?? null,
-          total: r.total ?? null,
-          entry: r.entry
+          gw: r.event_total ?? null,   // will override with live if liveNow
+          total: r.total ?? null,      // will override with live cumulative if liveNow
+          entry: r.entry,
+          my: (state.entryId && Number(state.entryId) === Number(r.entry)) || false,
+          prevTotal: null,
+          currTotal: null,
+          prevRank: null,
+          currRank: null,
+          mov: null
         }));
 
-        // --------- charts datasets: build history for each entry (cumulative + per-GW)
-        const labels = Array.from({length:lastFinished}, (_,i)=>`GW${i+1}`);
+        // ---- per-entry history + live gw points (if live)
+        const labelsFinished = Array.from({length:lastFinished}, (_,i)=>`GW${i+1}`);
+        const labels = liveNow && gwLiveId
+          ? [...labelsFinished, `GW${gwLiveId} (live)`]
+          : labelsFinished;
+
         const datasetsTotal = [];
         const datasetsGW = [];
 
-        await poolMap(rows, 6, async (r)=>{
+        await poolMap(rows, 6, async (r, idx)=>{
           if (!r?.entry) return;
           try{
-            const h = await api.entryHistory(r.entry);
-            // total_points is cumulative after each GW; points is per GW
-            const totals = [];
-            const perGW  = [];
+            const hist = await api.entryHistory(r.entry);
+
+            // Cumulative up to last finished
+            let totals = [];
+            let perGW  = [];
             for (let gw=1; gw<=lastFinished; gw++){
-              const rec = h.current.find(x=>x.event===gw);
-              totals.push(rec ? rec.total_points : (totals[totals.length-1] ?? null));
-              perGW.push(rec ? rec.points : null);
+              const rec = hist.current.find(x=>x.event===gw);
+              const prev = totals[totals.length-1] ?? 0;
+              totals.push(rec ? rec.total_points : prev);
+              perGW.push(rec ? rec.points : 0);
             }
-            datasetsTotal.push({
-              label: `${r.manager} — ${r.team}`,
-              data: totals
-            });
-            datasetsGW.push({
-              label: `${r.manager} — ${r.team}`,
-              data: perGW
-            });
+
+            r.prevTotal = totals[totals.length-1] ?? 0;
+
+            // Live GW points (approx) via picks × live stats
+            let livePts = 0;
+            if (liveNow && gwLiveId && liveMap){
+              try{
+                const picks = await api.entryPicks(r.entry, gwLiveId);
+                for (const p of (picks?.picks||[])){
+                  const mult = p.multiplier ?? (p.is_captain ? 2 : (p.position<=11 ? 1 : 0));
+                  const pts = (liveMap.get(p.element)?.total_points) ?? 0;
+                  livePts += mult * pts;
+                }
+              }catch{/* ignore single entry */}
+            }
+
+            if (liveNow && gwLiveId){
+              totals.push((totals[totals.length-1] ?? 0) + livePts);
+              perGW.push(livePts);
+              r.gw = livePts;
+              r.total = totals[totals.length-1];
+              r.currTotal = r.total;
+            }else{
+              const lastRec = hist.current.find(x=>x.event===lastFinished);
+              r.gw = lastRec?.points ?? r.gw ?? 0;
+              r.total = lastRec?.total_points ?? r.total ?? 0;
+              r.currTotal = r.total;
+            }
+
+            const me = r.my;
+            const { line, point } = colorFor(idx, me);
+            const dsStyle = {
+              borderColor: line,
+              backgroundColor: "transparent",
+              borderWidth: me ? 3 : 2,
+              pointRadius: me ? 3 : 2,           // <-- visible orbs
+              pointHoverRadius: me ? 6 : 5,      // nicer on hover
+              pointHitRadius: 6,
+              pointBackgroundColor: point,       // stronger than line
+              pointBorderColor: point,
+              spanGaps: true,
+              tension: 0.3
+            };
+
+            datasetsTotal.push({ label: `${r.manager} — ${r.team}`, data: totals, ...dsStyle });
+            datasetsGW.push({    label: `${r.manager} — ${r.team}`, data: perGW,  ...dsStyle });
+
             await utils.sleep(40);
-          }catch{/* ignore single manager failure */}
+          }catch{/* keep row even if charts missing */}
         });
 
-        // y-axis bounds 0 → max
-        const yMaxTotal = Math.max(
-          0,
-          ...datasetsTotal.flatMap(d => (d.data||[]).filter(v=>Number.isFinite(v)))
-        );
-        const yMaxGW = Math.max(
-          0,
-          ...datasetsGW.flatMap(d => (d.data||[]).filter(v=>Number.isFinite(v)))
-        );
+        // ---- compute rank movement within this page (prev vs current)
+        const prevSorted = rows.slice().sort((a,b)=> (b.prevTotal??0) - (a.prevTotal??0));
+        const currSorted = rows.slice().sort((a,b)=> (b.currTotal??0) - (a.currTotal??0));
+        const setRanks = (arr, key) => {
+          let rank = 1, lastVal = null, sameRankCount = 0;
+          arr.forEach((r,i)=>{
+            const v = r[key] ?? 0;
+            if (lastVal !== null && v === lastVal) {
+              sameRankCount++;
+            } else {
+              rank = i + 1;
+              sameRankCount = 0;
+              lastVal = v;
+            }
+            r[key === "prevTotal" ? "prevRank" : "currRank"] = rank;
+          });
+        };
+        setRanks(prevSorted, "prevTotal");
+        setRanks(currSorted, "currTotal");
+        rows.forEach(r=>{
+          if (r.prevRank!=null && r.currRank!=null) r.mov = r.prevRank - r.currRank; // + up
+        });
 
-        // --------- render UI
+        // ---- UI: standings table
+        const gwHdr = liveNow && gwLiveId ? `GW${gwLiveId} (live)` : `GW${lastFinished}`;
+
+        function managerCell(r){
+          const wrap = utils.el("div",{class:"name-cell"});
+          const name = utils.el("span",{class:"nm"}, r.manager);
+          wrap.append(name);
+          if (r.my){
+            wrap.append(utils.el("span",{class:"chip chip-accent chip-dim", style:"margin-left:6px"},"You"));
+          }
+          if (typeof r.mov === "number" && (liveNow || r.mov !== 0)){
+            const good = r.mov > 0, bad = r.mov < 0;
+            const badge = utils.el("span",{
+              class:"chip",
+              style:`margin-left:6px; ${good?"background:var(--accent-faded)":""
+                    }; ${bad?"background:var(--error-faded)":""}`
+            }, `${r.mov>0?"▲":r.mov<0?"▼":"•"} ${r.mov===0?"0":Math.abs(r.mov)}`);
+            wrap.append(badge);
+          }
+          return wrap;
+        }
+
         const table = ui.table([
-          {header:"#", accessor:r=>r.rank, sortBy:r=>r.rank},
-          {header:"Manager", accessor:r=>r.manager, sortBy:r=>r.manager},
+          {header:"#", accessor:r=>r.currRank ?? r.rank, sortBy:r=>r.currRank ?? r.rank},
+          {header:"Manager", cell:managerCell, sortBy:r=>r.manager},
           {header:"Team", accessor:r=>r.team, sortBy:r=>r.team},
-          {header:`GW${lastFinished}`, accessor:r=>r.gw, sortBy:r=>r.gw},
-          {header:"Total", accessor:r=>r.total, sortBy:r=>r.total}
+          {header:gwHdr, accessor:r=>r.gw ?? 0, sortBy:r=>r.gw ?? -1,
+            tdClass:r=> (r.gw>=80?"points-high":(r.gw<=10?"points-low":""))},
+          {header:"Total" + (liveNow?" (live)":""),
+            accessor:r=>r.currTotal ?? r.total ?? 0, sortBy:r=>r.currTotal ?? r.total ?? -1}
         ], rows);
 
-        // charts
+        // ---- charts
         const canvasTotal = utils.el("canvas");
         const canvasGW    = utils.el("canvas");
 
         const commonOpts = {
-          animation:false,
-          responsive:true,
-          maintainAspectRatio:false,
-          plugins:{
-            legend:{ position:"bottom", labels:{ boxWidth:10, boxHeight:10 } },
-            tooltip:{
-              callbacks:{
-                // Title shows the manager — team
-                title:(items)=> items?.[0]?.dataset?.label || "",
-                // Label shows "GWx: y pts"
-                label:(ctx)=>{
-                  const gwIndex = ctx.dataIndex + 1;
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+        
+          // <-- THIS makes tooltips single-point
+          interaction: { mode: "nearest", intersect: true },   // pick just the nearest element
+          hover:       { mode: "nearest", intersect: true },   // (redundant but safe)
+          plugins: {
+            legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10 } },
+            tooltip: {
+              mode: "nearest",
+              intersect: true,                                  // <-- important
+              callbacks: {
+                title: (items) => items?.[0]?.dataset?.label || "",
+                label: (ctx) => {
+                  const lbl = (liveNow && ctx.dataIndex === ctx.chart.data.labels.length - 1)
+                    ? `${ctx.chart.data.labels[ctx.dataIndex]}`
+                    : `GW${ctx.dataIndex + 1}`;
                   const val = ctx.parsed.y;
-                  return `GW${gwIndex}: ${val ?? "—"} pts`;
+                  return `${lbl}: ${val ?? "—"} pts`;
                 }
               }
             }
           },
-          scales:{
-            x:{ title:{display:false} },
-            y:{ beginAtZero:true, suggestedMin:0 }
+        
+          // keep orbs visible and easy to hit
+          elements: {
+            point: { radius: 2, hoverRadius: 6, hitRadius: 6 },
+            line:  { borderWidth: 2 }
+          },
+        
+          scales: {
+            x: { title: { display: false }, ticks: { autoSkip: false, maxRotation: 0, minRotation: 0 } },
+            y: { beginAtZero: true, suggestedMin: 0 }
           }
         };
+        
+
+        // y-axis bounds
+        const yMaxTotal = Math.max(0, ...datasetsTotal.flatMap(d => (d.data||[]).filter(v=>Number.isFinite(v))));
+        const yMaxGW = Math.max(0, ...datasetsGW.flatMap(d => (d.data||[]).filter(v=>Number.isFinite(v))));
 
         const cfgTotal = {
           type:"line",
           data:{ labels, datasets: datasetsTotal },
           options:{
             ...commonOpts,
-            scales:{ ...commonOpts.scales, y:{ ...commonOpts.scales.y, suggestedMax: Math.ceil((yMaxTotal+5)/10)*10, title:{display:true,text:"Total points"} } }
+            scales:{ ...commonOpts.scales,
+              y:{ ...commonOpts.scales.y, suggestedMax: Math.ceil((yMaxTotal+5)/10)*10, title:{display:true,text:"Total points"} }
+            }
           }
         };
         const cfgGW = {
@@ -182,20 +314,27 @@ export async function renderMiniLeague(main){
           data:{ labels, datasets: datasetsGW },
           options:{
             ...commonOpts,
-            scales:{ ...commonOpts.scales, y:{ ...commonOpts.scales.y, suggestedMax: Math.max(10, Math.ceil((yMaxGW+5)/5)*5), title:{display:true,text:"GW points"} } }
+            scales:{ ...commonOpts.scales,
+              y:{ ...commonOpts.scales.y, suggestedMax: Math.max(10, Math.ceil((yMaxGW+5)/5)*5), title:{display:true,text:"GW points"} }
+            }
           }
         };
 
-        // --------- League Top XI (most-picked, 3-4-3)
-        const xiBox = utils.el("div",{class:"card"});
-        xiBox.append(utils.el("h4",{},"League Top XI (most picked — last finished GW)"), ui.spinner("Building XI…"));
+        // ---- League Top XI (most picked)
+        const gwForXI = (liveNow && gwLiveId) ? gwLiveId : lastFinished;
+        const xiTitle = (liveNow && gwLiveId)
+          ? `League Top XI (most picked — GW${gwLiveId} live)`
+          : `League Top XI (most picked — GW${lastFinished})`;
 
-        // get all picks for page-1 managers (concurrent, polite)
+        const xiBox = utils.el("div",{class:"card"});
+        xiBox.append(utils.el("h4",{}, xiTitle), ui.spinner("Building XI…"));
+
+        // count picks across managers
         const counts = new Map(); // element_id -> count
         const caps   = new Map(); // element_id -> captain votes
         await poolMap(rows, 6, async (r)=>{
           try{
-            const picks = await api.entryPicks(r.entry, lastFinished);
+            const picks = await api.entryPicks(r.entry, gwForXI);
             for (const p of (picks?.picks||[])){
               counts.set(p.element, (counts.get(p.element)||0) + 1);
               if (p.is_captain) caps.set(p.element, (caps.get(p.element)||0) + 1);
@@ -204,7 +343,6 @@ export async function renderMiniLeague(main){
           }catch{/* ignore */}
         });
 
-        // turn into arrays by position
         function bucket(posId){
           return [...counts.entries()]
             .map(([id,ct])=>{
@@ -222,18 +360,9 @@ export async function renderMiniLeague(main){
             .filter(x => (byPlayerId.get(x.id)?.element_type) === posId)
             .sort((a,b)=> b.ct - a.ct || b.cap - a.cap);
         }
-        const GK  = bucket(1);
-        const DEF = bucket(2);
-        const MID = bucket(3);
-        const FWD = bucket(4);
-
+        const GK  = bucket(1), DEF = bucket(2), MID = bucket(3), FWD = bucket(4);
         const pickN = (arr,n)=> arr.slice(0, Math.max(0,n));
-        const xi = [
-          ...pickN(GK,1),
-          ...pickN(DEF,3),
-          ...pickN(MID,4),
-          ...pickN(FWD,3),
-        ];
+        const xi = [...pickN(GK,1), ...pickN(DEF,3), ...pickN(MID,4), ...pickN(FWD,3)];
 
         const xiTable = ui.table([
           {header:"Pos", accessor:r=>r.pos, sortBy:r=>r.pos},
@@ -245,22 +374,29 @@ export async function renderMiniLeague(main){
         ], xi);
 
         xiBox.innerHTML = "";
-        xiBox.append(utils.el("h4",{},"League Top XI (3-4-3, by pick count)"), xiTable);
+        xiBox.append(utils.el("h4",{}, xiTitle), xiTable);
 
-        // assemble card
+        // ---- assemble card (double-height charts)
         card.innerHTML = "";
         card.append(
-          utils.el("h3",{},`${leagueName} (ID ${lid})`),
+          utils.el("h3",{},`${leagueName}`),
+          headRow,
+          (()=>{
+            const me = rows.find(r=>r.my);
+            return me ? utils.el("div",{class:"chips", style:"margin:6px 0"},[
+              utils.el("span",{class:"chip chip-accent"}, `You: ${me.manager} — ${me.team} (rank ${me.currRank})`)
+            ]) : utils.el("div")
+          })(),
           table,
-          utils.el("div",{class:"grid cols-2", style:"margin-top:12px; min-height:360px;"},
+          utils.el("div",{class:"grid cols-2", style:"margin-top:12px; min-height:640px;"},
             [
               utils.el("div",{class:"card"},[
                 utils.el("h4",{},"Cumulative total points by GW"),
-                utils.el("div",{style:"height:300px;margin-top:8px;"}, [canvasTotal])
+                utils.el("div",{style:"height:600px;margin-top:8px;"}, [canvasTotal])
               ]),
               utils.el("div",{class:"card"},[
                 utils.el("h4",{},"GW points by GW"),
-                utils.el("div",{style:"height:300px;margin-top:8px;"}, [canvasGW])
+                utils.el("div",{style:"height:600px;margin-top:8px;"}, [canvasGW])
               ])
             ]
           ),
@@ -268,7 +404,6 @@ export async function renderMiniLeague(main){
           xiBox
         );
 
-        // draw charts
         await ui.chart(canvasTotal, cfgTotal);
         await ui.chart(canvasGW, cfgGW);
       }catch(e){

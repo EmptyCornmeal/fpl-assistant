@@ -5,7 +5,34 @@ import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { makeSelect } from "../components/select.js";
 
+/* ---- one-time styles to prevent control overlap ---- */
+function ensureGwExplorerStyles(){
+  if (document.getElementById("gwx-styles")) return;
+  const style = document.createElement("style");
+  style.id = "gwx-styles";
+  style.textContent = `
+    .ap-toolbar-row{
+      display:flex; flex-wrap:wrap; align-items:center; gap:12px;
+    }
+    .ap-toolbar-row .row-check{
+      display:flex; align-items:center; gap:8px; white-space:nowrap;
+    }
+    /* Search input grows but won't push under checkboxes */
+    .ap-toolbar-row input[type="text"],
+    .ap-toolbar-row input[type="search"]{
+      flex:1 1 420px; min-width:260px; max-width:640px; width:auto;
+    }
+    /* Keep segmented (positions) aligned on row 1 */
+    .ap-toolbar-row .segmented{ margin-left:auto; }
+    /* Push Apply to far right on row 2 without spacer hacks */
+    .ap-toolbar-row .btn-primary{ margin-left:auto; }
+  `;
+  document.head.appendChild(style);
+}
+
 export async function renderGwExplorer(main){
+  ensureGwExplorerStyles();
+
   const wrap = utils.el("div");
   wrap.append(ui.spinner("Loading GW Explorer…"));
   ui.mount(main, wrap);
@@ -15,22 +42,39 @@ export async function renderGwExplorer(main){
     state.bootstrap = bs;
 
     const { events, elements: players, teams, element_types: positions } = bs;
+
     const teamById  = new Map(teams.map(t => [t.id, t]));
     const teamShort = new Map(teams.map(t => [t.id, t.short_name]));
     const posShort  = new Map(positions.map(p => [p.id, p.singular_name_short]));
 
-    const finished = events.filter(e => e.data_checked);
-    if (!finished.length){
-      ui.mount(main, utils.el("div",{class:"card"},"No finished GWs yet."));
+    // Determine previous/current from bootstrap flags
+    const prevEvent = events.find(e => e.is_previous);
+    const currEvent = events.find(e => e.is_current);
+    const lastFinished = prevEvent?.id || (events.filter(e=>e.data_checked).map(e=>e.id).pop() ?? null);
+
+    // Build GW options: all finished + current (live) if not data_checked
+    const finishedOpts = events
+      .filter(e => e.data_checked)
+      .map(e => ({ label: `GW ${e.id}`, value: e.id }));
+
+    const includeCurrent = currEvent && !currEvent.data_checked;
+    const options = includeCurrent
+      ? [...finishedOpts, { label: `GW ${currEvent.id} (live)`, value: currEvent.id }]
+      : finishedOpts;
+
+    if (!options.length && currEvent) {
+      options.push({ label: `GW ${currEvent.id} (live)`, value: currEvent.id });
+    }
+    if (!options.length){
+      ui.mount(main, utils.el("div",{class:"card"},"No gameweeks available yet."));
       return;
     }
-    const lastFinished = Math.max(...finished.map(e=>e.id));
 
-    /* ===== Toolbar (two rows; no clipping) ===== */
-    const gwSel = makeSelect({
-      options: finished.map(e => ({ label: `GW ${e.id}`, value: e.id })),
-      value: lastFinished
-    });
+    const defaultGw = includeCurrent ? currEvent.id : (lastFinished ?? options[0].value);
+
+    /* ===== Toolbar ===== */
+    const gwSel = makeSelect({ options, value: defaultGw });
+
     const teamSel = makeSelect({
       options: [{label:"All teams", value:"ALL"}]
         .concat(teams.map(t => ({label:t.short_name, value:String(t.id)}))),
@@ -52,7 +96,8 @@ export async function renderGwExplorer(main){
       posChipsWrap.append(b);
     });
 
-    const q = utils.el("input",{placeholder:"Search player", style:"min-width:260px;max-width:100%"});
+    // Search input (sizes handled by CSS above)
+    const q = utils.el("input",{ placeholder:"Search player" });
 
     const startersOnly = utils.el("label",{class:"row-check"},[
       utils.el("input",{type:"checkbox"}), utils.el("span",{class:"tag"}," Starters only")
@@ -69,19 +114,19 @@ export async function renderGwExplorer(main){
 
     const applyBtn = utils.el("button",{class:"btn-primary"},"Apply");
 
+    const liveChip = utils.el("span",{class:"chip chip-accent", style:"display:none"}, "LIVE — provisional");
+
     const toolbar = utils.el("div",{class:"card"},[
       utils.el("h3",{},"GW Explorer — Filters & Tools"),
-      // row 1
+      // Row 1
       utils.el("div",{class:"ap-toolbar-row"},[
-        utils.el("span",{class:"chip chip-dim"},"Gameweek:"), gwSel.el,
+        utils.el("span",{class:"chip chip-dim"},"Gameweek:"), gwSel.el, liveChip,
         utils.el("span",{class:"chip chip-dim"},"Team:"),     teamSel.el,
         utils.el("span",{class:"chip chip-dim"},"Position:"), posChipsWrap
       ]),
-      // row 2
+      // Row 2 (no spacer; CSS pushes Apply to right)
       utils.el("div",{class:"ap-toolbar-row"},[
-        q, startersOnly, myOnly, haulsOnly, cardsOnly,
-        utils.el("span",{style:"flex:1"},""),
-        applyBtn
+        q, startersOnly, myOnly, haulsOnly, cardsOnly, applyBtn
       ])
     ]);
 
@@ -97,14 +142,20 @@ export async function renderGwExplorer(main){
     let mySet = new Set();
     let myCaptainId = null, myViceId = null;
 
+    const isLiveGw = (gwId)=>{
+      const evt = events.find(e=>e.id === +gwId);
+      return !!(evt && evt.is_current && !evt.data_checked);
+    };
+
     async function loadGw(gwId){
-      // Load GW live points
       tableCard.innerHTML = "";
       tableCard.append(ui.spinner("Fetching gameweek data…"));
 
+      liveChip.style.display = isLiveGw(gwId) ? "" : "none";
+
       const live = await api.eventLive(+gwId);
 
-      // If we have a manager entry, mark your players for that GW
+      // Mark your squad for that GW
       mySet = new Set(); myCaptainId = null; myViceId = null;
       if (state.entryId){
         try{
@@ -150,9 +201,7 @@ export async function renderGwExplorer(main){
     }
 
     /* ===== Filters ===== */
-    function applyFilters(){
-      renderAll();
-    }
+    function applyFilters(){ renderAll(); }
 
     function filteredRows(){
       const teamVal = teamSel.value;
@@ -169,13 +218,14 @@ export async function renderGwExplorer(main){
       if (haulsOnly.querySelector("input").checked)    rows = rows.filter(r=>r.pts>=10);
       if (cardsOnly.querySelector("input").checked)    rows = rows.filter(r=>r.yc>0 || r.rc>0);
 
-      // sort default by points desc
       rows.sort((a,b)=> b.pts - a.pts);
-      return rows; // no cap — load all
+      return rows;
     }
 
     /* ===== Summary (L) + Team of the Week (R) ===== */
     function renderTopGrid(rows, gwId){
+      const live = isLiveGw(gwId);
+
       // Left: Summary
       const hauls  = rows.filter(r=>r.pts>=10).slice(0,12);
       const braces = rows.filter(r=>r.g>=2).length;
@@ -191,13 +241,14 @@ export async function renderGwExplorer(main){
       const posAvg = Object.entries(posGroups).map(([k,v])=>[k, v.length ? +(v.reduce((a,b)=>a+b,0)/v.length).toFixed(2) : 0]);
 
       const left = utils.el("div",{},[
-        utils.el("h3",{},`GW ${gwId} — Summary`),
+        utils.el("h3",{},`GW ${gwId} — ${live ? "Summary (live)" : "Summary"}`),
         hauls.length ? utils.el("ul",{}, hauls.map(r=>utils.el("li",{},`${r.name} (${r.team}) — ${r.pts} pts (G${r.g}, A${r.a}, BPS ${r.bps})`))) :
           utils.el("div",{class:"tag"},"No 10+ pointers in current filter."),
         utils.el("div",{class:"mt-8 legend small"},[
           utils.el("span",{class:"chip"} ,`Braces: ${braces}`),
           utils.el("span",{class:"chip"} ,`Hattricks: ${hatties}`),
-          utils.el("span",{class:"chip"} ,`Red cards: ${reds}`)
+          utils.el("span",{class:"chip"} ,`Red cards: ${reds}`),
+          live ? utils.el("span",{class:"chip chip-accent"},"LIVE — provisional") : ""
         ]),
         utils.el("h4",{class:"mt-8"},"Team totals (top)"),
         utils.el("ul",{}, teamArr.map(([t,p])=>utils.el("li",{},`${t}: ${p} pts`))),
@@ -205,10 +256,10 @@ export async function renderGwExplorer(main){
         utils.el("ul",{}, posAvg.map(([k,v])=> utils.el("li",{}, `${k}: ${v}`)))
       ]);
 
-      // Right: Team of the Week (auto-valid)
+      // Right: Team of the Week
       const totw = pickTotw(rows);
       const right = utils.el("div",{},[
-        utils.el("h3",{},`Team of the Week — GW ${gwId}`),
+        utils.el("h3",{},`Team of the Week — GW ${gwId}${live?" (live)":""}`),
         totw ? utils.el("div",{},[
           utils.el("div",{class:"chips"},[
             utils.el("span",{class:"chip"} ,`Formation: ${totw.formation}`),
@@ -267,6 +318,8 @@ export async function renderGwExplorer(main){
     }
 
     function renderTable(rows, gwId){
+      const live = isLiveGw(gwId);
+
       const cols = [
         {header:"Name", cell:nameCell, sortBy:r=>r.name},
         {header:"Pos", accessor:r=>r.pos, sortBy:r=>r.pos},
@@ -291,15 +344,18 @@ export async function renderGwExplorer(main){
       const table = ui.table(cols, rows);
 
       tableCard.innerHTML = "";
-      tableCard.append(utils.el("h3",{},`GW ${gwId} — Player Points`), table);
+      tableCard.append(
+        utils.el("h3",{},`GW ${gwId} — Player Points${live ? " (live)" : ""}`),
+        table
+      );
     }
 
     /* ===== Render pipeline ===== */
     function renderAll(){
       const gwId = gwSel.value;
       const rows = filteredRows();
-      renderTopGrid(rows, gwId);   // top two-column card
-      renderTable(rows, gwId);     // then full table
+      renderTopGrid(rows, gwId);
+      renderTable(rows, gwId);
     }
 
     // events

@@ -1,5 +1,6 @@
 // js/pages/meta.js
-// ⚡ Meta: multi-league ownership, Template XI, Template vs You, Captain EV, and EO/xP visuals.
+// ⚡ Meta: multi-league ownership (live-aware), Template XI, Template vs You,
+// Captain EV, EO/xP visuals, and a polished Explainer with compact mini-tables.
 
 import { api } from "../api.js";
 import { state } from "../state.js";
@@ -7,7 +8,7 @@ import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 
-// All valid FPL formations (min 3 DEF, min 2 MID, min 1 FWD)
+/* ───────────────── formations ───────────────── */
 const FORMATIONS = {
   "3-4-3": { GKP:1, DEF:3, MID:4, FWD:3 },
   "3-5-2": { GKP:1, DEF:3, MID:5, FWD:2 },
@@ -19,78 +20,71 @@ const FORMATIONS = {
   "5-2-3": { GKP:1, DEF:5, MID:2, FWD:3 }
 };
 
-// Pick a sensible bench for any formation: always 1 GK, then best EO leftovers.
 function pickBench(byPos, pickedSet, size = 4) {
   const bench = [];
-
-  // 1) GK first (best remaining)
   const nextGK = byPos.GKP.find(p => !pickedSet.has(p.id));
-  if (nextGK) {
-    bench.push(nextGK);
-    pickedSet.add(nextGK.id);
-  }
+  if (nextGK) { bench.push(nextGK); pickedSet.add(nextGK.id); }
 
-  // 2) Gather all other leftovers (highest EO first)
   const leftovers = [];
   for (const pos of ["DEF","MID","FWD"]) {
-    for (const p of byPos[pos]) {
-      if (!pickedSet.has(p.id)) leftovers.push(p);
-    }
+    for (const p of byPos[pos]) if (!pickedSet.has(p.id)) leftovers.push(p);
   }
-
-  // 3) Fill remaining bench slots
   for (const cand of leftovers) {
     if (bench.length >= size) break;
-    bench.push(cand);
-    pickedSet.add(cand.id);
+    bench.push(cand); pickedSet.add(cand.id);
   }
-
   return bench.slice(0, size);
 }
 
+/* ───────────────── page ───────────────── */
 export async function renderMeta(main){
   const container = utils.el("div");
   container.append(ui.spinner("Building meta…"));
   ui.mount(main, container);
 
   try {
-    // Bootstrap (teams, positions, events)
     const bs = state.bootstrap || await api.bootstrap();
     state.bootstrap = bs;
     const { elements: players, teams, element_types: positions, events } = bs;
 
-    // Maps/helpers
     const teamShort = new Map(teams.map(t=>[t.id, t.short_name]));
     const posShort  = new Map(positions.map(p=>[p.id, p.singular_name_short]));
     const priceM    = (p)=> +(p.now_cost/10).toFixed(1);
 
-    // GW window
-    const finished     = events.filter(e=>e.data_checked);
-    const lastFinished = finished.length ? Math.max(...finished.map(e=>e.id)) : 0;
-    const nextGw       = Math.max(1, lastFinished + 1);
-    let   gwWindowCount = 5; // default; user-adjustable
-    const gwIds = ()=> events.filter(e=>e.id>=nextGw).slice(0, gwWindowCount).map(e=>e.id);
+    // —— GW reference: most recent (current if live, else last finished)
+    const prevEvent = events.find(e=>e.is_previous) || null;
+    const currEvent = events.find(e=>e.is_current)  || null;
+    const lastFinished = prevEvent?.id || 0;
+    const gwRef       = currEvent?.id || lastFinished;         // scan this GW (live-aware)
+    const gwRefIsLive = !!(currEvent && !currEvent.data_checked);
+    const windowStart = gwRef;                                  // xP windows start here
+    let gwWindowCount = 5;
 
-    // Controls
+    const gwIds = ()=> events.filter(e=>e.id>=windowStart).slice(0, gwWindowCount).map(e=>e.id);
+
+    /* ── Controls / header ── */
     container.innerHTML = "";
     const controls = utils.el("div",{class:"card"});
     const header   = utils.el("div",{class:"grid cols-4"});
 
-    // Safe metric node for "Managers (scanned)"
     const managersCountValue = utils.el("div",{class:"metric-value"},"—");
     const managersCountMetric = utils.el("div",{class:"metric"},[
       utils.el("div",{class:"metric-label"},"Managers (scanned)"),
       managersCountValue
     ]);
 
-    header.append(
-      ui.metric("Leagues", (state.leagueIds||[]).length || "—"),
-      managersCountMetric, // direct reference
-      ui.metric("Last Finished GW", lastFinished || "—"),
-      ui.metric("Next GW", nextGw || "—"),
+    const gwBadge = utils.el("span",{class:"chip "+(gwRefIsLive?"chip-accent":""), style:"margin-left:6px"},
+      gwRefIsLive ? `GW ${gwRef} — LIVE` : `GW ${gwRef} — final`
     );
 
-    // Formation segmented control
+    header.append(
+      ui.metric("Leagues", (state.leagueIds||[]).length || "—"),
+      managersCountMetric,
+      ui.metric("GW Reference", `GW ${gwRef}`),
+      ui.metric("Window start", `GW ${windowStart}`),
+    );
+
+    // formation segmented
     const formationWrap = utils.el("div",{class:"segmented"});
     const formationSel  = utils.el("input",{type:"hidden", value:"3-4-3"});
     Object.keys(FORMATIONS).forEach((key, idx)=>{
@@ -104,7 +98,7 @@ export async function renderMeta(main){
       formationWrap.append(b);
     });
 
-    // Window select
+    // window select
     const winSel = utils.el("select",{class:"select"});
     winSel.innerHTML = `
       <option value="3">Window: Next 3 GWs</option>
@@ -118,50 +112,65 @@ export async function renderMeta(main){
         renderDiffsBlock();
         renderCaptainBlock();
         renderScatterBlock();
+        renderExplainerBlock(); // keep explainer synced
       }
     });
 
-    // Pages per league
+    // pages per league
     const pagesSel = utils.el("select",{class:"select"});
     pagesSel.innerHTML = `
       <option value="1" selected>Managers per league: Top 50</option>
       <option value="2">Managers per league: Top 100</option>
     `;
 
+    // starters-only toggle (affects EO counts)
+    const startersOnlyChk = utils.el("label",{class:"row-check"},[
+      utils.el("input",{type:"checkbox", checked:true}),
+      utils.el("span",{class:"tag"}," Starters only (XI meta)")
+    ]);
+
     const rebuildBtn = utils.el("button",{class:"btn-primary", type:"button"},"Rebuild meta");
-    const smallNote  = utils.el("div",{class:"tag"},"Meta uses last finished GW picks; EO is approximate across the union of your leagues.");
+
+    const smallNote  = utils.el("div",{class:"tag"},
+      "Meta scans managers’ picks for the most recent GW (live if in progress). EO = % of scanned managers with the player picked " +
+      "(toggle Starters only to restrict to XI). xP windows start from the reference GW."
+    );
 
     controls.append(
-      utils.el("h3",{},"Meta Controls"), 
+      utils.el("h3",{},"Meta Controls"),
+      utils.el("div",{class:"chips"},[
+        utils.el("span",{class:"chip chip-dim"},"Reference:"), gwBadge
+      ]),
       header,
       utils.el("div",{class:"meta-controls"},[
         utils.el("div",{}, [utils.el("label",{class:"lbl"},"Formation"), formationWrap]),
         utils.el("div",{}, [winSel]),
         utils.el("div",{}, [pagesSel]),
+        utils.el("div",{}, [startersOnlyChk]),
         rebuildBtn
       ]),
       smallNote
     );
 
-    // Blocks to fill
-    const kpisCard      = utils.el("div",{class:"card"});
-    const templateCard  = utils.el("div",{class:"card"});
-    const diffsCard     = utils.el("div",{class:"card"});
-    const captainCard   = utils.el("div",{class:"card"});
-    const ownershipCard = utils.el("div",{class:"card"});
-    const scatterCard   = utils.el("div",{class:"card"});
+    // cards
+    const kpisCard       = utils.el("div",{class:"card"});
+    const explainerCard  = utils.el("div",{class:"card"});     // ← polished explainer
+    const templateCard   = utils.el("div",{class:"card"});
+    const diffsCard      = utils.el("div",{class:"card"});
+    const captainCard    = utils.el("div",{class:"card"});
+    const ownershipCard  = utils.el("div",{class:"card"});
+    const scatterCard    = utils.el("div",{class:"card"});
 
-    // Layout
     const gridTop    = utils.el("div",{class:"grid cols-2"});
     gridTop.append(templateCard, diffsCard);
 
     const gridBottom = utils.el("div",{class:"grid cols-2"});
     gridBottom.append(ownershipCard, scatterCard);
 
-    container.append(controls, kpisCard, gridTop, captainCard, gridBottom);
+    container.append(controls, kpisCard, explainerCard, gridTop, captainCard, gridBottom);
 
-    // ---- Data Build ----
-    let metaData = null; // { entries, ownCount, eoList, yourXI }
+    /* ── Data state ── */
+    let metaData = null; // { entries, ownCount, capCount, eoList, yourXI, missing, diffs, capRows, fieldInfo }
 
     async function buildMeta(){
       kpisCard.innerHTML = "";
@@ -177,8 +186,8 @@ export async function renderMeta(main){
         return;
       }
 
-      // 1) Collect entries across pages
-      let pages = +pagesSel.value; // 1 or 2
+      // 1) Entries across pages
+      const pages = +pagesSel.value;
       const entriesSet = new Set();
       for (const lid of leagues){
         for (let p=1; p<=pages; p++){
@@ -190,18 +199,24 @@ export async function renderMeta(main){
         }
       }
       const entries = Array.from(entriesSet);
-
-      // Update metric via direct node
       managersCountValue.textContent = entries.length;
 
-      // 2) Build ownership by scanning last finished GW picks
+      // 2) Ownership for GW reference (live-aware)
+      const startersOnly = startersOnlyChk.querySelector("input").checked;
       const ownCount = new Map(); // elementId -> count
+      const capCount = new Map(); // elementId -> captain votes
       const progress = utils.el("div",{class:"progress"},[
         utils.el("div",{class:"bar", style:"width:0%"})
       ]);
+
       kpisCard.innerHTML = "";
       kpisCard.append(
         utils.el("h3",{},"Meta Summary"),
+        utils.el("div",{class:"chips", style:"margin-bottom:6px"},[
+          utils.el("span",{class:"summary-chip"}, `Scanning picks for GW ${gwRef} ${gwRefIsLive?"(LIVE)":""}`),
+          utils.el("span",{class:"summary-chip"}, startersOnly ? "Starters only (XI)" : "All 15 (XI+bench)"),
+          utils.el("span",{class:"summary-chip"}, `xP window: GW${windowStart} → next ${gwWindowCount}`)
+        ]),
         utils.el("div",{class:"grid cols-4"},[
           ui.metric("Managers scanned", entries.length.toString()),
           ui.metric("Leagues", leagues.length.toString()),
@@ -210,11 +225,16 @@ export async function renderMeta(main){
         ]),
         progress
       );
+
       let done=0;
       for (const entry of entries){
         try{
-          const picks = await api.entryPicks(entry, Math.max(1,lastFinished));
-          for (const p of (picks.picks||[])) ownCount.set(p.element, (ownCount.get(p.element)||0)+1);
+          const picks = await api.entryPicks(entry, Math.max(1,gwRef));
+          for (const p of (picks.picks||[])) {
+            if (startersOnly && (p.multiplier ?? 0) <= 0) continue;
+            ownCount.set(p.element, (ownCount.get(p.element)||0)+1);
+            if (p.is_captain) capCount.set(p.element, (capCount.get(p.element)||0)+1);
+          }
         }catch{}
         done++;
         progress.querySelector(".bar").style.width = `${Math.round((done/entries.length)*100)}%`;
@@ -234,14 +254,14 @@ export async function renderMeta(main){
         eo: (100*(ownCount.get(p.id)||0)/total)
       })).sort((a,b)=> b.eo - a.eo);
 
-      // 4) Your XI (last finished)
+      // 4) Your XI = your current GW picks (live-aware)
       const byId = new Map(players.map(p=>[p.id,p]));
       let yourXI = [];
       if (state.entryId){
         try {
-          const you = await api.entryPicks(state.entryId, Math.max(1,lastFinished));
+          const you = await api.entryPicks(state.entryId, Math.max(1,gwRef));
           yourXI = you.picks
-            .filter(pk => pk.multiplier > 0) // starters (position 1..11)
+            .filter(pk => pk.multiplier > 0)
             .sort((a,b)=>a.position-b.position)
             .map(pk=>{
               const pl = byId.get(pk.element);
@@ -260,49 +280,42 @@ export async function renderMeta(main){
         } catch {}
       }
 
-      metaData = { entries, ownCount, eoList, yourXI };
+      metaData = { entries, ownCount, capCount, eoList, yourXI, missing: [], diffs: [], capRows: [], fieldInfo: null };
       await Promise.all([
         renderTemplateBlock(),
-        renderDiffsBlock(),
-        renderCaptainBlock(),
+        renderDiffsBlock(),     // populates missing/diffs
+        renderCaptainBlock(),   // populates capRows/fieldInfo
         renderOwnershipBlock(),
         renderScatterBlock()
       ]);
+      await renderExplainerBlock(); // after others so it can reference results
     }
 
-    // ------- Template XI -------
+    /* ── Template XI ── */
     async function renderTemplateBlock(){
       templateCard.innerHTML = "";
       templateCard.append(ui.spinner("Assembling Template XI…"));
 
       const { eoList } = metaData;
       const formation = formationSel.value;
-
-      // Split by position
       const byPos = { GKP:[], DEF:[], MID:[], FWD:[] };
-      for (const e of eoList){
-        if (byPos[e.pos]) byPos[e.pos].push(e);
-      }
+      for (const e of eoList) if (byPos[e.pos]) byPos[e.pos].push(e);
 
-      // Build XI by formation (highest EO per position)
       const xi = [];
       const picked = new Set();
-
       const want = FORMATIONS[formation];
       const takeTop = (arr, n) => arr.slice(0, n);
 
       for (const [posKey, count] of Object.entries(want)) {
-        if (posKey === "GKP" || posKey === "DEF" || posKey === "MID" || posKey === "FWD") {
+        if (byPos[posKey]) {
           const chosen = takeTop(byPos[posKey], count);
           xi.push(...chosen);
           chosen.forEach(p => picked.add(p.id));
         }
       }
-
-      // Bench: 1 GK + 3 best leftovers by EO (any position)
       const bench = pickBench(byPos, picked, 4);
 
-      // xP window for XI (and per player)
+      // xP window for XI
       const gwIdsArr = gwIds();
       const byId = new Map(state.bootstrap.elements.map(p=>[p.id,p]));
       let teamXP = 0;
@@ -313,25 +326,29 @@ export async function renderMeta(main){
           const res = await xPWindow(pl, gwIdsArr);
           r._xp = res.total;
         }catch{ r._xmins = 0; r._xp = 0; }
-        await utils.sleep(15);
+        await utils.sleep(12);
         teamXP += r._xp || 0;
       }
 
       templateCard.innerHTML = "";
       templateCard.append(
         utils.el("h3",{},`Template XI — ${formation}`),
+        utils.el("div",{class:"chips", style:"margin-bottom:6px"},[
+          utils.el("span",{class:"summary-chip"}, `Reference: GW ${gwRef}${gwRefIsLive?" (LIVE)":" (final)"}`),
+          utils.el("span",{class:"summary-chip"}, `Window: next ${gwIdsArr.length} from GW${windowStart}`)
+        ]),
         utils.el("div",{class:"grid cols-2"},[
-          ui.metric(`Template XI xP (next ${gwIdsArr.length})`, teamXP.toFixed(1)),
+          ui.metric(`Template XI xP`, teamXP.toFixed(1)),
           ui.metric("Bench strength (EO avg)", (bench.reduce((a,b)=>a+b.eo,0)/Math.max(1,bench.length)).toFixed(1)+"%"),
         ])
       );
 
       const cols = [
-        { header:"#", accessor:(_,i)=>i+1, sortBy:(_,i)=>i },
+        { header:"#", accessor:(_,i)=>i+1 },
         { header:"Name", accessor:r=>r.name, sortBy:r=>r.name },
         { header:"Pos", accessor:r=>r.pos, sortBy:r=>r.pos },
         { header:"Team", accessor:r=>r.team, sortBy:r=>r.team },
-        { header:"Price", accessor:r=>r.price, cell:r=>`£${r.price.toFixed(1)}m`, sortBy:r=>r.price },
+        { header:"£m", accessor:r=>r.price, cell:r=>`£${r.price.toFixed(1)}m`, sortBy:r=>r.price },
         { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo.toFixed(1)}%`, sortBy:r=>r.eo },
         { header:"xMins", cell:r=>{
             const v = r._xmins||0; const r90=v/90;
@@ -350,13 +367,13 @@ export async function renderMeta(main){
           { header:"Pos", accessor:r=>r.pos },
           { header:"Team", accessor:r=>r.team },
           { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo.toFixed(1)}%` },
-          { header:"Price", accessor:r=>r.price, cell:r=>`£${r.price.toFixed(1)}m` },
+          { header:"£m", accessor:r=>r.price, cell:r=>`£${r.price.toFixed(1)}m` },
         ];
         templateCard.append(utils.el("h4",{},"Bench"), ui.table(benchCols, bench));
       }
     }
 
-    // ------- Diffs: Template vs You -------
+    /* ── Template vs You ── */
     async function renderDiffsBlock(){
       diffsCard.innerHTML = "";
       diffsCard.append(ui.spinner("Comparing with your XI…"));
@@ -365,7 +382,6 @@ export async function renderMeta(main){
       const byId = new Map(eoList.map(e=>[e.id, e]));
       const yourIds = new Set((yourXI||[]).map(x=>x.id));
 
-      // Template XI ids (recompute same way)
       const formation = formationSel.value;
       const want = FORMATIONS[formation];
       const byPos = { GKP:[], DEF:[], MID:[], FWD:[] };
@@ -378,51 +394,48 @@ export async function renderMeta(main){
       ].map(x=>x.id);
       const tplSet = new Set(xiIds);
 
-      const missing = xiIds
-        .filter(id=>!yourIds.has(id))
-        .map(id=>byId.get(id));
-
+      const missing = xiIds.filter(id=>!yourIds.has(id)).map(id=>byId.get(id));
       const diffs = (yourXI||[])
         .filter(x=>!tplSet.has(x.id))
-        .map(x=>({
-          id: x.id, name: x.name, team: x.team, pos: x.pos, price: x.price,
-          eo: byId.get(x.id)?.eo || 0
-        }));
+        .map(x=>({ id:x.id, name:x.name, team:x.team, pos:x.pos, price:x.price, eo: byId.get(x.id)?.eo || 0 }));
 
-      // Compute xP window for those lists (kept small)
-      const windowIds = gwIds();
+      // xP (small lists)
+      const windowIdsArr = gwIds();
       const fullPlayersMap = new Map(state.bootstrap.elements.map(p=>[p.id,p]));
       for (const list of [missing, diffs]){
         for (const r of list){
           try{
             const pl = fullPlayersMap.get(r.id);
-            const res = await xPWindow(pl, windowIds);
-            r._xp = res.total;
+            r._xp = (await xPWindow(pl, windowIdsArr)).total;
           }catch{ r._xp = 0; }
-          await utils.sleep(20);
+          await utils.sleep(12);
         }
       }
 
+      // expose for explainer
+      metaData.missing = missing.slice(0,12);
+      metaData.diffs   = diffs.slice(0,12);
+
       diffsCard.innerHTML = "";
-      diffsCard.append(utils.el("h3",{},"Template vs You (priority targets & differentials)"));
+      diffsCard.append(utils.el("h3",{},"Template vs You (targets & differentials)"));
 
       const left = ui.table([
         { header:"#", accessor:(_,i)=>i+1 },
-        { header:"High-EO You’re Missing", accessor:r=>r.name, sortBy:r=>r.name },
+        { header:"High-EO You’re Missing", accessor:r=>r.name },
         { header:"Pos", accessor:r=>r.pos },
         { header:"Team", accessor:r=>r.team },
-        { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo.toFixed(1)}%`, sortBy:r=>r.eo },
-        { header:`xP (next ${windowIds.length})`, accessor:r=>r._xp, cell:r=>r._xp.toFixed(2), sortBy:r=>r._xp }
-      ], missing.slice(0,12));
+        { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo.toFixed(1)}%` },
+        { header:`xP (next ${windowIdsArr.length})`, accessor:r=>r._xp, cell:r=>r._xp.toFixed(2) }
+      ], metaData.missing);
 
       const right = ui.table([
         { header:"#", accessor:(_,i)=>i+1 },
-        { header:"Your Differentials", accessor:r=>r.name, sortBy:r=>r.name },
+        { header:"Your Differentials", accessor:r=>r.name },
         { header:"Pos", accessor:r=>r.pos },
         { header:"Team", accessor:r=>r.team },
-        { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo.toFixed(1)}%`, sortBy:r=>r.eo },
-        { header:`xP (next ${windowIds.length})`, accessor:r=>r._xp, cell:r=>r._xp.toFixed(2), sortBy:r=>r._xp }
-      ], diffs.slice(0,12));
+        { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo.toFixed(1)}%` },
+        { header:`xP (next ${windowIdsArr.length})`, accessor:r=>r._xp, cell:r=>r._xp.toFixed(2) }
+      ], metaData.diffs);
 
       const grid = utils.el("div",{class:"grid cols-2"});
       grid.append(
@@ -432,25 +445,31 @@ export async function renderMeta(main){
       diffsCard.append(grid);
     }
 
-    // ------- Captaincy EV -------
+    /* ── Captaincy EV (field from most-captained in leagues) ── */
     async function renderCaptainBlock(){
       captainCard.innerHTML = "";
       captainCard.append(ui.spinner("Computing captaincy edges…"));
 
-      const { yourXI, eoList } = metaData;
+      const { yourXI, eoList, capCount } = metaData;
       if (!yourXI?.length){
         captainCard.innerHTML="";
         captainCard.append(
           utils.el("h3",{},"Captaincy EV"),
           utils.el("div",{class:"tag"},"Set your Entry ID to compute squad-based captaincy edges.")
         );
+        metaData.capRows = []; metaData.fieldInfo = null;
         return;
       }
 
-      // Field captain: highest EO player overall (proxy)
-      const field = eoList[0];
+      // Field captain = most captained across scanned managers for gwRef
+      let fieldId = null, fieldVotes = -1;
+      for (const [id,ct] of capCount.entries()){
+        if (ct > fieldVotes){ fieldVotes = ct; fieldId = id; }
+      }
+      const field = fieldId
+        ? eoList.find(e=>e.id===fieldId) || { id: fieldId, name:"#"+fieldId, team:"?" }
+        : eoList[0];
 
-      // Your top 5 captain options by xP next GW
       const nextOnly = [gwIds()[0]];
       const fullPlayersMap = new Map(state.bootstrap.elements.map(p=>[p.id,p]));
       const yourWithXp = [];
@@ -462,20 +481,19 @@ export async function renderMeta(main){
         } catch {
           yourWithXp.push({ ...r, xp: 0, eo: 0 });
         }
-        await utils.sleep(15);
+        await utils.sleep(10);
       }
       yourWithXp.sort((a,b)=> b.xp - a.xp);
       const top5 = yourWithXp.slice(0,5);
 
-      // Field EV
       let fieldXP = 0;
       try { fieldXP = (await xPWindow(fullPlayersMap.get(field.id), nextOnly)).total; } catch {}
-      const fieldEO = field.eo/100;
+      const fieldEOapprox = (eoList.find(e=>e.id===field.id)?.eo || 0)/100;
 
       const rows = top5.map(c=>{
         const yourEV = 2 * (c.xp||0);
         const fieldEV = 2 * fieldXP;
-        const edge = (yourEV - fieldEV) * (1 - fieldEO);
+        const edge = (yourEV - fieldEV) * (1 - fieldEOapprox);
         return {
           name: c.name, team: c.team, pos: c.pos, xp: c.xp||0, yourEV, fieldEV, edge,
           eo: c.eo
@@ -485,9 +503,13 @@ export async function renderMeta(main){
       captainCard.innerHTML = "";
       captainCard.append(
         utils.el("h3",{},"Captaincy — Your Edge vs Field"),
+        utils.el("div",{class:"chips", style:"margin-bottom:6px"},[
+          utils.el("span",{class:"summary-chip"}, `Field captain: ${field.name} (${field.team})`),
+          utils.el("span",{class:"summary-chip"}, `Reference: GW ${gwRef}${gwRefIsLive?" (LIVE)":" (final)"}`)
+        ]),
         utils.el("div",{class:"grid cols-3"},[
-          ui.metric("Field Captain (proxy)", `${field.name} (${field.team})`),
-          ui.metric("Field EO (approx)", `${field.eo.toFixed(1)}%`),
+          ui.metric("Field votes", String(Math.max(0, fieldVotes))),
+          ui.metric("Field EO (approx)", `${(fieldEOapprox*100).toFixed(1)}%`),
           ui.metric("Field EV (2×xP)", (2*fieldXP).toFixed(2)),
         ])
       );
@@ -497,16 +519,25 @@ export async function renderMeta(main){
         { header:"Your pick", accessor:r=>r.name },
         { header:"Team", accessor:r=>r.team },
         { header:"Pos", accessor:r=>r.pos },
-        { header:"xP (next GW)", accessor:r=>r.xp, cell:r=>r.xp.toFixed(2), sortBy:r=>r.xp },
-        { header:"Your EV (2×xP)", accessor:r=>r.yourEV, cell:r=>r.yourEV.toFixed(2), sortBy:r=>r.yourEV },
-        { header:"Field EV", accessor:r=>r.fieldEV, cell:r=>r.fieldEV.toFixed(2), sortBy:r=>r.fieldEV },
-        { header:"Edge vs Field", accessor:r=>r.edge, cell:r=> (r.edge>=0?"+":"")+r.edge.toFixed(2), sortBy:r=>r.edge },
+        { header:"xP (next GW)", accessor:r=>r.xp, cell:r=>r.xp.toFixed(2) },
+        { header:"Your EV (2×xP)", accessor:r=>r.yourEV, cell:r=>r.yourEV.toFixed(2) },
+        { header:"Field EV", accessor:r=>r.fieldEV, cell:r=>r.fieldEV.toFixed(2) },
+        { header:"Edge vs Field", accessor:r=>r.edge, cell:r=> (r.edge>=0?"+":"")+r.edge.toFixed(2) },
         { header:"Your EO", accessor:r=>r.eo, cell:r=> `${r.eo.toFixed(1)}%` }
       ];
       captainCard.append(ui.table(cols, rows));
+
+      // expose for explainer
+      metaData.capRows  = rows;
+      metaData.fieldInfo = {
+        name: field.name, team: field.team,
+        votes: Math.max(0, fieldVotes),
+        ev: (2*fieldXP),
+        eo: (fieldEOapprox*100)
+      };
     }
 
-    // ------- Ownership Top20 -------
+    /* ── Ownership Top20 ── */
     async function renderOwnershipBlock(){
       ownershipCard.innerHTML = "";
       ownershipCard.append(ui.spinner("Rendering meta ownership…"));
@@ -514,7 +545,11 @@ export async function renderMeta(main){
       const top = eoList.slice(0,20);
       const canvas = utils.el("canvas");
       ownershipCard.innerHTML = "";
-      ownershipCard.append(utils.el("h3",{},"Top 20 by Meta Ownership"), canvas);
+      ownershipCard.append(
+        utils.el("h3",{},"Top 20 by Meta Ownership"),
+        utils.el("div",{class:"tag", style:"margin:6px 0"}, `Reference: GW ${gwRef}${gwRefIsLive?" (LIVE)":" (final)"} — ${top.length} shown`),
+        canvas
+      );
       const cfg = {
         type: "bar",
         data: {
@@ -530,38 +565,39 @@ export async function renderMeta(main){
       await ui.chart(canvas, cfg);
     }
 
-    // ------- EO vs xP Scatter (top 60 by EO) -------
+    /* ── EO vs xP Scatter (top 60 by EO) ── */
     async function renderScatterBlock(){
       scatterCard.innerHTML = "";
       scatterCard.append(ui.spinner("Computing EO vs xP scatter…"));
       const { eoList } = metaData;
-      const pool = eoList.slice(0,60); // limit compute
+      const pool = eoList.slice(0,60);
       const gwIdsArr = gwIds();
       const byId = new Map(state.bootstrap.elements.map(p=>[p.id,p]));
       const ds = [];
       for (const r of pool){
         try{
           const xp = await xPWindow(byId.get(r.id), gwIdsArr);
-          ds.push({
-            x: r.eo, y: xp.total, label: `${r.name} (${r.team})`,
-            pos: r.posId
-          });
+          ds.push({ x: r.eo, y: xp.total, label: `${r.name} (${r.team})`, pos: r.posId });
         }catch{
           ds.push({ x: r.eo, y: 0, label: `${r.name} (${r.team})`, pos: r.posId });
         }
-        await utils.sleep(12);
+        await utils.sleep(10);
       }
       const colors = {1:"#60a5fa", 2:"#34d399", 3:"#f472b6", 4:"#f59e0b"};
 
       scatterCard.innerHTML = "";
       const canvas = utils.el("canvas");
-      scatterCard.append(utils.el("h3",{},"EO vs xP (next window)"), canvas);
+      scatterCard.append(
+        utils.el("h3",{},"EO vs xP (window)"),
+        utils.el("div",{class:"tag", style:"margin:6px 0"}, `Window: next ${gwIdsArr.length} from GW${windowStart}`),
+        canvas
+      );
       const cfg = {
         type:"scatter",
         data:{ datasets:[{
           data: ds,
           parsing:false,
-          pointRadius: (ctx)=> 3 + Math.sqrt(ctx.raw.x||0)/2, // bigger by EO
+          pointRadius: (ctx)=> 3 + Math.sqrt(ctx.raw.x||0)/2,
           pointHoverRadius:(ctx)=> 6 + Math.sqrt(ctx.raw.x||0)/2,
           pointBackgroundColor:(ctx)=> colors[ctx.raw.pos] || "#93c5fd"
         }]},
@@ -579,7 +615,111 @@ export async function renderMeta(main){
       await ui.chart(canvas, cfg);
     }
 
-    // Kickoff: initial build + button re-run
+    /* ── POLISHED EXPLAINER ── */
+    async function renderExplainerBlock(){
+      const { eoList, missing, diffs, capRows, fieldInfo, yourXI } = metaData || {};
+      explainerCard.innerHTML = "";
+
+      // helper: compact table
+      const miniTable = (cols, rows)=>{
+        const tbl = ui.table(cols, rows);
+        tbl.style.fontSize = "13px";
+        tbl.style.marginTop = "6px";
+        return tbl;
+      };
+
+      // build quick datasets
+      const coreTop   = (eoList||[]).slice(0,5).map(p => ({
+        name: p.name, team: p.team, eo: +p.eo.toFixed(1)
+      }));
+      const missTop   = (missing||[]).slice(0,5).map(m => ({
+        name: m.name, team: m.team, eo: +m.eo.toFixed(1), xp: +(m._xp||0).toFixed(2)
+      }));
+      const diffTop   = (diffs||[]).slice(0,5).map(d => ({
+        name: d.name, team: d.team, eo: +d.eo.toFixed(1), xp: +(d._xp||0).toFixed(2)
+      }));
+      const capBest   = (capRows||[])[0] || null;
+
+      // header chips
+      const chips = utils.el("div",{class:"chips", style:"margin-bottom:8px"},[
+        utils.el("span",{class:"chip chip-accent"}, gwRefIsLive ? `GW ${gwRef} LIVE` : `GW ${gwRef} final`),
+        utils.el("span",{class:"chip"}, `Window: next ${gwWindowCount} from GW${windowStart}`),
+        utils.el("span",{class:"chip"}, yourXI?.length ? `Your XI detected (${yourXI.length})` : "No Entry ID set")
+      ]);
+
+      // left column (template core + missing)
+      const leftCol = utils.el("div",{style:"min-width:0"});
+      leftCol.append(
+        utils.el("h4",{},"Template core (Top 5 by EO)"),
+        miniTable(
+          [
+            { header:"Player", accessor:r=>`${r.name} (${r.team})`, sortBy:r=>r.name },
+            { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo}%`, sortBy:r=>r.eo }
+          ],
+          coreTop
+        ),
+        utils.el("div",{style:"height:10px"}),
+        utils.el("h4",{},"You’re missing (cover for safety)"),
+        miniTable(
+          [
+            { header:"Player", accessor:r=>`${r.name} (${r.team})`, sortBy:r=>r.name },
+            { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo}%`, sortBy:r=>r.eo },
+            { header:"xP (win)", accessor:r=>r.xp, cell:r=>r.xp.toFixed?.(2) ?? r.xp }
+          ],
+          missTop.length ? missTop : []
+        )
+      );
+
+      // right column (your differentials + captain card)
+      const rightCol = utils.el("div",{style:"min-width:0"});
+      const capCard = utils.el("div",{class:"card", style:"padding:10px; margin-bottom:8px"});
+      capCard.append(
+        utils.el("div",{class:"b"}, "Captain edge"),
+        capBest
+          ? utils.el("div",{class:"chips", style:"margin-top:6px"},[
+              utils.el("span",{class:"chip chip-accent"}, `${capBest.name}`),
+              utils.el("span",{class:"chip"}, `Edge: ${(capBest.edge>=0?"+":"")}${capBest.edge.toFixed(2)} EV`),
+              utils.el("span",{class:"chip chip-dim"}, `vs field ${fieldInfo?.name || "—"} (${(fieldInfo?.eo||0).toFixed?.(1)||"0.0"}% EO)`)
+            ])
+          : utils.el("div",{class:"tag", style:"margin-top:6px"},"Set your Entry ID to compute captain EV.")
+      );
+
+      rightCol.append(
+        capCard,
+        utils.el("h4",{},"Your differentials (keep if form/fixtures OK)"),
+        miniTable(
+          [
+            { header:"Player", accessor:r=>`${r.name} (${r.team})`, sortBy:r=>r.name },
+            { header:"EO", accessor:r=>r.eo, cell:r=>`${r.eo}%`, sortBy:r=>r.eo },
+            { header:"xP (win)", accessor:r=>r.xp, cell:r=>r.xp.toFixed?.(2) ?? r.xp }
+          ],
+          diffTop.length ? diffTop : []
+        )
+      );
+
+      // glossary (3 cols)
+      const glossary = utils.el("div",{class:"grid cols-3", style:"margin-top:10px"});
+      const g = (title,desc)=> utils.el("div",{class:"card", style:"padding:10px"},[
+        utils.el("div",{class:"b"},title),
+        utils.el("div",{class:"small", style:"margin-top:4px"},desc)
+      ]);
+      glossary.append(
+        g("EO (Effective Ownership)","Share of scanned managers who picked a player this GW. High EO = popular; low EO = differential."),
+        g("xP (Expected Points)","Model estimate over the next window starting from the reference GW (updated by the window selector)."),
+        g("Captain EV","Your captain’s expected value vs the field’s most common captain (positive = edge).")
+      );
+
+      // mount
+      explainerCard.append(
+        utils.el("h3",{},"Meta explainer (at a glance)"),
+        chips,
+        utils.el("div",{class:"grid cols-2"},[leftCol, rightCol]),
+        utils.el("h4",{style:"margin-top:12px"},"Glossary"),
+        glossary
+      );
+    }
+
+    // Kickoff
     rebuildBtn.addEventListener("click", buildMeta);
     await buildMeta();
 

@@ -6,12 +6,19 @@ import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 
-/* ---------- small helpers ---------- */
+/* ---------- helpers ---------- */
 const FORMATIONS = ["3-4-3","3-5-2","4-4-2","4-3-3","5-4-1"];
 
 function parseFormation(f){
   const [d,m,fw] = f.split("-").map(n=>+n);
   return { GKP:1, DEF:d, MID:m, FWD:fw };
+}
+function inferFormationFromXI(list){
+  const d = list.filter(p=>p.isStart&&p.pos==="DEF").length;
+  const m = list.filter(p=>p.isStart&&p.pos==="MID").length;
+  const f = list.filter(p=>p.isStart&&p.pos==="FWD").length;
+  const fstr = `${d}-${m}-${f}`;
+  return FORMATIONS.includes(fstr) ? fstr : null;
 }
 function badgeXMins(val){
   const b = utils.el("span",{class:"badge"},"—");
@@ -21,7 +28,12 @@ function badgeXMins(val){
   b.dataset.tooltip = `Projected ${Math.round(val||0)}'`;
   return b;
 }
-function money(n){ return `£${(+n).toFixed(1)}m`; }
+const money = n => `£${(+n).toFixed(1)}m`;
+function clubCounts(list){
+  const m = new Map();
+  list.forEach(p => m.set(p.teamId, (m.get(p.teamId)||0) + 1));
+  return m;
+}
 
 /* ---------- page ---------- */
 
@@ -38,19 +50,35 @@ export async function renderPlanner(main){
     const teamById = new Map(teams.map(t=>[t.id,t]));
     const posById  = new Map(positions.map(p=>[p.id,p.singular_name_short]));
 
-    const finished = events.filter(e=>e.data_checked);
-    const lastFinished = finished.length ? Math.max(...finished.map(e=>e.id)) : 0;
-    const nextGw = Math.max(1, lastFinished + 1);
+    // Work out planner target GW = next (is_next), not current
+    const prevEvent = events.find(e=>e.is_previous) || null;
+    const currEvent = events.find(e=>e.is_current)  || null;
+    const nextEvent = events.find(e=>e.is_next)     || null;
+
+    const lastFinished = prevEvent?.id || (events.filter(e=>e.data_checked).map(e=>e.id).pop() ?? 0);
+    const planGw = nextEvent?.id ?? (currEvent ? currEvent.id + 1 : (lastFinished ? lastFinished + 1 : 1));
+    const maxGw  = Math.max(...events.map(e=>e.id));
+    const planGwClamped = Math.min(planGw, maxGw); // safety at season end
 
     if (!state.entryId){
       ui.mount(main, utils.el("div",{class:"card"},"Enter your Entry ID (left sidebar) to use the planner."));
       return;
     }
 
-    const [profile, hist, picks] = await Promise.all([
+    // Try picks for the planning GW; fall back to current or last finished
+    let picks = null;
+    const tryGws = [planGwClamped, currEvent?.id, lastFinished].filter(Boolean);
+    for (const gw of tryGws){
+      try { picks = await api.entryPicks(state.entryId, gw); if (picks?.picks?.length) break; } catch {}
+    }
+    if (!picks?.picks?.length){
+      ui.mount(main, ui.error("Planner couldn’t fetch your picks for planning or fallback GWs."));
+      return;
+    }
+
+    const [profile, hist] = await Promise.all([
       api.entry(state.entryId),
       api.entryHistory(state.entryId),
-      api.entryPicks(state.entryId, Math.max(1,lastFinished))
     ]);
 
     const bank0 = (hist.current.find(h=>h.event===lastFinished)?.bank || 0)/10;
@@ -86,12 +114,12 @@ export async function renderPlanner(main){
 
     /* ---------- header ---------- */
     const head = utils.el("div",{class:"card"},[
-      utils.el("h3",{},"Transfer Planner"),
+      utils.el("h3",{},"Next-GW Planner"),
       utils.el("div",{class:"chips"},[
         utils.el("span",{class:"chip"},`Manager: ${profile.player_first_name} ${profile.player_last_name}`),
         utils.el("span",{class:"chip chip-accent", id:"bankChip"},`Bank: ${money(bank)}`),
-        utils.el("span",{class:"chip"},`Next GW: ${nextGw}`),
-        utils.el("span",{class:"chip"},"Window:"),
+        utils.el("span",{class:"chip"},`Plan for: GW${planGwClamped}`),
+        utils.el("span",{class:"chip"},"Window:")
       ])
     ]);
     const windowSel = utils.el("select");
@@ -100,42 +128,77 @@ export async function renderPlanner(main){
       <option value="3">Next 3</option>
       <option value="5" selected>Next 5</option>
       <option value="8">Next 8</option>`;
-    windowSel.addEventListener("change", ()=>{ windowLen = +windowSel.value; recalcBoard(); });
-
+    windowSel.addEventListener("change", ()=>{ windowLen = +windowSel.value; recalcBoard(true); });
     head.querySelector(".chips").append(windowSel);
+
     shell.innerHTML = "";
     shell.append(head);
 
     /* ---------- layout ---------- */
     const grid = utils.el("div",{class:"grid cols-2"});
-    const boardCard = utils.el("div",{class:"card"});
-    const buildCard = utils.el("div",{class:"card"});
-    grid.append(boardCard, buildCard);
+    const leftCol  = utils.el("div",{class:"col"});
+    const rightCol = utils.el("div",{class:"col"});
     shell.append(grid);
+    grid.append(leftCol, rightCol);
 
-    /* ---------- board ---------- */
+    /* ---------- Left: Board + Recommender ---------- */
+    const boardCard = utils.el("div",{class:"card"});
+    const recommendCard = utils.el("div",{class:"card"});
+    leftCol.append(boardCard, recommendCard);
+
+    // formation switch
     const formationSel = utils.el("select");
     formationSel.innerHTML = FORMATIONS.map(f=>`<option value="${f}" ${f===formation?"selected":""}>${f}</option>`).join("");
-    formationSel.addEventListener("change", ()=>{
-      formation = formationSel.value;
-      enforceFormation();
-      recalcBoard();
-    });
-
-    const boardHeader = utils.el("div",{},[
-      utils.el("h3",{},"Your Squad Board"),
-      utils.el("div",{class:"board-controls"},[
-        utils.el("div",{},[utils.el("span",{class:"lbl"},"Formation"), formationSel]),
-        utils.el("div",{},[utils.el("span",{class:"lbl"},"Window (same as above)"), utils.el("div",{class:"tag"},"Use the header selector")])
-      ])
-    ]);
+    formationSel.addEventListener("change", ()=>{ formation = formationSel.value; enforceFormation(); recalcBoard(); });
 
     const boardTotals = utils.el("div",{class:"chips"});
     const boardXI = utils.el("div");
     const boardBench = utils.el("div");
-    boardCard.append(boardHeader, utils.el("div",{class:"mt-8"},boardTotals), boardXI, utils.el("h4",{class:"mt-8"},"Bench"), boardBench);
 
-    /* ---------- builder ---------- */
+    boardCard.append(
+      utils.el("h3",{},"Your Squad Board"),
+      utils.el("div",{class:"board-controls"},[
+        utils.el("div",{},[utils.el("span",{class:"lbl"},"Formation"), formationSel]),
+        utils.el("div",{},[utils.el("span",{class:"lbl"},"Window"), windowSel])
+      ]),
+      utils.el("div",{class:"mt-8"},boardTotals),
+      boardXI,
+      utils.el("h4",{class:"mt-8"},"Bench"),
+      boardBench
+    );
+
+    // Recommender (Best XI for plan GW)
+    const bestFormChip = utils.el("span",{class:"chip"});
+    const bestXIChip   = utils.el("span",{class:"chip chip-accent"});
+    const bestDeltaChip= utils.el("span",{class:"chip"});
+    const benchCard    = utils.el("div",{class:"mt-8"});
+    const capCard      = utils.el("div",{class:"mt-8"});
+
+    const applyBestBtn = utils.el("button",{class:"btn-primary"},"Apply recommended XI");
+    applyBestBtn.addEventListener("click", ()=>{
+      if (!lastBestXI) return;
+      formation = lastBestXI.formation;
+      formationSel.value = formation;
+      squad.forEach(p => p.isStart = !!lastBestXI.xiIds.has(p.id));
+      enforceFormation();
+      recalcBoard();
+    });
+
+    recommendCard.append(
+      utils.el("h3",{},"Recommended XI — Next GW"),
+      utils.el("div",{class:"chips"},[bestFormChip, bestXIChip, bestDeltaChip]),
+      benchCard,
+      capCard,
+      utils.el("div",{class:"mt-8"}, applyBestBtn)
+    );
+
+    /* ---------- Right: Transfer Builder & Suggestions ---------- */
+    const buildCard = utils.el("div",{class:"card"});
+    const suggestCard = utils.el("div",{class:"card"}, [utils.el("h4",{},"One-for-one scout")]);
+    const recsCard    = utils.el("div",{class:"card"}, [utils.el("h4",{},"Top 3 (1 FT)")]);
+    const planCard    = utils.el("div",{class:"card"}, [utils.el("h4",{},"Plan Summary")]);
+    rightCol.append(buildCard, suggestCard, recsCard, planCard);
+
     const outSel = utils.el("select");
     const posSel = utils.el("select");
     posSel.innerHTML = `<option value="">Any position</option>`+positions.map(p=>`<option value="${p.id}">${p.singular_name_short}</option>`).join("");
@@ -165,53 +228,34 @@ export async function renderPlanner(main){
       ])
     );
 
-    const suggestCard = utils.el("div",{class:"card"}, [utils.el("h4",{},"Suggestions")]);
-    const recsCard    = utils.el("div",{class:"card"}, [utils.el("h4",{},"Recommendations (Top 3)")]);
-    const planCard    = utils.el("div",{class:"card"}, [utils.el("h4",{},"Plan Summary")]);
-    buildCard.append(suggestCard, recsCard, planCard);
-
-    /* ---------- utils ---------- */
+    /* ---------- core utils ---------- */
     function refreshOutSel(){
       outSel.innerHTML = squad
         .map(s=>`<option value="${s.id}">${s.name} — ${s.pos} ${s.team} (${s.isStart?"XI":"Bench"}, ${money(s.price)})</option>`)
         .join("");
     }
-    function clubCounts(list){
-      const m = new Map();
-      list.forEach(p => m.set(p.teamId, (m.get(p.teamId)||0) + 1));
-      return m;
-    }
     function enforceFormation(){
       const need = parseFormation(formation);
-      // bench extras per position
       ["GKP","DEF","MID","FWD"].forEach(k=>{
         const cap = need[k];
         const cur = squad.filter(p=>p.isStart && p.pos===k);
-        if (cur.length > cap){
-          cur.slice(cap).forEach(p => p.isStart=false);
-        }
+        if (cur.length > cap) cur.slice(cap).forEach(p => p.isStart=false);
       });
-      // ensure 11 starters if possible
       while (squad.filter(p=>p.isStart).length < 11){
         const pick = squad.find(p=>!p.isStart);
         if (!pick) break;
-        const cap = need[pick.pos];
+        const cap = parseFormation(formation)[pick.pos];
         const cur = squad.filter(x=>x.isStart && x.pos===pick.pos).length;
         if (cur < cap) pick.isStart = true; else break;
       }
     }
-    function inferFormationFromXI(list){
-      const d = list.filter(p=>p.isStart&&p.pos==="DEF").length;
-      const m = list.filter(p=>p.isStart&&p.pos==="MID").length;
-      const f = list.filter(p=>p.isStart&&p.pos==="FWD").length;
-      const fstr = `${d}-${m}-${f}`;
-      return FORMATIONS.includes(fstr) ? fstr : null;
-    }
 
-    async function recalcBoard(){
-      const wins = events.filter(e=>e.id>=nextGw).slice(0,windowLen).map(e=>e.id);
+    // All xP windows start at planGwClamped
+    async function recalcBoard(recomputeXP=false){
+      const wins = events.filter(e=>e.id>=planGwClamped).slice(0,windowLen).map(e=>e.id);
+
       for (const s of squad){
-        if (s._xpNext == null || s._xpWin == null || s._winLen !== windowLen){
+        if (recomputeXP || s._xpNext == null || s._xpWin == null || s._winLen !== windowLen){
           try{
             const pl = byId.get(s.id);
             s._xmins = await estimateXMinsForPlayer(pl);
@@ -223,24 +267,37 @@ export async function renderPlanner(main){
           }catch{
             s._xmins = 0; s._xpNext = 0; s._xpWin = 0; s._winLen = windowLen;
           }
-          await utils.sleep(10);
+          await utils.sleep(8);
         }
       }
 
+      renderBoard();
+      await renderRecommendations();
+      renderPlanSummary();
+      refreshOutSel();
+
+      const bankChip = document.getElementById("bankChip");
+      if (bankChip) bankChip.textContent = `Bank: ${money(bank)}`;
+      const bankChip2 = document.getElementById("bankChip2");
+      if (bankChip2) bankChip2.textContent = `Bank: ${money(bank)}`;
+    }
+
+    function sumXPNext(list){ return list.reduce((a,b)=>a+(b._xpNext||0),0); }
+    function sumXPWin (list){ return list.reduce((a,b)=>a+(b._xpWin ||0),0); }
+
+    function renderBoard(){
       const xi = squad.filter(p=>p.isStart);
       const bench = squad.filter(p=>!p.isStart);
-      const sum = arr => arr.reduce((a,b)=>a+(b._xpNext||0),0);
-      const sumW = arr => arr.reduce((a,b)=>a+(b._xpWin||0),0);
 
       boardTotals.innerHTML = "";
       boardTotals.append(
-        utils.el("span",{class:"chip chip-accent"},`XI xP (Next): ${sum(xi).toFixed(2)}`),
-        utils.el("span",{class:"chip"},`XI xP (Next ${windowLen}): ${sumW(xi).toFixed(2)}`),
-        utils.el("span",{class:"chip"},`Bench xP (Next): ${sum(bench).toFixed(2)}`)
+        utils.el("span",{class:"chip chip-accent"},`XI xP (Next): ${sumXPNext(xi).toFixed(2)}`),
+        utils.el("span",{class:"chip"},`XI xP (Next ${windowLen}): ${sumXPWin(xi).toFixed(2)}`),
+        utils.el("span",{class:"chip"},`Bench xP (Next): ${sumXPNext(bench).toFixed(2)}`)
       );
 
       const need = parseFormation(formation);
-      const xiOf = (k,count) => squad.filter(p=>p.isStart && p.pos===k).slice(0,count);
+      const xiOf = (k,count) => squad.filter(p=>p.isStart && p.pos===k).sort((a,b)=> (b._xpNext||0)-(a._xpNext||0)).slice(0,count);
       const renderRow = (key,label,count)=>{
         const row = utils.el("div",{class:"chips"});
         xiOf(key,count).forEach(p => row.append(playerPill(p,true)));
@@ -258,14 +315,9 @@ export async function renderPlanner(main){
 
       boardBench.innerHTML = "";
       const benchRow = utils.el("div",{class:"chips"});
+      bench.sort((a,b)=> (b._xpNext||0)-(a._xpNext||0));
       bench.forEach(p => benchRow.append(playerPill(p,false)));
       boardBench.append(benchRow);
-
-      refreshOutSel();
-      const bankChip = document.getElementById("bankChip");
-      if (bankChip) bankChip.textContent = `Bank: ${money(bank)}`;
-      const bankChip2 = document.getElementById("bankChip2");
-      if (bankChip2) bankChip2.textContent = `Bank: ${money(bank)}`;
     }
 
     function playerPill(p, inXI){
@@ -296,7 +348,95 @@ export async function renderPlanner(main){
       return pill;
     }
 
-    /* ---------- suggestions & recommendations ---------- */
+    /* ---------- Best-XI engine ---------- */
+
+    function pickBestXIForFormation(fstr){
+      const need = parseFormation(fstr);
+      const byPos = {
+        GKP: squad.filter(p=>p.pos==="GKP"),
+        DEF: squad.filter(p=>p.pos==="DEF").sort((a,b)=>(b._xpNext||0)-(a._xpNext||0)),
+        MID: squad.filter(p=>p.pos==="MID").sort((a,b)=>(b._xpNext||0)-(a._xpNext||0)),
+        FWD: squad.filter(p=>p.pos==="FWD").sort((a,b)=>(b._xpNext||0)-(a._xpNext||0)),
+      };
+      const gk = byPos.GKP.sort((a,b)=>(b._xpNext||0)-(a._xpNext||0))[0];
+      if (!gk) return null;
+      const def = byPos.DEF.slice(0, need.DEF);
+      const mid = byPos.MID.slice(0, need.MID);
+      const fwd = byPos.FWD.slice(0, need.FWD);
+      if (def.length<need.DEF || mid.length<need.MID || fwd.length<need.FWD) return null;
+      const xi = [gk, ...def, ...mid, ...fwd];
+      const total = sumXPNext(xi);
+      return { formation:fstr, xi, xiIds: new Set(xi.map(p=>p.id)), total };
+    }
+
+    function bestBenchOrder(xiIds){
+      const bench = squad.filter(p=>!xiIds.has(p.id));
+      const gks   = bench.filter(p=>p.pos==="GKP").sort((a,b)=>(b._xpNext||0)-(a._xpNext||0));
+      const out   = bench.filter(p=>p.pos!=="GKP")
+                         .map(p=>({p, risk: (p._xmins||0)/90 }))
+                         .sort((a,b)=> (a.p._xpNext||0)-(b.p._xpNext||0) || (a.risk - b.risk));
+      return { benchGk: gks[0] || null, order: out.map(x=>x.p).slice(0,3) };
+    }
+
+    function captainAndVice(xi){
+      const sorted = xi
+        .map(p=>({p, mins:p._xmins||0, xp:p._xpNext||0}))
+        .sort((a,b)=> (b.xp - a.xp) || (b.mins - a.mins));
+      const C = sorted[0]?.p || null;
+      const VC = sorted[1]?.p || null;
+      return { C, VC };
+    }
+
+    let lastBestXI = null;
+
+    async function renderRecommendations(){
+      const candidates = [];
+      for (const f of FORMATIONS){
+        const pick = pickBestXIForFormation(f);
+        if (pick) candidates.push(pick);
+      }
+      if (!candidates.length){
+        recommendCard.append(utils.el("div",{class:"tag"},"Not enough eligible players to form a valid XI."));
+        return;
+      }
+      candidates.sort((a,b)=> b.total - a.total);
+      const best = candidates[0];
+      lastBestXI = best;
+
+      const currXI = squad.filter(p=>p.isStart);
+      const currTotal = sumXPNext(currXI);
+      const delta = best.total - currTotal;
+
+      const gwLab = `GW${planGwClamped}`;
+      bestFormChip.textContent = `Best formation: ${best.formation} — ${gwLab}`;
+      bestXIChip.textContent   = `Best XI xP (${gwLab}): ${best.total.toFixed(2)}`;
+      bestDeltaChip.textContent= `Δ vs current XI: ${delta>=0?"+":""}${delta.toFixed(2)} xP`;
+
+      const { benchGk, order } = bestBenchOrder(best.xiIds);
+      benchCard.innerHTML = "";
+      benchCard.append(
+        utils.el("h4",{},"Bench order (recommended)"),
+        utils.el("div",{class:"chips"},[
+          benchGk ? utils.el("span",{class:"chip chip-dim"}, `GK — ${benchGk.name} (${benchGk.team}) · xP ${benchGk._xpNext?.toFixed(2)||"0.00"}`) :
+                    utils.el("span",{class:"chip chip-dim"},"GK — —"),
+        ]),
+        utils.el("div",{class:"chips"}, order.map((p,i)=>
+          utils.el("span",{class:"chip"}, `${i+1}. ${p.name} (${p.pos} ${p.team}) · xP ${p._xpNext?.toFixed(2)||"0.00"}`)
+        ))
+      );
+
+      const { C, VC } = captainAndVice(best.xi);
+      capCard.innerHTML = "";
+      capCard.append(
+        utils.el("h4",{},"Captaincy"),
+        utils.el("div",{class:"chips"},[
+          C  ? utils.el("span",{class:"chip chip-accent"}, `C: ${C.name} · xP ${C._xpNext?.toFixed(2)||"0.00"} (${Math.round(C._xmins||0)}′)`) : "",
+          VC ? utils.el("span",{class:"chip"},            `VC: ${VC.name} · xP ${VC._xpNext?.toFixed(2)||"0.00"} (${Math.round(VC._xmins||0)}′)`) : ""
+        ])
+      );
+    }
+
+    /* ---------- One-for-one scouting & auto recommendations ---------- */
 
     async function suggest(){
       const outId = +outSel.value;
@@ -306,14 +446,11 @@ export async function renderPlanner(main){
       const posFilter = +posSel.value || null;
       const q = search.value.trim().toLowerCase();
 
-      const wins = events.filter(e=>e.id>=nextGw).slice(0,windowLen).map(e=>e.id);
+      const wins = events.filter(e=>e.id>=planGwClamped).slice(0,windowLen).map(e=>e.id);
       const baseXP = await xPWindow(out, wins);
 
       suggestCard.innerHTML = "";
-      suggestCard.append(
-        utils.el("h4",{},"Suggestions"),
-        ui.spinner("Scouting candidates…")
-      );
+      suggestCard.append(utils.el("h4",{},"One-for-one scout"), ui.spinner("Scouting…"));
 
       let pool = players.filter(p=>{
         if (p.id===outId) return false;
@@ -324,7 +461,6 @@ export async function renderPlanner(main){
         return true;
       }).sort((a,b)=> (parseFloat(b.form||0)-parseFloat(a.form||0)) || (b.total_points-a.total_points)).slice(0,300);
 
-      // obey 3-per-club given current squad minus OUT
       const futureCounts = clubCounts(squad.filter(x=>x.id!==outId));
       pool = pool.filter(p => (futureCounts.get(p.team)||0) < 3 || p.team === out.team);
 
@@ -344,7 +480,7 @@ export async function renderPlanner(main){
             _delta: xp.total - baseXP.total
           });
         }catch{}
-        await utils.sleep(8);
+        await utils.sleep(6);
       }
 
       rows.sort((a,b)=> b._delta - a._delta);
@@ -365,21 +501,17 @@ export async function renderPlanner(main){
 
       suggestCard.innerHTML = "";
       suggestCard.append(
-        utils.el("h4",{},`Suggestions (budget ≤ ${money(budget)})`),
+        utils.el("h4",{},`One-for-one scout (budget ≤ ${money(budget)})`),
         ui.table(cols, rows)
       );
     }
 
     async function autoRecommend(){
-      // scan XI only; for each, find best one-candidate improvement
-      const wins = events.filter(e=>e.id>=nextGw).slice(0,windowLen).map(e=>e.id);
+      const wins = events.filter(e=>e.id>=planGwClamped).slice(0,windowLen).map(e=>e.id);
       const xi = squad.filter(s=>s.isStart);
 
       recsCard.innerHTML = "";
-      recsCard.append(
-        utils.el("h4",{},"Recommendations (Top 3)"),
-        ui.spinner("Evaluating XI…")
-      );
+      recsCard.append(utils.el("h4",{},"Top 3 (1 FT)"), ui.spinner("Evaluating XI…"));
 
       const results = [];
 
@@ -394,7 +526,6 @@ export async function renderPlanner(main){
           return true;
         }).sort((a,b)=> (parseFloat(b.form||0)-parseFloat(a.form||0)) || (b.total_points-a.total_points)).slice(0,200);
 
-        // 3-per-club with current squad minus OUT
         const futureCounts = clubCounts(squad.filter(x=>x.id!==outSlot.id));
         pool = pool.filter(p => (futureCounts.get(p.team)||0) < 3 || p.team === out.team);
 
@@ -420,7 +551,7 @@ export async function renderPlanner(main){
               };
             }
           }catch{}
-          await utils.sleep(6);
+          await utils.sleep(5);
         }
         if (best) results.push(best);
       }
@@ -440,16 +571,13 @@ export async function renderPlanner(main){
           return b;
         }},
         { header:"OUT", cell:r=> `${r.outName} (${r.outPos} ${r.outTeam})` },
-        { header:"IN", cell:r=> `${r.inName} (${r.inPos} ${r.inTeam})` },
+        { header:"IN",  cell:r=> `${r.inName} (${r.inPos} ${r.inTeam})` },
         { header:"Price", accessor:r=>r.price, cell:r=> money(r.price), sortBy:r=>r.price },
         { header:`ΔxP (Next ${windowLen})`, accessor:r=>r.delta, cell:r=> r.delta.toFixed(2), sortBy:r=>r.delta }
       ];
 
       recsCard.innerHTML = "";
-      recsCard.append(
-        utils.el("h4",{},"Recommendations (Top 3)"),
-        ui.table(cols, top)
-      );
+      recsCard.append(utils.el("h4",{},"Top 3 (1 FT)"), ui.table(cols, top));
     }
 
     function applyMove(outId, inRow){
@@ -495,41 +623,37 @@ export async function renderPlanner(main){
       }
 
       enforceFormation();
-      recalcBoard();
-      renderPlanSummary();
+      recalcBoard(true);
     }
 
     function renderPlanSummary(){
       const xi = squad.filter(s=>s.isStart);
       const bench = squad.filter(s=>!s.isStart);
-      const sum = a=>a.reduce((x,y)=>x+(y._xpNext||0),0);
-      const sumW=a=>a.reduce((x,y)=>x+(y._xpWin||0),0);
-
       planCard.innerHTML = "";
       planCard.append(utils.el("h4",{},"Plan Summary"));
       planCard.append(utils.el("div",{class:"chips"},[
-        utils.el("span",{class:"chip chip-accent"},`XI xP (Next): ${sum(xi).toFixed(2)}`),
-        utils.el("span",{class:"chip"},`XI xP (Next ${windowLen}): ${sumW(xi).toFixed(2)}`),
-        utils.el("span",{class:"chip"},`Bank after moves: ${money(bank)}`)
+        utils.el("span",{class:"chip chip-accent"},`XI xP (Next): ${sumXPNext(xi).toFixed(2)}`),
+        utils.el("span",{class:"chip"},`XI xP (Next ${windowLen}): ${sumXPWin(xi).toFixed(2)}`),
+        utils.el("span",{class:"chip"},`Bank after moves: ${money(bank)}`),
+        utils.el("span",{class:"chip"},`Window: GW${planGwClamped}→GW${planGwClamped+windowLen-1}`)
       ]));
 
       const copy = ui.copyButton(()=>{
         const lines = [];
-        lines.push(`FPL Planner — window GW${nextGw}→${nextGw+windowLen-1}`);
+        lines.push(`FPL Planner — window GW${planGwClamped}→${planGwClamped+windowLen-1}`);
+        lines.push(`Formation: ${formation}`);
         lines.push(`Bank after moves: ${money(bank)}`);
-        lines.push(`XI xP next: ${sum(xi).toFixed(2)} | next ${windowLen}: ${sumW(xi).toFixed(2)}`);
+        lines.push(`XI xP next: ${sumXPNext(xi).toFixed(2)} | next ${windowLen}: ${sumXPWin(xi).toFixed(2)}`);
         lines.push("XI:");
         xi.forEach(p=> lines.push(`- ${p.name} ${p.pos} ${p.team} — xP(next) ${p._xpNext?.toFixed(2)||"0.00"}`));
         lines.push("Bench:");
         bench.forEach(p=> lines.push(`- ${p.name} ${p.pos} ${p.team}`));
-        lines.push("Please validate: captain/vice, bench order, and 2 alternative transfer paths within budget.");
         return lines.join("\n");
-      },"Copy plan for ChatGPT");
+      },"Copy plan");
       planCard.append(utils.el("div",{style:"margin-top:8px"}, copy));
     }
 
     clearBtn.addEventListener("click", async ()=>{
-      bank = +bank0.toFixed(1);
       squad = ordered.map(pk=>{
         const pl = byId.get(pk.element);
         return {
@@ -541,20 +665,21 @@ export async function renderPlanner(main){
           team: teamById.get(pl.team)?.short_name || "?",
           price: +(pl.now_cost/10).toFixed(1),
           isStart: startSet.has(pl.id),
-          isC: !!pk.is_captain,
-          isVC: !!pk.is_vice_captain,
+          isC: false,
+          isVC: false,
           _xmins: null,
           _xpNext: null,
           _xpWin: null,
           _winLen: null
         };
       });
+      bank = +bank0.toFixed(1);
       formation = inferFormationFromXI(squad) || formation;
       formationSel.value = formation;
       enforceFormation();
-      await recalcBoard();
-      suggestCard.innerHTML = "<h4>Suggestions</h4>";
-      recsCard.innerHTML = "<h4>Recommendations (Top 3)</h4>";
+      await recalcBoard(true);
+      suggestCard.innerHTML = "<h4>One-for-one scout</h4>";
+      recsCard.innerHTML = "<h4>Top 3 (1 FT)</h4>";
       planCard.innerHTML = "<h4>Plan Summary</h4>";
     });
 
@@ -563,9 +688,8 @@ export async function renderPlanner(main){
 
     // kick off
     enforceFormation();
-    await recalcBoard();
+    await recalcBoard(true);
     refreshOutSel();
-    renderPlanSummary();
 
   }catch(err){
     ui.mount(main, ui.error("Failed to load Planner", err));

@@ -11,6 +11,8 @@ import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
 import { state } from "./state.js";
 
+const APP_VERSION = "1.0.0";
+
 const routes = {
   "my-team": renderMyTeam,
   "all-players": renderAllPlayers,
@@ -45,8 +47,9 @@ function navigate(hash) {
   main.innerHTML = "";
   render(main);
   highlightActiveNav(tab);
-  // ensure tooltips are active for newly-rendered content
   initTooltips(main);
+  window.scrollTo({ top: 0, behavior: "instant" });
+  adjustForFixedFooter();
 }
 
 function qsAny(...sel) {
@@ -58,13 +61,37 @@ function qsAny(...sel) {
 }
 
 function setStatePatch(patch) {
-  // Works whether state is a plain object or exposes a .set()
   if (typeof state.set === "function") state.set(patch);
   else Object.assign(state, patch);
 }
 
+/* ---------- Smart-paste helpers ---------- */
+function extractEntryId(str) {
+  if (!str) return null;
+  // Accept raw number
+  const numOnly = str.trim().match(/^\d+$/);
+  if (numOnly) return Number(numOnly[0]);
+  // Accept full URL like /entry/1234567/...
+  const m = str.match(/\/entry\/(\d+)\b/);
+  return m ? Number(m[1]) : null;
+}
+function extractLeagueIds(str) {
+  if (!str) return [];
+  return str
+    .split(",")
+    .map(s => s.trim())
+    .flatMap(tok => {
+      // raw number
+      const n = tok.match(/^\d+$/);
+      if (n) return [Number(n[0])];
+      // classic league URL
+      const m = tok.match(/\/leagues\/classic\/(\d+)\b/);
+      if (m) return [Number(m[1])];
+      return [];
+    });
+}
+
 function bindSidebar() {
-  // Support both new and legacy IDs
   const entryInput = qsAny("#entryIdInput", "#entry-id");
   const leagueInput = qsAny("#leagueIdInput", "#league-ids");
   const saveBtn = qsAny("#saveIdsBtn", "#save-ids");
@@ -73,51 +100,82 @@ function bindSidebar() {
   if (leagueInput) leagueInput.value = (state.leagueIds || []).join(", ");
 
   saveBtn?.addEventListener("click", () => {
-    const entryIdRaw = entryInput?.value?.trim();
+    const entryRaw = entryInput?.value?.trim() || "";
     const leaguesRaw = leagueInput?.value || "";
-    const leagues = leaguesRaw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+
+    const entryParsed = extractEntryId(entryRaw);
+    const leaguesParsed = extractLeagueIds(leaguesRaw);
 
     setStatePatch({
-      entryId: entryIdRaw ? Number(entryIdRaw) : null,
-      leagueIds: leagues,
+      entryId: entryParsed ?? null,
+      leagueIds: leaguesParsed,
     });
 
     navigate(location.hash); // re-render current route
   });
 }
 
-/* -------------------- THEME -------------------- */
-/* CSS expects :root[data-theme="light"] for light mode.
-   Default (no attribute) = dark. */
-function setTheme(mode) {
-  const root = document.documentElement;
-  const btn = document.getElementById("themeToggleBtn");
-  if (mode === "light") root.setAttribute("data-theme", "light");
-  else root.removeAttribute("data-theme");
+/* ---------- small UI helpers ---------- */
+function setText(id, val) {
+  const n = document.getElementById(id);
+  if (n) n.textContent = val;
+}
 
-  localStorage.setItem("fpl.theme", mode);
-  if (btn) {
-    btn.textContent = mode === "light" ? "🌞 Theme" : "🌓 Theme";
-    btn.setAttribute(
-      "aria-label",
-      `Switch to ${mode === "light" ? "dark" : "light"} theme`
-    );
-    btn.title = btn.getAttribute("aria-label");
+function chip(text) {
+  const s = document.createElement("span");
+  s.className = "chip chip-dim";
+  s.textContent = text;
+  return s;
+}
+
+function setHeaderStatusFromBootstrap(bs) {
+  const liveBadge = document.getElementById("liveBadge");
+  const headerChips = document.getElementById("headerChips");
+
+  const curr = bs.events.find(e => e.is_current);
+  const prev = bs.events.find(e => e.is_previous);
+  const next = bs.events.find(e => e.is_next);
+
+  if (liveBadge) {
+    if (curr && !curr.data_checked) {
+      liveBadge.style.display = "inline-flex";
+      liveBadge.textContent = `LIVE • GW ${curr.id}`;
+    } else {
+      liveBadge.style.display = "none";
+    }
+  }
+
+  if (headerChips) {
+    headerChips.innerHTML = "";
+    if (prev) headerChips.appendChild(chip(`Last: GW${prev.id}`));
+    if (curr) headerChips.appendChild(chip(curr.data_checked ? `Current: GW${curr.id} (final)` : `Current: GW${curr.id} (live)`));
+    if (next) headerChips.appendChild(chip(`Next: GW${next.id}`));
   }
 }
 
-function initTheme() {
-  const saved = localStorage.getItem("fpl.theme") || "dark";
-  setTheme(saved);
+/* ---------- Chart.js sensible defaults (if present) ---------- */
+function initChartDefaults() {
+  if (!window.Chart) return;
+  const { Chart } = window;
+  Chart.defaults.font.family = "'Inter', system-ui, -apple-system, Segoe UI, Roboto";
+  Chart.defaults.color = "rgba(230,235,242,.92)";
+  Chart.defaults.plugins.legend.display = false;
+  Chart.defaults.elements.line.tension = 0.25;
+  Chart.defaults.elements.line.borderWidth = 2;
+  Chart.defaults.elements.line.borderColor = "rgba(150,180,255,.22)";
+  Chart.defaults.elements.point.radius = 3;
+  Chart.defaults.elements.point.hoverRadius = 6;
+  Chart.defaults.elements.point.backgroundColor = "rgba(190,205,255,.95)";
+  Chart.defaults.maintainAspectRatio = false;
+}
 
-  const btn = document.getElementById("themeToggleBtn");
-  btn?.addEventListener("click", () => {
-    const isLight = document.documentElement.getAttribute("data-theme") === "light";
-    setTheme(isLight ? "dark" : "light");
-  });
+/* ---------- Fixed footer padding ---------- */
+function adjustForFixedFooter() {
+  const footer = document.querySelector(".footer");
+  const main = document.querySelector("main");
+  if (!footer || !main) return;
+  const h = Math.ceil(footer.getBoundingClientRect().height);
+  document.body.style.paddingBottom = `${h + 8}px`;
 }
 
 /* -------------------- INIT -------------------- */
@@ -127,15 +185,31 @@ async function init() {
     state.bootstrap = await api.bootstrap();
   } catch {}
 
-  bindSidebar();
-  initTheme();
+  // Sidebar stats + header status
+  if (state.bootstrap) {
+    const bs = state.bootstrap;
+    setText("teamsCount", (bs.teams?.length ?? "—").toString());
+    setText("playersCount", (bs.elements?.length ?? "—").toString());
+    const prev = bs.events.find(e => e.is_previous);
+    setText("lastFinishedGw", prev ? String(prev.id) : "—");
+    const note = document.querySelector(".sidebar .sidebar-note");
+    if (note) note.textContent = "Live-aware: shows the current GW when it’s in progress.";
+    setHeaderStatusFromBootstrap(bs);
+  }
 
-  // One-time global tooltip handlers (page-level instance will be refreshed in navigate)
+  // Footer meta
+  setText("year", new Date().getFullYear());
+  setText("appVersion", APP_VERSION);
+
+  bindSidebar();
+  initChartDefaults();
   initTooltips(document.body);
 
   if (!location.hash) location.hash = "#/my-team";
   navigate(location.hash);
   window.addEventListener("hashchange", () => navigate(location.hash));
+  window.addEventListener("resize", adjustForFixedFooter);
+  adjustForFixedFooter();
 }
 
 document.addEventListener("DOMContentLoaded", init);
