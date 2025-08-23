@@ -169,6 +169,10 @@ export async function renderMeta(main){
 
     container.append(controls, kpisCard, explainerCard, gridTop, captainCard, gridBottom);
 
+    /* ── chart instances to avoid ResizeObserver loops ── */
+    let ownershipChartInstance = null;
+    let scatterChartInstance = null;
+
     /* ── Data state ── */
     let metaData = null; // { entries, ownCount, capCount, eoList, yourXI, missing, diffs, capRows, fieldInfo }
 
@@ -537,13 +541,20 @@ export async function renderMeta(main){
       };
     }
 
-    /* ── Ownership Top20 ── */
+    /* ── Ownership Top20 (fixed canvas, non-responsive) ── */
     async function renderOwnershipBlock(){
       ownershipCard.innerHTML = "";
       ownershipCard.append(ui.spinner("Rendering meta ownership…"));
       const { eoList } = metaData;
       const top = eoList.slice(0,20);
-      const canvas = utils.el("canvas");
+
+      // destroy any existing instance before re-drawing
+      if (ownershipChartInstance) {
+        try { ownershipChartInstance.destroy(); } catch {}
+        ownershipChartInstance = null;
+      }
+
+      const canvas = utils.el("canvas", { style: "height:340px;width:100%;" });
       ownershipCard.innerHTML = "";
       ownershipCard.append(
         utils.el("h3",{},"Top 20 by Meta Ownership"),
@@ -557,15 +568,17 @@ export async function renderMeta(main){
           datasets: [{ data: top.map(r=> +r.eo.toFixed(2)) }]
         },
         options: {
+          responsive: false,             // ← important: no auto-resize
+          maintainAspectRatio: false,
           indexAxis: "y",
           plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=> `${ctx.raw}%` } } },
           scales: { x:{ ticks:{ callback:v=> `${v}%` }, title:{ display:true, text:"Ownership %" }} }
         }
       };
-      await ui.chart(canvas, cfg);
+      ownershipChartInstance = await ui.chart(canvas, cfg);
     }
 
-    /* ── EO vs xP Scatter (top 60 by EO) ── */
+    /* ── EO vs xP Scatter (top 60 by EO) — fixed canvas, non-responsive ── */
     async function renderScatterBlock(){
       scatterCard.innerHTML = "";
       scatterCard.append(ui.spinner("Computing EO vs xP scatter…"));
@@ -583,10 +596,24 @@ export async function renderMeta(main){
         }
         await utils.sleep(10);
       }
+
+      // clean dataset & compute safe bounds
+      const clean = ds.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+      const ys = clean.map(p=>p.y);
+      const ymin = ys.length ? Math.min(...ys) : 0;
+      const ymax = ys.length ? Math.max(...ys) : 1;
+      const padY = (ymax - ymin) > 0 ? (ymax - ymin) * 0.10 : 1;
+
+      // destroy any existing instance before re-drawing
+      if (scatterChartInstance) {
+        try { scatterChartInstance.destroy(); } catch {}
+        scatterChartInstance = null;
+      }
+
       const colors = {1:"#60a5fa", 2:"#34d399", 3:"#f472b6", 4:"#f59e0b"};
 
       scatterCard.innerHTML = "";
-      const canvas = utils.el("canvas");
+      const canvas = utils.el("canvas", { style: "height:340px;width:100%;" });
       scatterCard.append(
         utils.el("h3",{},"EO vs xP (window)"),
         utils.el("div",{class:"tag", style:"margin:6px 0"}, `Window: next ${gwIdsArr.length} from GW${windowStart}`),
@@ -595,24 +622,31 @@ export async function renderMeta(main){
       const cfg = {
         type:"scatter",
         data:{ datasets:[{
-          data: ds,
+          data: clean,
           parsing:false,
           pointRadius: (ctx)=> 3 + Math.sqrt(ctx.raw.x||0)/2,
           pointHoverRadius:(ctx)=> 6 + Math.sqrt(ctx.raw.x||0)/2,
           pointBackgroundColor:(ctx)=> colors[ctx.raw.pos] || "#93c5fd"
         }]},
         options:{
+          responsive: false,             // ← important: no auto-resize
+          maintainAspectRatio: false,
           animation:false,
-          plugins:{ legend:{display:false}, tooltip:{ callbacks:{
-            label:(ctx)=> `${ctx.raw.label}: EO ${ctx.raw.x.toFixed(1)}%, xP ${ctx.raw.y.toFixed(2)}`
-          } } },
+          plugins:{ legend:{display:false}, tooltip:{
+            mode: "nearest",
+            intersect: true,
+            callbacks:{
+              label:(ctx)=> `${ctx.raw.label}: EO ${ctx.raw.x.toFixed(1)}%, xP ${ctx.raw.y.toFixed(2)}`
+            }
+          } },
           scales:{
             x:{ title:{display:true, text:"Meta Ownership %"}, min:0, max:100 },
-            y:{ title:{display:true, text:`xP (next ${gwIdsArr.length})`}, suggestedMin:0 }
+            y:{ title:{display:true, text:`xP (next ${gwIdsArr.length})`},
+                min: ymin - padY, max: ymax + padY }
           }
         }
       };
-      await ui.chart(canvas, cfg);
+      scatterChartInstance = await ui.chart(canvas, cfg);
     }
 
     /* ── POLISHED EXPLAINER ── */
