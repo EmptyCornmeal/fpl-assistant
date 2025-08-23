@@ -50,7 +50,7 @@ export async function renderPlanner(main){
     const teamById = new Map(teams.map(t=>[t.id,t]));
     const posById  = new Map(positions.map(p=>[p.id,p.singular_name_short]));
 
-    // Work out planner target GW = next (is_next), not current
+    // Target GW = next (is_next), even if current is live
     const prevEvent = events.find(e=>e.is_previous) || null;
     const currEvent = events.find(e=>e.is_current)  || null;
     const nextEvent = events.find(e=>e.is_next)     || null;
@@ -58,7 +58,7 @@ export async function renderPlanner(main){
     const lastFinished = prevEvent?.id || (events.filter(e=>e.data_checked).map(e=>e.id).pop() ?? 0);
     const planGw = nextEvent?.id ?? (currEvent ? currEvent.id + 1 : (lastFinished ? lastFinished + 1 : 1));
     const maxGw  = Math.max(...events.map(e=>e.id));
-    const planGwClamped = Math.min(planGw, maxGw); // safety at season end
+    const planGwClamped = Math.min(planGw, maxGw);
 
     if (!state.entryId){
       ui.mount(main, utils.el("div",{class:"card"},"Enter your Entry ID (left sidebar) to use the planner."));
@@ -175,6 +175,7 @@ export async function renderPlanner(main){
     const capCard      = utils.el("div",{class:"mt-8"});
 
     const applyBestBtn = utils.el("button",{class:"btn-primary"},"Apply recommended XI");
+    let lastBestXI = null;
     applyBestBtn.addEventListener("click", ()=>{
       if (!lastBestXI) return;
       formation = lastBestXI.formation;
@@ -386,8 +387,6 @@ export async function renderPlanner(main){
       const VC = sorted[1]?.p || null;
       return { C, VC };
     }
-
-    let lastBestXI = null;
 
     async function renderRecommendations(){
       const candidates = [];
