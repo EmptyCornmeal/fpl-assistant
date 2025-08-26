@@ -137,11 +137,92 @@ export async function renderAllPlayers(main){
 
     // row1
     const row1 = utils.el("div",{class:"ap-toolbar-row"});
-    const q = utils.el("input",{placeholder:"Search player", value: filters.q });
+
+    // Autocomplete wrapper + input
+    const acWrap = utils.el("div",{
+      style:"position:relative;min-width:240px;flex:1;"
+    });
+    const q = utils.el("input",{placeholder:"Search player", value: filters.q, style:"width:100%"});
+    const acList = utils.el("div",{
+      style: `
+        position:absolute; top:36px; left:0; right:0;
+        background:rgba(20,24,32,.98); border:1px solid rgba(255,255,255,.08);
+        border-radius:10px; box-shadow:0 10px 24px rgba(0,0,0,.35);
+        max-height:320px; overflow:auto; display:none; z-index:2000;
+      `
+    });
+    acWrap.append(q, acList);
+
+    let acItems = [];
+    let acActive = -1;
+    function hideAC(){ acList.style.display="none"; acList.innerHTML=""; acItems=[]; acActive=-1; }
+    function buildAC(){
+      const term = q.value.trim().toLowerCase();
+      if (term.length < 2){ hideAC(); return; }
+      const matches = players
+        .filter(p => (`${p.first_name} ${p.second_name} ${p.web_name}`.toLowerCase().includes(term)))
+        .slice(0, 12);
+      if (!matches.length){ hideAC(); return; }
+
+      acList.innerHTML = "";
+      acItems = matches.map(p=>{
+        const row = utils.el("div",{
+          style: `
+            display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;
+          `
+        });
+        row.addEventListener("mouseenter", ()=> setActiveRow(row));
+        row.addEventListener("mousedown", (e)=> e.preventDefault());
+        row.addEventListener("click", ()=> selectRow(p));
+
+        row.append(
+          utils.el("span",{class:"team-chip"}, teamShortById.get(p.team) || "?"),
+          utils.el("span",{style:"font-weight:600"}, p.web_name),
+          utils.el("span",{class:"tag"}, posShortById.get(p.element_type) || "?"),
+          utils.el("span",{class:"small", style:"margin-left:auto;opacity:.8"}, `£${(p.now_cost/10).toFixed(1)}m`)
+        );
+        acList.append(row);
+        return row;
+      });
+      acActive = -1;
+      acList.style.display = "block";
+      styleRows();
+    }
+    function setActiveRow(row){
+      acActive = acItems.indexOf(row);
+      styleRows();
+    }
+    function styleRows(){
+      acItems.forEach((el, i)=>{
+        el.style.background = i===acActive ? "rgba(255,255,255,.08)" : "transparent";
+      });
+    }
+    function selectRow(p){
+      q.value = p.web_name;
+      hideAC();
+      // set position filter to that player's pos for convenience (optional)
+      filters.posId = String(p.element_type);
+      posButtons.forEach(b=> b.classList.remove("active"));
+      const btn = posButtons[+filters.posId]; // buttons are ["All",GKP,DEF,MID,FWD]
+      if (btn) btn.classList.add("active");
+      update(); // apply instantly
+    }
+
+    q.addEventListener("input", buildAC);
+    q.addEventListener("keydown", (e)=>{
+      if (acList.style.display==="none") return;
+      if (e.key==="ArrowDown"){ e.preventDefault(); acActive = Math.min(acActive+1, acItems.length-1); styleRows(); }
+      else if (e.key==="ArrowUp"){ e.preventDefault(); acActive = Math.max(acActive-1, 0); styleRows(); }
+      else if (e.key==="Enter"){ e.preventDefault(); if (acActive>=0) acItems[acActive].click(); else hideAC(); }
+      else if (e.key==="Escape"){ hideAC(); }
+    });
+    document.addEventListener("click", (e)=>{
+      if (!acWrap.contains(e.target)) hideAC();
+    });
 
     const posWrap = utils.el("div",{class:"segmented"});
     const posButtons = [];
-    [["","All"],["1","GKP"],["2","DEF"],["3","MID"],["4","FWD"]].forEach(([val,label])=>{
+    [["","All"],["1","GKP"],["2","DEF"],["3","MID"],["4","FWD"]].forEach(([val,label], idx)=>{
       const b = utils.el("button",{class:"seg-btn"+(String(filters.posId)===val?" active":""), type:"button"}, label);
       b.addEventListener("click", ()=>{
         posButtons.forEach(x=>x.classList.remove("active"));
@@ -162,12 +243,40 @@ export async function renderAllPlayers(main){
     teamBtn.addEventListener("click", ()=>{
       const box = utils.el("div");
       box.append(utils.el("div",{class:"mb-8"},"Pick teams:"));
+
+      // Controls
+      const controls = utils.el("div",{class:"chips", style:"margin-bottom:8px"});
+      const selectAllBtn = utils.el("button",{class:"btn-ghost", type:"button"},"Select all");
+      const clearAllBtn  = utils.el("button",{class:"btn-ghost", type:"button"},"Clear all");
+      controls.append(selectAllBtn, clearAllBtn);
+      box.append(controls);
+
+      // Grid of checkboxes
       const grid = utils.el("div",{class:"grid cols-3"});
+      const rows = [];
       teams.forEach(t=>{
         const id = `team-${t.id}`;
         const row = utils.el("label",{for:id, class:"row-check"});
         const cb = utils.el("input",{id, type:"checkbox", checked: filters.teamIds.includes(String(t.id))});
         row.append(cb, utils.el("span",{}, t.name));
+        grid.append(row);
+        rows.push({ t, cb });
+      });
+      box.append(grid);
+
+      // Buttons
+      const done = utils.el("button",{class:"btn-primary mt-8", type:"button"},"Done");
+
+      selectAllBtn.addEventListener("click", ()=>{
+        filters.teamIds = teams.map(t=> String(t.id));
+        rows.forEach(({cb})=> cb.checked = true);
+      });
+      clearAllBtn.addEventListener("click", ()=>{
+        filters.teamIds = [];
+        rows.forEach(({cb})=> cb.checked = false);
+      });
+
+      rows.forEach(({t, cb})=>{
         cb.addEventListener("change", ()=>{
           const v = String(t.id);
           if (cb.checked){
@@ -176,11 +285,14 @@ export async function renderAllPlayers(main){
             filters.teamIds = filters.teamIds.filter(x=>x!==v);
           }
         });
-        grid.append(row);
       });
-      const done = utils.el("button",{class:"btn-primary mt-8", type:"button"},"Done");
-      done.addEventListener("click", ()=>{ teamBtn.textContent = teamBtnLabel(); document.querySelector(".modal [data-close]")?.click(); });
-      box.append(grid, done);
+
+      done.addEventListener("click", ()=>{
+        teamBtn.textContent = teamBtnLabel();
+        document.querySelector(".modal [data-close]")?.click();
+      });
+
+      box.append(done);
       openModal("Select Teams", box);
     });
 
@@ -203,7 +315,7 @@ export async function renderAllPlayers(main){
       utils.el("span",{},"xMins ≥ 60")
     ]);
 
-    row1.append(q, posWrap, teamBtn, priceMin, priceMax, statusSel, minutesChk);
+    row1.append(acWrap, posWrap, teamBtn, priceMin, priceMax, statusSel, minutesChk);
 
     // row2
     const row2 = utils.el("div",{class:"ap-toolbar-row"});
@@ -249,8 +361,8 @@ export async function renderAllPlayers(main){
     ]);
     card.prepend(progress);
 
-    // Dedicated slots prevent accidental canvas deletion mid-render
-    const chartSlot = utils.el("div",{id:"ap-chart-slot", style:"min-height:360px"});
+    // Taller chart slot (double height)
+    const chartSlot = utils.el("div",{id:"ap-chart-slot", style:"min-height:720px"});
     const tableSlot = utils.el("div",{id:"ap-table-slot"});
     card.append(chartSlot, tableSlot);
 
@@ -353,106 +465,85 @@ export async function renderAllPlayers(main){
       tableSlot.append(ui.table(cols, rows));
     }
 
-// replace your existing renderChart with this version
-function renderChart(rows){
-  // Build dataset only from rows that have a usable Y
-  const ds = rows.map(r => ({
-      x: r.price_m,
-      y: (chartMode === "points" ? r.total_points : r._xp_win),
-      label: `${r.web_name} (${r.team_short})`,
-      own: r.selected_by_percent || 0,
-      pos: r.element_type
-    }))
-    .filter(p => Number.isFinite(p.y));
+    // Scatter chart (double height, no resize loop)
+    async function renderChart(rows){
+      const ds = rows.map(r => ({
+        x: r.price_m,
+        y: (chartMode === "points" ? r.total_points : r._xp_win),
+        label: `${r.web_name} (${r.team_short})`,
+        own: r.selected_by_percent || 0,
+        pos: r.element_type
+      })).filter(p => Number.isFinite(p.y));
 
-  // If nothing to plot, show a note and bail
-  if (!ds.length){
-    chartSlot.innerHTML = "";
-    if (chartInstance) { try { chartInstance.destroy(); } catch {} chartInstance = null; }
-    chartSlot.append(
-      utils.el("h3",{}, chartMode==="points" ? "Price vs Total Points (filtered)" : "Price vs xP (Next 5) — filtered"),
-      utils.el("div",{class:"tag"}, "No data to chart. Adjust filters or compute xP.")
-    );
-    return Promise.resolve();
-  }
+      if (!ds.length){
+        chartSlot.innerHTML = "";
+        if (chartInstance) { try { chartInstance.destroy(); } catch {} chartInstance = null; }
+        chartSlot.append(
+          utils.el("h3",{}, chartMode==="points" ? "Price vs Total Points (filtered)" : "Price vs xP (Next 5) — filtered"),
+          utils.el("div",{class:"tag"}, "No data to chart. Adjust filters or compute xP.")
+        );
+        return;
+      }
 
-  // Compute bounds from actual dataset
-  const xs = ds.map(p => p.x);
-  const ys = ds.map(p => p.y);
-  const xmin = Math.min(...xs), xmax = Math.max(...xs);
-  const ymin = Math.min(...ys), ymax = Math.max(...ys);
-  const rangeX = xmax - xmin;
-  const rangeY = ymax - ymin;
-  const padX = rangeX > 0 ? rangeX * 0.06 : 0.5;
-  const padY = rangeY > 0 ? rangeY * 0.10 : 1;
+      const xs = ds.map(p => p.x);
+      const ys = ds.map(p => p.y);
+      const xmin = Math.min(...xs), xmax = Math.max(...xs);
+      const ymin = Math.min(...ys), ymax = Math.max(...ys);
+      const rangeX = xmax - xmin;
+      const rangeY = ymax - ymin;
+      const padX = rangeX > 0 ? rangeX * 0.06 : 0.5;
+      const padY = rangeY > 0 ? rangeY * 0.10 : 1;
 
-  // Clean previous chart & DOM
-  if (chartInstance) { try { chartInstance.destroy(); } catch {} chartInstance = null; }
-  chartSlot.innerHTML = "";
+      if (chartInstance) { try { chartInstance.destroy(); } catch {} chartInstance = null; }
+      chartSlot.innerHTML = "";
 
-  // Fix the canvas size so it won't resize/loop
-  const slotWidth = Math.max(320, Math.floor(chartSlot.getBoundingClientRect().width || chartSlot.clientWidth || 900));
-  const canvas = utils.el("canvas", {
-    width: slotWidth,         // explicit pixels -> no resize observer
-    height: 340,              // fixed height
-    style: "max-width:100%;display:block" // scale down if container is smaller
-  });
+      const slotWidth = Math.max(320, Math.floor(chartSlot.getBoundingClientRect().width || chartSlot.clientWidth || 900));
+      const canvas = utils.el("canvas", {
+        width: slotWidth,
+        height: 680, // double height
+        style: "max-width:100%;display:block"
+      });
 
-  chartSlot.append(
-    utils.el("h3",{}, chartMode==="points" ? "Price vs Total Points (filtered)" : "Price vs xP (Next 5) — filtered"),
-    canvas
-  );
+      chartSlot.append(
+        utils.el("h3",{}, chartMode==="points" ? "Price vs Total Points (filtered)" : "Price vs xP (Next 5) — filtered"),
+        canvas
+      );
 
-  const colors = {1:"#60a5fa", 2:"#34d399", 3:"#f472b6", 4:"#f59e0b"};
-
-  const cfg = {
-    type: "scatter",
-    data: {
-      datasets: [{
-        data: ds,
-        parsing: false,
-        pointRadius:        ctx => Math.max(3, Math.sqrt(ctx.raw.own || 0) + 2),
-        pointHoverRadius:   ctx => Math.max(5, Math.sqrt(ctx.raw.own || 0) + 5),
-        pointBackgroundColor: ctx => colors[ctx.raw.pos] || "#93c5fd"
-      }]
-    },
-    options: {
-      // IMPORTANT: turn responsiveness off to stop the expansion loop
-      responsive: false,
-      animation: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          mode: "nearest",
-          intersect: true,
-          callbacks: {
-            label: (ctx) => {
-              const r = ctx.raw;
-              const yLab = chartMode === "points" ? `${r.y} pts` : `xP ${r.y.toFixed(2)} (Next 5)`;
-              return `${r.label}: £${r.x}m, ${yLab}, Own ${Math.round(r.own)}%`;
+      const colors = {1:"#60a5fa", 2:"#34d399", 3:"#f472b6", 4:"#f59e0b"};
+      const cfg = {
+        type: "scatter",
+        data: { datasets: [{
+          data: ds,
+          parsing: false,
+          pointRadius:      ctx => Math.max(3, Math.sqrt(ctx.raw.own || 0) + 2),
+          pointHoverRadius: ctx => Math.max(5, Math.sqrt(ctx.raw.own || 0) + 5),
+          pointBackgroundColor: ctx => colors[ctx.raw.pos] || "#93c5fd"
+        }]},
+        options: {
+          responsive: false,
+          animation: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              mode: "nearest",
+              intersect: true,
+              callbacks: {
+                label: (ctx) => {
+                  const r = ctx.raw;
+                  const yLab = chartMode === "points" ? `${r.y} pts` : `xP ${r.y.toFixed(2)} (Next 5)`;
+                  return `${r.label}: £${r.x}m, ${yLab}, Own ${Math.round(r.own)}%`;
+                }
+              }
             }
+          },
+          scales: {
+            x: { title: { text: "Price (£m)", display: true }, min: xmin - padX, max: xmax + padX, ticks: { maxTicksLimit: 10 } },
+            y: { title: { text: chartMode === "points" ? "Total Points" : "xP (Next 5)", display: true }, min: ymin - padY, max: ymax + padY, ticks: { maxTicksLimit: 8 } }
           }
         }
-      },
-      scales: {
-        x: {
-          title: { text: "Price (£m)", display: true },
-          min: xmin - padX,
-          max: xmax + padX,
-          ticks: { maxTicksLimit: 10 }
-        },
-        y: {
-          title: { text: chartMode === "points" ? "Total Points" : "xP (Next 5)", display: true },
-          min: ymin - padY,
-          max: ymax + padY,
-          ticks: { maxTicksLimit: 8 }
-        }
-      }
+      };
+      chartInstance = await ui.chart(canvas, cfg);
     }
-  };
-
-  return ui.chart(canvas, cfg).then(inst => { chartInstance = inst; });
-}
 
     async function computeEase(rows, gws){
       for (const r of rows){
@@ -533,7 +624,7 @@ function renderChart(rows){
     }
 
     async function update(){
-      // Clear only the safe slots
+      // clear slots
       chartSlot.innerHTML = "";
       tableSlot.innerHTML = "";
 
@@ -543,25 +634,25 @@ function renderChart(rows){
       // 2) Ease (cheap)
       await computeEase(rows, windowGws);
 
-      // 3) Minutes floor requires xP first
+      // 3) Minutes floor / xP toggles
       const needXPForChart = chartMode === "xp";
-      const doXgi = (toolbar.querySelectorAll(".row-check input")[0]?.checked) || false;
-      const doXP  = (toolbar.querySelectorAll(".row-check input")[1]?.checked) ?? true;
+      const doXgi = (toolbar.querySelectorAll(".row-check input")[0]?.checked) || false; // row2 first toggle
+      const doXP  = (toolbar.querySelectorAll(".row-check input")[1]?.checked) ?? true;  // row2 second toggle
 
       const minutesFloor = !!minutesChk.querySelector("input").checked;
       if (minutesFloor || doXP || needXPForChart){
-        await addXP(rows); // compute for ALL visible rows (no cap)
+        await addXP(rows);
       }
       if (minutesFloor){
         rows = rows.filter(r=> (r._xmins || 0) >= 60);
       }
 
-      // 4) xGI if requested (ALL visible rows)
+      // 4) xGI if requested
       if (doXgi){
         await addXgi(rows);
       }
 
-      // 5) Re-sort when sort key depends on computed cols
+      // 5) Re-sort if sort depends on computed cols
       const s = Object.assign({}, DEFAULT_SORT, readLS(LS_AP_SORT, DEFAULT_SORT));
       rows = stableSort(rows, (r)=> r[s.key] ?? -Infinity, s.dir);
 

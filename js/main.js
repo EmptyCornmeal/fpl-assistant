@@ -68,10 +68,8 @@ function setStatePatch(patch) {
 /* ---------- Smart-paste helpers ---------- */
 function extractEntryId(str) {
   if (!str) return null;
-  // Accept raw number
   const numOnly = str.trim().match(/^\d+$/);
   if (numOnly) return Number(numOnly[0]);
-  // Accept full URL like /entry/1234567/...
   const m = str.match(/\/entry\/(\d+)\b/);
   return m ? Number(m[1]) : null;
 }
@@ -81,16 +79,15 @@ function extractLeagueIds(str) {
     .split(",")
     .map(s => s.trim())
     .flatMap(tok => {
-      // raw number
       const n = tok.match(/^\d+$/);
       if (n) return [Number(n[0])];
-      // classic league URL
       const m = tok.match(/\/leagues\/classic\/(\d+)\b/);
       if (m) return [Number(m[1])];
       return [];
     });
 }
 
+/* ---------- Sidebar binding ---------- */
 function bindSidebar() {
   const entryInput = qsAny("#entryIdInput", "#entry-id");
   const leagueInput = qsAny("#leagueIdInput", "#league-ids");
@@ -102,16 +99,11 @@ function bindSidebar() {
   saveBtn?.addEventListener("click", () => {
     const entryRaw = entryInput?.value?.trim() || "";
     const leaguesRaw = leagueInput?.value || "";
-
     const entryParsed = extractEntryId(entryRaw);
     const leaguesParsed = extractLeagueIds(leaguesRaw);
 
-    setStatePatch({
-      entryId: entryParsed ?? null,
-      leagueIds: leaguesParsed,
-    });
-
-    navigate(location.hash); // re-render current route
+    setStatePatch({ entryId: entryParsed ?? null, leagueIds: leaguesParsed });
+    navigate(location.hash);
   });
 }
 
@@ -120,7 +112,6 @@ function setText(id, val) {
   const n = document.getElementById(id);
   if (n) n.textContent = val;
 }
-
 function chip(text) {
   const s = document.createElement("span");
   s.className = "chip chip-dim";
@@ -128,18 +119,35 @@ function chip(text) {
   return s;
 }
 
+/* ---------- GW helpers (robust markers) ---------- */
+function computeMarkers(events = []) {
+  const byId = new Map(events.map(e => [e.id, e]));
+  const finished = events.filter(e => e.data_checked);
+  const lastFinishedId = finished.length ? Math.max(...finished.map(e => e.id)) : null;
+  const lastFinished = lastFinishedId ? byId.get(lastFinishedId) : null;
+
+  const current = events.find(e => e.is_current) || null;
+
+  // Next: prefer is_next; else infer sequentially
+  let next = events.find(e => e.is_next) || null;
+  if (!next) {
+    const base = current?.id ?? (lastFinishedId != null ? lastFinishedId : null);
+    if (base != null) next = byId.get(base + 1) || null;
+  }
+
+  return { lastFinished, current, next };
+}
+
 function setHeaderStatusFromBootstrap(bs) {
+  const { lastFinished, current, next } = computeMarkers(bs.events || []);
+
   const liveBadge = document.getElementById("liveBadge");
   const headerChips = document.getElementById("headerChips");
 
-  const curr = bs.events.find(e => e.is_current);
-  const prev = bs.events.find(e => e.is_previous);
-  const next = bs.events.find(e => e.is_next);
-
   if (liveBadge) {
-    if (curr && !curr.data_checked) {
+    if (current && !current.data_checked) {
       liveBadge.style.display = "inline-flex";
-      liveBadge.textContent = `LIVE • GW ${curr.id}`;
+      liveBadge.textContent = `LIVE • GW ${current.id}`;
     } else {
       liveBadge.style.display = "none";
     }
@@ -147,13 +155,17 @@ function setHeaderStatusFromBootstrap(bs) {
 
   if (headerChips) {
     headerChips.innerHTML = "";
-    if (prev) headerChips.appendChild(chip(`Last: GW${prev.id}`));
-    if (curr) headerChips.appendChild(chip(curr.data_checked ? `Current: GW${curr.id} (final)` : `Current: GW${curr.id} (live)`));
+    if (lastFinished) headerChips.appendChild(chip(`Last: GW${lastFinished.id}`));
+    if (current) {
+      headerChips.appendChild(
+        chip(current.data_checked ? `Current: GW${current.id} (final)` : `Current: GW${current.id} (live)`)
+      );
+    }
     if (next) headerChips.appendChild(chip(`Next: GW${next.id}`));
   }
 }
 
-/* ---------- Chart.js sensible defaults (if present) ---------- */
+/* ---------- Chart.js sensible defaults ---------- */
 function initChartDefaults() {
   if (!window.Chart) return;
   const { Chart } = window;
@@ -190,8 +202,11 @@ async function init() {
     const bs = state.bootstrap;
     setText("teamsCount", (bs.teams?.length ?? "—").toString());
     setText("playersCount", (bs.elements?.length ?? "—").toString());
-    const prev = bs.events.find(e => e.is_previous);
-    setText("lastFinishedGw", prev ? String(prev.id) : "—");
+
+    // Use robust "last finished" based on data_checked
+    const { lastFinished } = computeMarkers(bs.events || []);
+    setText("lastFinishedGw", lastFinished ? String(lastFinished.id) : "—");
+
     const note = document.querySelector(".sidebar .sidebar-note");
     if (note) note.textContent = "Live-aware: shows the current GW when it’s in progress.";
     setHeaderStatusFromBootstrap(bs);

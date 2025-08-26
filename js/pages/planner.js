@@ -160,7 +160,6 @@ async function greedyImproveXI(base, players, byId, teamsById, posById, wins, N,
       checkCancel();
       const budget = +(planBank + out.price).toFixed(1);
       const after  = plan.filter(p=>p.id!==out.id);
-      // prevent duplicate IN across whole plan
       const ranks = (await suggestReplacements(out, players, teamsById, posById, wins, true, budget, "", null, after))
         .filter(r => !after.some(p=>p.id===r.id) && r.pos===out.pos);
 
@@ -168,7 +167,7 @@ async function greedyImproveXI(base, players, byId, teamsById, posById, wins, N,
         checkCancel();
         const draft = cloneSquad(after);
         draft.push({ id:r.id,name:r.name,pos:r.pos,team:r.team,teamId:r.teamId,price:r.price,isStart:out.isStart,_xmins:r._xmins,_xpNext:r._xp });
-        await enrichXPForSquad(draft, wins, byId); // cheap (mostly one new)
+        await enrichXPForSquad(draft, wins, byId);
         const pick = autoPickBestXI(draft);
         if (!pick) continue;
         const delta = pick.total - best.total;
@@ -178,7 +177,6 @@ async function greedyImproveXI(base, players, byId, teamsById, posById, wins, N,
 
     if (!bestMove || bestMove.delta <= 1e-6) break;
 
-    // apply if no duplication and budget ok
     if (plan.some(p=>p.id===bestMove.inRow.id)) break; // safety
     const idx = plan.findIndex(p=>p.id===bestMove.out.id);
     plan[idx] = {
@@ -281,7 +279,6 @@ async function hitAwareImproveUnlimited(base, players, byId, teamsById, posById,
 
     let bestMove = null;
 
-    // scan a small but high-quality neighborhood
     for (const out of currentPick.xi){
       checkCancel();
       const budget = +(planBank + out.price).toFixed(1);
@@ -298,7 +295,7 @@ async function hitAwareImproveUnlimited(base, players, byId, teamsById, posById,
         if (!pick) continue;
 
         const stepPenalty = (moves + 1 > FREE_TRANSFERS) ? 4 : 0;
-        const delta = (pick.total - basePick.total) - (applied.reduce((a,b)=>a+b.stepPenalty,0) + stepPenalty); // total-net
+        const delta = (pick.total - basePick.total) - (applied.reduce((a,b)=>a+b.stepPenalty,0) + stepPenalty);
         if (!bestMove || delta > bestMove.delta){
           bestMove = { out, inRow:r, pick, delta, stepPenalty };
         }
@@ -306,9 +303,8 @@ async function hitAwareImproveUnlimited(base, players, byId, teamsById, posById,
     }
 
     if (bestMove && bestMove.delta > 1e-6){
-      // apply
       const idx = plan.findIndex(p=>p.id===bestMove.out.id);
-      if (idx >= 0 && !plan.some(p=>p.id===bestMove.inRow.id)){ // no duplicates
+      if (idx >= 0 && !plan.some(p=>p.id===bestMove.inRow.id)){
         plan[idx] = {
           id: bestMove.inRow.id, name: bestMove.inRow.name, pos: bestMove.inRow.pos,
           team: bestMove.inRow.team, teamId: bestMove.inRow.teamId, price: bestMove.inRow.price,
@@ -327,6 +323,8 @@ async function hitAwareImproveUnlimited(base, players, byId, teamsById, posById,
       } else {
         break; // duplicate detected, stop
       }
+    } else {
+      break;
     }
   }
 
@@ -408,29 +406,29 @@ export async function renderPlanner(main){
     const posById   = new Map(positions.map(p=>[p.id,p.singular_name_short]));
     const byId      = new Map(players.map(p=>[p.id,p]));
 
-    // GW refs
+    // === GW refs (always plan for the NEXT GW) ===
     const prevEvent = events.find(e=>e.is_previous) || null;
     const currEvent = events.find(e=>e.is_current)  || null;
     const nextEvent = events.find(e=>e.is_next)     || null;
 
-    const lastFinished = prevEvent?.id || (events.filter(e=>e.data_checked).map(e=>e.id).pop() ?? 0);
-    const planGw = nextEvent?.id ?? (currEvent ? currEvent.id + 1 : (lastFinished ? lastFinished + 1 : 1));
-    const maxGw  = Math.max(...events.map(e=>e.id));
-    const planGwClamped = Math.min(planGw, maxGw);
+    const lastFinished   = prevEvent?.id ?? (events.filter(e=>e.data_checked).slice(-1)[0]?.id ?? 0);
+    const planGw         = nextEvent?.id ?? ((currEvent?.id ?? lastFinished) + 1);
+    const maxGw          = Math.max(...events.map(e=>e.id));
+    const planGwClamped  = Math.min(planGw, maxGw);
 
     if (!state.entryId){
       ui.mount(main, utils.el("div",{class:"card"},"Enter your Entry ID (left sidebar) to use the planner."));
       return;
     }
 
-    // picks
+    // === Picks: try NEXT GW first, then current/last as fallback ===
     let picks = null;
-    const tryGws = [planGwClamped, currEvent?.id, lastFinished].filter(Boolean);
-    for (const gw of tryGws){
-      try { picks = await api.entryPicks(state.entryId, gw); if (picks?.picks?.length) break; } catch {}
+    try { picks = await api.entryPicks(state.entryId, planGwClamped); } catch {}
+    if (!picks?.picks?.length) {
+      try { picks = await api.entryPicks(state.entryId, currEvent?.id ?? lastFinished); } catch {}
     }
     if (!picks?.picks?.length){
-      ui.mount(main, ui.error("Planner couldn’t fetch your picks for planning or fallback GWs."));
+      ui.mount(main, ui.error("Planner couldn’t fetch your picks for the next or current GW."));
       return;
     }
 
@@ -455,9 +453,9 @@ export async function renderPlanner(main){
     let bankPlan = bankBaseInit;
     let planSquad = cloneSquad(baseSquad);
 
-    // window selector (default next 1)
+    // window selector (default next 1, from next GW)
     let windowLen = 1;
-    const wins = ()=> events.filter(e=>e.id>=planGwClamped).slice(0,windowLen).map(e=>e.id);
+    const wins = () => events.filter(e=>e.id>=planGwClamped).slice(0,windowLen).map(e=>e.id);
 
     /* ───────────────── Transfer Builder ───────────────── */
     shell.innerHTML = "";
@@ -621,6 +619,14 @@ export async function renderPlanner(main){
       }
     }
 
+    /* ── Initialize Future board as BEST XI for NEXT GW ── */
+    await enrichXPForSquad(planSquad, wins(), byId);
+    const initPick = autoPickBestXI(planSquad);
+    if (initPick) {
+      const ids = initPick.xiIds;
+      planSquad.forEach(p => { p.isStart = ids.has(p.id); });
+    }
+
     /* ───────────────── actions ───────────────── */
 
     resetPlanBtn.addEventListener("click", async ()=>{
@@ -629,7 +635,13 @@ export async function renderPlanner(main){
         planSquad = cloneSquad(baseSquad);
         bankPlan  = bankBaseInit;
         explainBox.textContent = "";
-        await refreshAll(true);
+        await enrichXPForSquad(planSquad, wins(), byId);
+        const p0 = autoPickBestXI(planSquad);
+        if (p0) {
+          const ids = p0.xiIds;
+          planSquad.forEach(p => { p.isStart = ids.has(p.id); });
+        }
+        await refreshAll(false);
       }catch(e){ if (!e.isCancel) console.error(e); }
       unlockUI();
     });
@@ -657,7 +669,7 @@ export async function renderPlanner(main){
               lockUI("Applying…");
               try{
                 const idx = planSquad.findIndex(p=>p.id===out.id);
-                if (idx>=0 && !planSquad.some(p=>p.id===r.id)){ // no duplicates
+                if (idx>=0 && !planSquad.some(p=>p.id===r.id)){
                   planSquad[idx] = { id:r.id,name:r.name,pos:r.pos,team:r.team,teamId:r.teamId,price:r.price,isStart:planSquad[idx].isStart,_xmins:r._xmins,_xpNext:r._xp };
                   bankPlan = +(bankPlan + out.price - r.price).toFixed(1);
 
@@ -701,6 +713,10 @@ export async function renderPlanner(main){
         await enrichXPForSquad(planSquad, wins(), byId);
         const beforePick = autoPickBestXI(baseSquad);
         const afterPick  = autoPickBestXI(planSquad);
+        if (afterPick){
+          const ids = afterPick.xiIds;
+          planSquad.forEach(p => { p.isStart = ids.has(p.id); });
+        }
         writeupExplain(explainBox, "Pick My Team (no transfers)", {
           context: `Auto-picked your best XI and formation from your existing 15 for GW${planGwClamped}.`,
           formation: afterPick?.formation,
@@ -790,7 +806,7 @@ export async function renderPlanner(main){
 
     // initial render
     lockUI("Preparing planner…");
-    try { await refreshAll(true); } catch(e){ if (!e.isCancel) console.error(e); }
+    try { await refreshAll(false); } catch(e){ if (!e.isCancel) console.error(e); }
     unlockUI();
 
   }catch(err){
