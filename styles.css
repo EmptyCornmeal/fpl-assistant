@@ -1875,3 +1875,250 @@
     background:linear-gradient(135deg, rgba(251, 191, 36, 0.15), transparent 60%);
     pointer-events:none;
   }
+
+  /* ─── Keyboard Shortcuts Overlay ─────────────────────── */
+  .keyboard-help-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(0, 0, 0, 0.75);
+    backdrop-filter:blur(8px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:2000;
+    animation:fadeIn 0.2s ease;
+  }
+  .keyboard-help-modal{
+    background:var(--bg2);
+    border:1px solid var(--border-strong);
+    border-radius:16px;
+    width:min(480px, 90vw);
+    box-shadow:var(--shadow-xl);
+    overflow:hidden;
+  }
+  .keyboard-help-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:16px 20px;
+    background:var(--surface-1);
+    border-bottom:1px solid var(--border);
+  }
+  .keyboard-help-header h3{
+    margin:0;
+    font-size:1.1rem;
+  }
+  .keyboard-help-close{
+    background:none;
+    border:none;
+    font-size:24px;
+    color:var(--muted);
+    cursor:pointer;
+    padding:4px 8px;
+    border-radius:8px;
+    transition:all 0.2s;
+  }
+  .keyboard-help-close:hover{
+    background:var(--surface-2);
+    color:var(--text);
+  }
+  .keyboard-help-content{
+    padding:20px;
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:24px;
+  }
+  @media (max-width:500px){
+    .keyboard-help-content{grid-template-columns:1fr}
+  }
+  .shortcut-group h4{
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--muted);
+    margin:0 0 12px;
+  }
+  .shortcut-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:6px 0;
+    font-size:14px;
+  }
+  .shortcut-row kbd{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:28px;
+    height:28px;
+    padding:0 8px;
+    background:var(--surface-2);
+    border:1px solid var(--border-strong);
+    border-radius:6px;
+    font-family:inherit;
+    font-size:12px;
+    font-weight:600;
+    color:var(--text);
+    box-shadow:0 2px 0 var(--border);
+  }
+
+  /* ─── Collapsible Sidebar ────────────────────────────── */
+  .sidebar{
+    transition:transform 0.3s ease, width 0.3s ease;
+  }
+  .sidebar-toggle{
+    position:absolute;
+    top:50%;
+    right:-14px;
+    transform:translateY(-50%);
+    width:28px;
+    height:48px;
+    background:var(--bg2);
+    border:1px solid var(--border-strong);
+    border-radius:0 8px 8px 0;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:var(--muted);
+    font-size:12px;
+    transition:all 0.2s;
+    z-index:10;
+  }
+  .sidebar-toggle:hover{
+    background:var(--surface-2);
+    color:var(--text);
+  }
+  .toggle-icon{
+    transition:transform 0.3s;
+  }
+
+  /* Collapsed state */
+  .sidebar-collapsed .sidebar{
+    transform:translateX(-100%);
+  }
+  .sidebar-collapsed .sidebar-toggle{
+    right:-42px;
+    border-radius:0 8px 8px 0;
+  }
+  .sidebar-collapsed .app{
+    margin-left:0;
+  }
+  .sidebar-collapsed .footer{
+    left:0;
+  }
+
+  /* ─── Mobile Bottom Navigation ───────────────────────── */
+  @media (max-width:700px){
+    .topbar .nav{
+      display:none;
+    }
+
+    .mobile-bottom-nav{
+      position:fixed;
+      bottom:0;
+      left:0;
+      right:0;
+      background:rgba(13, 20, 36, 0.95);
+      backdrop-filter:blur(16px);
+      border-top:1px solid var(--border-strong);
+      display:flex;
+      justify-content:space-around;
+      padding:8px 4px;
+      padding-bottom:max(8px, env(safe-area-inset-bottom));
+      z-index:100;
+    }
+
+    .mobile-nav-item{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:2px;
+      padding:6px 8px;
+      color:var(--muted);
+      text-decoration:none;
+      font-size:10px;
+      font-weight:500;
+      border-radius:8px;
+      transition:all 0.2s;
+      min-width:52px;
+    }
+    .mobile-nav-item:hover,
+    .mobile-nav-item.active{
+      color:var(--accent-light);
+      background:var(--accent-weak);
+    }
+    .mobile-nav-icon{
+      font-size:20px;
+    }
+
+    /* Hide sidebar toggle on mobile */
+    .sidebar-toggle{
+      display:none;
+    }
+
+    /* Adjust footer for bottom nav */
+    .footer{
+      bottom:60px;
+    }
+
+    /* Adjust main content padding */
+    .app{
+      padding-bottom:140px;
+    }
+  }
+
+  /* ─── Watchlist Star ─────────────────────────────────── */
+  .player-card-pitch .watchlist-btn{
+    position:absolute;
+    bottom:4px;
+    right:4px;
+    background:rgba(0,0,0,0.4);
+    border:none;
+    border-radius:50%;
+    cursor:pointer;
+    font-size:14px;
+    width:24px;
+    height:24px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    opacity:0.6;
+    transition:all 0.2s;
+    z-index:15;
+  }
+  .player-card-pitch .watchlist-btn:hover{
+    opacity:1;
+    transform:scale(1.15);
+    background:rgba(0,0,0,0.6);
+  }
+  .player-card-pitch .watchlist-btn.active{
+    opacity:1;
+  }
+  .player-card-pitch .watchlist-btn .star-icon{
+    color:rgba(255,255,255,0.7);
+  }
+  .player-card-pitch .watchlist-btn.active .star-icon{
+    color:#fbbf24;
+  }
+
+  /* Generic watchlist button for tables */
+  .watchlist-btn{
+    background:none;
+    border:none;
+    cursor:pointer;
+    font-size:18px;
+    padding:4px;
+    opacity:0.4;
+    transition:all 0.2s;
+  }
+  .watchlist-btn:hover{
+    opacity:0.8;
+    transform:scale(1.1);
+  }
+  .watchlist-btn.active{
+    opacity:1;
+  }
+  .watchlist-btn.active .star-icon{
+    color:#fbbf24;
+  }

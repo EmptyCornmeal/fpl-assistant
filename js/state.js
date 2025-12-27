@@ -2,12 +2,14 @@
 // Writable state with auto-persistence to localStorage.
 // Compatible with direct assignments like `state.entryId = 123`.
 
-const LS_ENTRY   = "fpl.entryId";
-const LS_LEAGUES = "fpl.leagueIds";
+const LS_ENTRY     = "fpl.entryId";
+const LS_LEAGUES   = "fpl.leagueIds";
+const LS_WATCHLIST = "fpl.watchlist";
 
 const _state = {
   entryId: null,
   leagueIds: [],
+  watchlist: [],
   bootstrap: null,
 };
 
@@ -18,6 +20,9 @@ try {
 
   const savedLeagues = localStorage.getItem(LS_LEAGUES);
   if (savedLeagues) _state.leagueIds = JSON.parse(savedLeagues);
+
+  const savedWatchlist = localStorage.getItem(LS_WATCHLIST);
+  if (savedWatchlist) _state.watchlist = JSON.parse(savedWatchlist);
 } catch {}
 
 function persist(prop, value) {
@@ -26,6 +31,8 @@ function persist(prop, value) {
       localStorage.setItem(LS_ENTRY, value ?? "");
     } else if (prop === "leagueIds") {
       localStorage.setItem(LS_LEAGUES, JSON.stringify(value || []));
+    } else if (prop === "watchlist") {
+      localStorage.setItem(LS_WATCHLIST, JSON.stringify(value || []));
     }
   } catch {}
 }
@@ -45,6 +52,11 @@ export const state = new Proxy({}, {
       persist("leagueIds", _state.leagueIds);
       return true;
     }
+    if (prop === "watchlist") {
+      _state.watchlist = Array.isArray(value) ? value : [];
+      persist("watchlist", _state.watchlist);
+      return true;
+    }
     if (prop === "bootstrap") {
       _state.bootstrap = value;
       return true;
@@ -54,3 +66,23 @@ export const state = new Proxy({}, {
     return true;
   }
 });
+
+// Watchlist helper functions
+export function isInWatchlist(playerId) {
+  return _state.watchlist.includes(playerId);
+}
+
+export function toggleWatchlist(playerId) {
+  const idx = _state.watchlist.indexOf(playerId);
+  if (idx === -1) {
+    _state.watchlist = [..._state.watchlist, playerId];
+  } else {
+    _state.watchlist = _state.watchlist.filter(id => id !== playerId);
+  }
+  persist("watchlist", _state.watchlist);
+  return isInWatchlist(playerId);
+}
+
+export function getWatchlist() {
+  return [..._state.watchlist];
+}
