@@ -4,50 +4,33 @@
   <meta charset="utf-8" />
   <title>FPL Dashboard — 2025/26</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Myles’ FPL Dashboard — live-aware analysis, planner, fixtures, meta, and mini-league tools." />
+  <meta name="description" content="Myles' FPL Dashboard — live-aware analysis, planner, fixtures, meta, and mini-league tools." />
 
   <link rel="icon" type="image/png" href="./favicon.png" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-  <style>
-    body{margin:0}
-    .footer{
-      position:fixed; left:0; right:0; bottom:0;
-      display:flex; align-items:center; gap:8px; justify-content:center;
-      padding:10px 16px; z-index:50;
-      background:var(--panel, #121a2b);
-      color:var(--text, #e8edf6);
-      border-top:1px solid var(--border, #22304b);
-    }
-    .footer .sep{opacity:.6}
-
-    /* Compact, responsive sidebar help */
-    .sidebar details.help-ids{margin-top:10px; font-size:12px; color:var(--muted,#b8c3d9); max-width:100%;}
-    .sidebar details.help-ids summary{cursor:pointer; user-select:none; font-size:13px; color:var(--text,#e8edf6);}
-    .sidebar details.help-ids .help-steps{margin:6px 0 0 0; overflow-x:hidden; max-width:100%;}
-    .sidebar details.help-ids p{margin:.35rem 0;}
-    .sidebar details.help-ids ol{margin:.25rem 0 .6rem 16px; padding:0;}
-    .sidebar details.help-ids li{margin:.15rem 0; line-height:1.3;}
-    .sidebar details.help-ids code{
-      display:block; margin-top:4px;
-      font-size:11px; line-height:1.25;
-      background:#0f1a2d; border:1px solid #22314c; padding:4px 6px; border-radius:6px;
-      white-space:break-spaces; overflow-wrap:anywhere; word-break:break-word; max-width:100%;
-    }
-    /* red ID highlight (no bold) */
-    .sidebar .hl-id{ color:#ff5a5a; font-weight:inherit; }
-  </style>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      ⚽ FPL Dashboard <span class="season">2025/26</span>
-      <span id="liveBadge" class="chip chip-accent" style="display:none;margin-left:8px;">LIVE</span>
+      <span class="brand-icon">⚽</span>
+      <span class="brand-text">FPL Dashboard</span>
+      <span class="season">2025/26</span>
+      <span id="liveBadge" class="live-badge" style="display:none;">
+        <span class="live-dot"></span>
+        <span class="live-text">LIVE</span>
+      </span>
+    </div>
+
+    <!-- Deadline Countdown -->
+    <div id="deadlineBox" class="deadline-box">
+      <div class="deadline-label">Next Deadline</div>
+      <div id="deadlineTimer" class="deadline-timer">--:--:--</div>
+      <div id="deadlineGw" class="deadline-gw">GW --</div>
     </div>
 
     <nav class="nav" aria-label="Primary">
@@ -56,12 +39,18 @@
       <a href="#/fixtures"     class="nav-link" data-route>Fixtures</a>
       <a href="#/gw-explorer"  class="nav-link" data-route>GW Explorer</a>
       <a href="#/mini-league"  class="nav-link" data-route>Mini-League</a>
-      <a href="#/planner"      class="nav-link" data-route>Planner (WIP)</a>
-      <a href="#/meta"         class="nav-link" data-route>Meta (WIP)</a>
+      <a href="#/planner"      class="nav-link" data-route>Planner</a>
+      <a href="#/meta"         class="nav-link" data-route>Meta</a>
       <a href="#/help"         class="nav-link" data-route>Help</a>
     </nav>
 
-    <div id="headerChips" class="chips" aria-live="polite"></div>
+    <div class="topbar-right">
+      <div id="headerChips" class="chips" aria-live="polite"></div>
+      <button id="themeToggle" class="theme-toggle" title="Toggle theme">
+        <span class="theme-icon-dark">🌙</span>
+        <span class="theme-icon-light">☀️</span>
+      </button>
+    </div>
   </header>
 
   <aside class="sidebar">
@@ -74,7 +63,7 @@
     </label>
     <button id="saveIdsBtn" class="btn">Save</button>
 
-    <div class="sidebar-note">Live-aware: shows the current <u>GW</u> when it’s in progress.</div>
+    <div class="sidebar-note">Live-aware: shows the current <u>GW</u> when it's in progress.</div>
     <div class="sidebar-meta">
       <div><span id="teamsCount">—</span> teams</div>
       <div><span id="playersCount">—</span> players</div>
@@ -92,7 +81,7 @@
         </ol>
         <code>https://fantasy.premierleague.com/entry/<span class="hl-id">1234567</span>/history</code>
         <ol start="3">
-          <li>The number in <strong style="font-weight:inherit;color:#ff5a5a;">red</strong> is your Entry ID. You can paste the full URL here — we’ll auto-extract it.</li>
+          <li>The number in <strong style="font-weight:inherit;color:#ff5a5a;">red</strong> is your Entry ID. You can paste the full URL here — we'll auto-extract it.</li>
         </ol>
 
         <p style="margin-top:8px;"><strong>Classic League ID</strong></p>
@@ -111,9 +100,21 @@
   <main id="app" class="app"></main>
 
   <footer class="footer" aria-label="Footer">
-    <span>© <span id="year"></span> Myles — FPL Dashboard. Unofficial; uses public FPL API via Cloudflare Worker proxy.</span>
-    <span class="sep">•</span>
-    <span>v<span id="appVersion">1.0.0</span></span>
+    <div class="footer-left">
+      <span>© <span id="year"></span> Myles — FPL Dashboard</span>
+      <span class="sep">•</span>
+      <span>v<span id="appVersion">1.1.0</span></span>
+    </div>
+    <div class="footer-right">
+      <span id="lastUpdated" class="last-updated">
+        <span class="update-dot"></span>
+        <span id="lastUpdatedText">Fetching data...</span>
+      </span>
+      <span id="autoRefreshStatus" class="auto-refresh-status" style="display:none;">
+        <span class="refresh-icon">↻</span>
+        <span id="refreshCountdown">60s</span>
+      </span>
+    </div>
   </footer>
 
   <script type="module" src="./js/main.js"></script>

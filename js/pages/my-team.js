@@ -31,12 +31,174 @@ const STAT_LABEL = {
   bps: "BPS",
 };
 
+// FPL photo URL template
+const PLAYER_PHOTO_URL = (photoId) => 
+  `https://resources.premierleague.com/premierleague/photos/players/110x140/p${photoId?.replace('.png', '')}.png`;
+
+// Team badge URL
+const TEAM_BADGE_URL = (teamCode) =>
+  `https://resources.premierleague.com/premierleague/badges/70/t${teamCode}.png`;
+
 const posKey = p => POS_ORDER[p] ?? 99;
+
+/* ───────────────── Pitch Visualization ───────────────── */
+function renderPitchVisualization(starters, benchRows, captain, viceCaptain, playerById, teamById, onPlayerClick) {
+  const pitch = utils.el("div", { class: "pitch-container" });
+  
+  // Pitch grass background
+  const grass = utils.el("div", { class: "pitch-grass" });
+  
+  // Sort starters by position
+  const gk = starters.filter(r => r.pos === "GKP");
+  const def = starters.filter(r => r.pos === "DEF");
+  const mid = starters.filter(r => r.pos === "MID");
+  const fwd = starters.filter(r => r.pos === "FWD");
+
+  // Detect formation
+  const formation = `${def.length}-${mid.length}-${fwd.length}`;
+  
+  // Formation label
+  const formationBadge = utils.el("div", { class: "pitch-formation" }, formation);
+  grass.append(formationBadge);
+
+  // Create rows
+  const createRow = (players, rowClass) => {
+    const row = utils.el("div", { class: `pitch-row ${rowClass}` });
+    players.forEach(p => {
+      const card = createPlayerCard(p, captain, viceCaptain, playerById, teamById, onPlayerClick);
+      row.append(card);
+    });
+    return row;
+  };
+
+  grass.append(createRow(fwd, "pitch-row-fwd"));
+  grass.append(createRow(mid, "pitch-row-mid"));
+  grass.append(createRow(def, "pitch-row-def"));
+  grass.append(createRow(gk, "pitch-row-gk"));
+
+  pitch.append(grass);
+
+  // Bench
+  if (benchRows.length > 0) {
+    const benchSection = utils.el("div", { class: "bench-section" });
+    const benchLabel = utils.el("div", { class: "bench-label" }, "BENCH");
+    const benchRow = utils.el("div", { class: "bench-row" });
+    
+    benchRows.forEach((p, idx) => {
+      const card = createPlayerCard(p, captain, viceCaptain, playerById, teamById, onPlayerClick, idx + 1);
+      benchRow.append(card);
+    });
+    
+    benchSection.append(benchLabel, benchRow);
+    pitch.append(benchSection);
+  }
+
+  return pitch;
+}
+
+function createPlayerCard(player, captain, viceCaptain, playerById, teamById, onPlayerClick, benchPos = null) {
+  const pl = playerById.get(player.id);
+  const team = teamById.get(player.teamId);
+  
+  const card = utils.el("div", { 
+    class: `player-card-pitch ${benchPos ? 'bench-card' : ''} ${player.status !== 'a' ? 'player-flagged' : ''}`
+  });
+
+  // Captain/VC badge
+  if (player.cap === "C") {
+    const capBadge = utils.el("div", { class: "player-captain-badge" }, "C");
+    card.append(capBadge);
+  } else if (player.cap === "VC") {
+    const vcBadge = utils.el("div", { class: "player-vc-badge" }, "V");
+    card.append(vcBadge);
+  }
+
+  // Bench position
+  if (benchPos) {
+    const benchBadge = utils.el("div", { class: "bench-pos-badge" }, String(benchPos));
+    card.append(benchBadge);
+  }
+
+  // Player photo
+  const photoWrapper = utils.el("div", { class: "player-photo-wrapper" });
+  const photo = utils.el("img", { 
+    class: "player-photo",
+    src: PLAYER_PHOTO_URL(pl?.photo),
+    alt: player.name,
+    loading: "lazy"
+  });
+  photo.onerror = () => {
+    photo.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 110 140'%3E%3Crect fill='%23334155' width='110' height='140'/%3E%3Ctext x='55' y='80' text-anchor='middle' fill='%2394a3b8' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+  };
+  
+  // Team badge overlay
+  const teamBadge = utils.el("img", {
+    class: "player-team-badge",
+    src: TEAM_BADGE_URL(team?.code),
+    alt: team?.short_name || "",
+    loading: "lazy"
+  });
+  teamBadge.onerror = () => { teamBadge.style.display = "none"; };
+  
+  photoWrapper.append(photo, teamBadge);
+  
+  // Info section
+  const info = utils.el("div", { class: "player-info" });
+  
+  // Name
+  const name = utils.el("div", { class: "player-name" }, player.name);
+  
+  // Points row
+  const pointsRow = utils.el("div", { class: "player-points-row" });
+  
+  // Current/Live points
+  const pts = player.currPoints ?? player.prevPoints ?? 0;
+  const ptsClass = pts >= 10 ? "pts-high" : (pts <= 1 ? "pts-low" : "");
+  const ptsEl = utils.el("div", { class: `player-pts ${ptsClass}` }, String(pts));
+  
+  // xP next
+  const xpEl = utils.el("div", { class: "player-xp" }, `xP: ${(player.xpNext || 0).toFixed(1)}`);
+  
+  pointsRow.append(ptsEl, xpEl);
+  
+  // Minutes badge
+  const xmins = player.xmins || 0;
+  const r90 = xmins / 90;
+  const minsText = r90 >= 0.9 ? "NAILED" : (r90 >= 0.7 ? "RISK" : "CAMEO");
+  const minsClass = r90 >= 0.9 ? "mins-nailed" : (r90 >= 0.7 ? "mins-risk" : "mins-cameo");
+  const minsBadge = utils.el("div", { class: `player-mins-badge ${minsClass}` }, minsText);
+  minsBadge.title = `Projected ${Math.round(xmins)}'`;
+
+  // Status indicator (if not available)
+  if (player.status !== 'a') {
+    const statusInfo = STATUS_MAP[player.status] || { icon: "❓", label: "Unknown" };
+    const statusBadge = utils.el("div", { class: "player-status-badge" }, statusInfo.icon);
+    statusBadge.title = `${statusInfo.label}${player.news ? ': ' + player.news : ''}`;
+    card.append(statusBadge);
+  }
+
+  info.append(name, pointsRow, minsBadge);
+  card.append(photoWrapper, info);
+
+  // Click handler
+  card.addEventListener("click", () => {
+    if (onPlayerClick) onPlayerClick(player);
+  });
+
+  return card;
+}
 
 /* ───────────────── page ───────────────── */
 export async function renderMyTeam(main){
   if (!state.entryId) {
-    ui.mount(main, utils.el("div",{class:"card"}, "Enter your Entry ID to see your team."));
+    const emptyState = utils.el("div", { class: "card empty-state" });
+    emptyState.innerHTML = `
+      <div class="empty-icon">🏟️</div>
+      <h3>Welcome to FPL Dashboard</h3>
+      <p>Enter your FPL Entry ID in the sidebar to view your team.</p>
+      <p class="small">You can find it in your FPL team URL: fantasy.premierleague.com/entry/<strong>1234567</strong>/history</p>
+    `;
+    ui.mount(main, emptyState);
     return;
   }
 
@@ -62,9 +224,6 @@ export async function renderMyTeam(main){
     const liveEventObj = events.find(e => e.is_current && !e.data_checked) || null;
     const liveGw = liveEventObj?.id ?? null;
 
-    // We’ll treat:
-    // - prevGw = lastFinished (final)
-    // - upcGw  = upcomingGw   (what you care about next)
     const prevGw = lastFinished || null;
     const upcGw  = upcomingGw || null;
 
@@ -97,14 +256,10 @@ export async function renderMyTeam(main){
     const priceM     = (p)=> +(p.now_cost/10).toFixed(1);
 
     // Picks & live
-    const [
-      picksPrev, livePrev,
-      picksUpc,  liveCurrFake // we won’t use this; live handled below
-    ] = await Promise.all([
+    const [picksPrev, livePrev, picksUpc] = await Promise.all([
       prevGw ? api.entryPicks(state.entryId, prevGw) : Promise.resolve(null),
-      prevGw ? api.eventLive(prevGw)                 : Promise.resolve({ elements: [] }),
+      prevGw ? api.eventLive(prevGw) : Promise.resolve({ elements: [] }),
       upcGw  ? api.entryPicks(state.entryId, upcGw).catch(()=>null) : Promise.resolve(null),
-      Promise.resolve({ elements: [] })
     ]);
 
     // Live map (if any)
@@ -116,12 +271,16 @@ export async function renderMyTeam(main){
        picksPrev?.picks?.length ? { src: "previous", gw: prevGw, data: picksPrev } :
                                   { src: "previous", gw: prevGw, data: picksPrev });
 
-    // Finance snapshot (from last finished)
+    // Finance snapshot
     const histRow = hist.current.find(h => h.event === (lastFinished || prevGw || roster.gw));
     const teamVal = histRow ? (histRow.value/10).toFixed(1) : "—";
     const bank    = histRow ? (histRow.bank/10).toFixed(1)  : "—";
+    const totalVal = histRow ? ((histRow.value + histRow.bank)/10).toFixed(1) : "—";
+    const overallRank = histRow?.overall_rank ?? profile?.summary_overall_rank ?? "—";
+    const gwRank = histRow?.rank ?? "—";
+    const gwPoints = histRow?.points ?? "—";
+    const totalPoints = histRow?.total_points ?? profile?.summary_overall_points ?? "—";
 
-    // Prev live map (finalised stats for prev GW exist in event_live too)
     const livePrevMap = toMap(livePrev?.elements || []);
 
     function toMap(arr){ return new Map((arr || []).map(e => [e.id, e])); }
@@ -135,11 +294,11 @@ export async function renderMyTeam(main){
       }
       return null;
     }
+
     function fixturesStrip(teamId, gws){
       const strip = utils.el("div",{class:"fixtures-strip"});
       const fxList = gws.map(gw => ({ gw, fx: teamFixtureForGW(teamId, gw) }));
       const shown = fxList.slice(0, 4);
-      const rest  = fxList.slice(4);
       for (const { gw, fx } of shown){
         const cell = utils.el("span",{class:"fx"});
         if (fx){
@@ -153,13 +312,6 @@ export async function renderMyTeam(main){
         }
         strip.append(cell);
       }
-      if (rest.length){
-        const more = utils.el("span",{class:"fx fx-more"}, `+${rest.length}`);
-        more.dataset.tooltip = rest.map(({gw,fx}) =>
-          fx ? `GW${gw}: ${fx.home?"H":"A"} ${fx.opp} (FDR ${fx.fdr||"?"})` : `GW${gw}: —`
-        ).join("\n");
-        strip.append(more);
-      }
       return strip;
     }
 
@@ -170,10 +322,16 @@ export async function renderMyTeam(main){
                      .sort((a,b)=> a.position - b.position);
 
     // Captain / VC
-    let capName = "—", vcName = "—";
+    let capName = "—", vcName = "—", capId = null, vcId = null;
     for (const pk of (picksForMode.picks || [])) {
-      if (pk.is_captain)      capName = playerById.get(pk.element)?.web_name || "—";
-      if (pk.is_vice_captain) vcName  = playerById.get(pk.element)?.web_name || "—";
+      if (pk.is_captain) { 
+        capName = playerById.get(pk.element)?.web_name || "—";
+        capId = pk.element;
+      }
+      if (pk.is_vice_captain) {
+        vcName = playerById.get(pk.element)?.web_name || "—";
+        vcId = pk.element;
+      }
     }
 
     // Row builder
@@ -186,7 +344,7 @@ export async function renderMyTeam(main){
       const liveE = liveMap.get(pl.id)     || {};
 
       const prevStats   = prevE.stats || {};
-      const currStats   = liveGw ? (liveE.stats || {}) : {};          // show only if truly live
+      const currStats   = liveGw ? (liveE.stats || {}) : {};
       const prevExplain = Array.isArray(prevE.explain) ? prevE.explain : [];
       const currExplain = liveGw && Array.isArray(liveE.explain) ? liveE.explain : [];
 
@@ -242,11 +400,17 @@ export async function renderMyTeam(main){
     const benchRows = [];
     for (let i=0;i<benchAll.length;i++) benchRows.push(await buildRow(benchAll[i], i));
 
+    // Player click handler for modal
+    const handlePlayerClick = (player) => {
+      openModal(`${player.name} — Breakdown`, renderBreakdown(player));
+    };
+
     /* ───────────────── UI helpers ───────────────── */
     function compactGwCell(pts, mins){
       const v = (pts==null && mins==null) ? "—" : `${pts ?? 0} · ${mins ?? 0}′`;
       return utils.el("span",{class:"cell-compact"}, v);
     }
+
     function minutesBadge(r){
       const b = utils.el("span",{class:"badge"},"—");
       const v = r.xmins||0; const r90 = v/90;
@@ -255,6 +419,7 @@ export async function renderMyTeam(main){
       b.dataset.tooltip = `Projected ${Math.round(v)}' based on last 5 + status`;
       return b;
     }
+
     function eoChips(r){
       const wrap = utils.el("div",{class:"eo-chips"});
       const overall = utils.el("span",{class:"chip chip-dim"}, `${r.selOverall.toFixed(1)}%`);
@@ -267,74 +432,12 @@ export async function renderMyTeam(main){
       }
       return wrap;
     }
+
     function statusPill(r){
       const s = STATUS_MAP[r.status] || {label: r.status?.toUpperCase?.() || "?", cls:"st-unk", icon:"ℹ️"};
       const pill = utils.el("span",{class:`status-pill ${s.cls}`}, `${s.icon} ${s.label}`);
       if (r.news) pill.dataset.tooltip = r.news;
       return pill;
-    }
-
-    const hdrPrev   = `GW${prevGw || "—"} (final)`;
-    const hdrCurr   = liveGw ? `GW${liveGw} (live)` : "Live —";
-    const hdrXpNext = upcGw ? `xP → GW${upcGw}` : "xP → Next";
-    const hdrXpWin  = `xP → Next ${winN}`;
-
-    function makeColumns({ forBench=false } = {}) {
-      const cols = [];
-
-      if (!forBench) {
-        cols.push({
-          key:"cap", header:"", cell:r=>{
-            if (r.cap==="C") return utils.el("span",{class:"badge c-badge"},"C");
-            if (r.cap==="VC") return utils.el("span",{class:"badge vc-badge"},"VC");
-            return "";
-          }
-        });
-      } else {
-        cols.push({ key:"bench", header:"#", accessor:r=>r.benchNo ?? "", sortBy:r=>r.benchNo ?? 99 });
-      }
-
-      cols.push({
-        key:"name", header:"Name", accessor:r=>r.name, sortBy:r=>r.name, cell:r=>{
-          const wrap = utils.el("div",{class:"name-cell"});
-          wrap.append(utils.el("span",{class:"team-chip"}, r.team));
-          wrap.append(utils.el("span",{class:"nm"}, r.name));
-          if (r.priceMomentum) {
-            const mom = utils.el("span",{class:"mom"}, r.priceMomentum);
-            mom.dataset.tooltip = r.priceMomentum==="▲" ? "High net transfers in" : "High net transfers out";
-            wrap.append(mom);
-          }
-          return wrap;
-        }
-      });
-
-      cols.push({ key:"pos", header:"Pos", accessor:r=>r.pos, sortBy:r=>r.posKey });
-      cols.push({ key:"price", header:"Price", accessor:r=>r.price, cell:r=>`£${r.price.toFixed(1)}m`, sortBy:r=>r.price });
-
-      cols.push({
-        key:"gwPrev", header:hdrPrev, cell:r=>compactGwCell(r.prevPoints, r.prevMinutes),
-        sortBy:r=> (r.prevPoints ?? -1) * 1000 + (r.prevMinutes ?? -1)
-      });
-      cols.push({
-        key:"gwCurr", header:hdrCurr, cell:r=>compactGwCell(r.currPoints, r.currMinutes),
-        sortBy:r=> (r.currPoints ?? -1) * 1000 + (r.currMinutes ?? -1)
-      });
-
-      cols.push({ key:"xpNext",   header:hdrXpNext,  accessor:r=>r.xpNext||0,   cell:r=> (r.xpNext||0).toFixed(2),   sortBy:r=>r.xpNext||0 });
-      cols.push({ key:"xpWindow", header:hdrXpWin,   accessor:r=>r.xpWindow||0, cell:r=> (r.xpWindow||0).toFixed(2), sortBy:r=>r.xpWindow||0 });
-      cols.push({ key:"xmins", header:"xMins", cell:minutesBadge, sortBy:r=>r.xmins ?? 0 });
-      cols.push({ key:"eo", header:"EO", cell:eoChips, sortBy:r=> (r.selMeta ?? r.selOverall) });
-
-      cols.push({ key:"status", header:"Status", cell:statusPill, sortBy:r=> r.status || "" });
-      cols.push({ key:"fixtures", header:"Fixtures", cell:r=> fixturesStrip(playerById.get(r.id).team, windowGwIds()) });
-
-      cols.push({ key:"details", header:"Details", cell:r=>{
-        const btn = utils.el("button",{class:"btn-ghost", type:"button"},"Breakdown");
-        btn.addEventListener("click",()=> openModal(`Breakdown — ${r.name}`, renderBreakdown(r)) );
-        return btn;
-      }});
-
-      return cols;
     }
 
     /* ─────────────── breakdown modal helpers ─────────────── */
@@ -367,7 +470,6 @@ export async function renderMyTeam(main){
     function gwCard({ title, points, minutes, explain, teamId }){
       const card = utils.el("div",{class:"bd-card"});
 
-      // Header
       const head = utils.el("div",{class:"bd-header"});
       head.append(
         utils.el("div",{class:"b"}, title),
@@ -390,10 +492,8 @@ export async function renderMyTeam(main){
       let gwSum = 0;
 
       for (const chunk of explain){
-        // One block per fixture
         const block = utils.el("div",{class:"bd-fixture"});
 
-        // Fixture label (H/A OPP · score if known)
         const fx = fixturesById.get(chunk.fixture) || null;
         let label = `Fixture ${chunk.fixture}`;
         if (fx){
@@ -408,7 +508,6 @@ export async function renderMyTeam(main){
           utils.el("span",{class:"chip fx-badge"}, label)
         ]));
 
-        // Stat chips grid
         const chips = utils.el("div",{class:"bd-chip-grid"});
         let localSum = 0;
 
@@ -474,99 +573,175 @@ export async function renderMyTeam(main){
       if (!currentC || !best) return null;
       const diff = (best.xpNext||0) - (currentC.xpNext||0);
       if (best.name !== currentC.name && diff > 0.6) {
-        return `Consider captaining ${best.name} (xP ${best.xpNext.toFixed(2)}) over ${currentC.name} (xP ${(currentC.xpNext||0).toFixed(2)}), +${diff.toFixed(2)}.`;
+        return {
+          type: "captain",
+          message: `Consider captaining ${best.name} (xP ${best.xpNext.toFixed(2)}) over ${currentC.name} (xP ${(currentC.xpNext||0).toFixed(2)})`,
+          gain: `+${diff.toFixed(2)} xP`
+        };
       }
       return null;
     }
+
     function benchSuggestion() {
       if (!rows.length || !benchRows.length) return null;
       const worstStarter = [...rows].sort((a,b)=> (a.xpNext||0) - (b.xpNext||0))[0];
       const bestBench = [...benchRows].sort((a,b)=> (b.xpNext||0) - (a.xpNext||0))[0];
       const gain = (bestBench.xpNext||0) - (worstStarter.xpNext||0);
       if (gain > 0.5) {
-        return `Start ${bestBench.name} over ${worstStarter.name} (+${gain.toFixed(2)} xP next GW).`;
+        return {
+          type: "bench",
+          message: `Start ${bestBench.name} over ${worstStarter.name}`,
+          gain: `+${gain.toFixed(2)} xP`
+        };
       }
       return null;
     }
+
     function healthIssues(list){
       return list.filter(r => (r.status && r.status !== "a") || (r.news && r.news.length));
     }
 
     /* ───────────────── Mount UI ───────────────── */
-    const header = utils.el("div",{class:"grid cols-4"});
-    header.append(
-      ui.metric("Manager", `${profile.player_first_name} ${profile.player_last_name}`),
-      ui.metric("Team", profile.name),
-      ui.metric("Team Value", `£${teamVal}m`),
-      ui.metric("Bank", `£${bank}m`)
-    );
+    const page = utils.el("div", { class: "my-team-page" });
 
-    const quick = utils.el("div",{class:"chips"});
-    quick.append(
-      utils.el("span",{class:"chip"}, `Last Finished: GW${lastFinished || "—"}`),
-      utils.el("span",{class:"chip"}, `Upcoming: GW${upcGw || "—"}`),
-      utils.el("span",{class:"chip"}, `Live: ${liveGw ? `GW${liveGw}` : "—"}`),
-      utils.el("span",{class:"chip"}, `Roster: ${
-        roster.src === "upcoming" ? `GW${roster.gw} (upcoming)` : `GW${roster.gw} (previous)`}`),
-      utils.el("span",{class:"chip"}, `Captain: ${capName}`),
-      utils.el("span",{class:"chip"}, `Vice: ${vcName}`)
-    );
+    // Header card with stats
+    const headerCard = utils.el("div", { class: "card team-header-card" });
+    
+    const headerTop = utils.el("div", { class: "team-header-top" });
+    const managerInfo = utils.el("div", { class: "manager-info" });
+    managerInfo.innerHTML = `
+      <h2 class="team-name">${profile.name}</h2>
+      <div class="manager-name">${profile.player_first_name} ${profile.player_last_name}</div>
+    `;
+    
+    const gwBadge = utils.el("div", { class: "gw-status-badge" });
+    if (liveGw) {
+      gwBadge.innerHTML = `<span class="live-dot"></span> GW${liveGw} LIVE`;
+      gwBadge.classList.add("is-live");
+    } else {
+      gwBadge.textContent = `GW${prevGw || roster.gw}`;
+    }
+    
+    headerTop.append(managerInfo, gwBadge);
 
-    const startersTable = ui.table(makeColumns(), rows);
-    startersTable.id = "myteam-table";
+    // Stats grid
+    const statsGrid = utils.el("div", { class: "team-stats-grid" });
+    statsGrid.innerHTML = `
+      <div class="stat-item">
+        <div class="stat-value">${totalPoints}</div>
+        <div class="stat-label">Total Points</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${typeof overallRank === 'number' ? overallRank.toLocaleString() : overallRank}</div>
+        <div class="stat-label">Overall Rank</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${gwPoints}</div>
+        <div class="stat-label">GW Points</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">£${totalVal}m</div>
+        <div class="stat-label">Squad Value</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">£${bank}m</div>
+        <div class="stat-label">In Bank</div>
+      </div>
+      <div class="stat-item captain-stat">
+        <div class="stat-value">${capName}</div>
+        <div class="stat-label">Captain</div>
+      </div>
+    `;
 
-    const benchCard = utils.el("div",{class:"card"});
-    benchCard.append(utils.el("h3",{},"Bench"));
-    const benchTable = benchRows.length
-      ? ui.table(makeColumns({ forBench:true }), benchRows)
-      : utils.el("div",{class:"tag"},"No bench data");
-    benchCard.append(benchTable);
+    headerCard.append(headerTop, statsGrid);
+    page.append(headerCard);
 
-    // Bottom: Sanity + Health
-    const bottomGrid = utils.el("div",{class:"grid cols-2 gap-16"});
+    // Pitch visualization
+    const pitchCard = utils.el("div", { class: "card pitch-card" });
+    const pitchTitle = utils.el("div", { class: "pitch-title" });
+    pitchTitle.innerHTML = `
+      <h3>Starting XI</h3>
+      <div class="pitch-subtitle">Click a player for detailed breakdown</div>
+    `;
+    const pitch = renderPitchVisualization(rows, benchRows, capId, vcId, playerById, teamById, handlePlayerClick);
+    pitchCard.append(pitchTitle, pitch);
+    page.append(pitchCard);
 
-    const recs = utils.el("div",{class:"card"});
-    recs.append(utils.el("h3",{},"Sanity checks"));
-    const list = utils.el("ul",{class:"bullets"});
+    // Insights panel
+    const insightsCard = utils.el("div", { class: "card insights-card" });
+    const insightsTitle = utils.el("h3", {}, "💡 Smart Insights");
+    const insightsList = utils.el("div", { class: "insights-list" });
+
     const capSug = captainSuggestion();
     const bnSug = benchSuggestion();
-    if (!capSug && !bnSug) list.append(utils.el("li",{},"No obvious issues detected. 👍"));
-    else {
-      if (capSug) list.append(utils.el("li",{}, capSug));
-      if (bnSug)  list.append(utils.el("li",{}, bnSug));
-    }
-    recs.append(list);
-
-    const health = utils.el("div",{class:"card"});
-    health.append(utils.el("h3",{},"Health Centre"));
     const issues = healthIssues([...rows, ...benchRows]);
-    if (!issues.length) {
-      health.append(utils.el("div",{class:"tag"},"All players available."));
+
+    if (!capSug && !bnSug && !issues.length) {
+      insightsList.innerHTML = `
+        <div class="insight-item insight-good">
+          <span class="insight-icon">✅</span>
+          <span class="insight-text">Your team looks good! No obvious issues detected.</span>
+        </div>
+      `;
     } else {
-      const hl = utils.el("ul",{class:"bullets"});
-      for (const r of issues){
-        const chance = players.find(p=>p.id===r.id)?.chance_of_playing_next_round;
-        const bits = [];
-        bits.push(`${r.name} (${r.team}, ${r.pos})`);
-        if (chance != null) bits.push(`Chance: ${chance}%`);
-        if (r.status && STATUS_MAP[r.status]) bits.push(STATUS_MAP[r.status].label);
-        if (r.news) bits.push(`“${r.news}”`);
-        hl.append(utils.el("li",{}, bits.join(" — ")));
+      if (capSug) {
+        const item = utils.el("div", { class: "insight-item insight-captain" });
+        item.innerHTML = `
+          <span class="insight-icon">👑</span>
+          <span class="insight-text">${capSug.message}</span>
+          <span class="insight-gain">${capSug.gain}</span>
+        `;
+        insightsList.append(item);
       }
-      health.append(hl);
+      if (bnSug) {
+        const item = utils.el("div", { class: "insight-item insight-bench" });
+        item.innerHTML = `
+          <span class="insight-icon">🔄</span>
+          <span class="insight-text">${bnSug.message}</span>
+          <span class="insight-gain">${bnSug.gain}</span>
+        `;
+        insightsList.append(item);
+      }
+      if (issues.length) {
+        const item = utils.el("div", { class: "insight-item insight-warning" });
+        const playerList = issues.map(r => {
+          const chance = players.find(p=>p.id===r.id)?.chance_of_playing_next_round;
+          return `${r.name} (${STATUS_MAP[r.status]?.label || r.status}${chance != null ? `, ${chance}%` : ''})`;
+        }).join(", ");
+        item.innerHTML = `
+          <span class="insight-icon">⚠️</span>
+          <span class="insight-text">Flagged: ${playerList}</span>
+        `;
+        insightsList.append(item);
+      }
     }
 
-    bottomGrid.append(recs, health);
+    insightsCard.append(insightsTitle, insightsList);
+    page.append(insightsCard);
 
-    const titleRoster =
-      roster.src === "upcoming" ? `GW${roster.gw} (upcoming)` : `GW${roster.gw} (previous)`;
+    // Fixtures preview
+    const fixturesCard = utils.el("div", { class: "card fixtures-preview-card" });
+    fixturesCard.innerHTML = `<h3>📅 Upcoming Fixtures</h3>`;
+    
+    const fixturesGrid = utils.el("div", { class: "fixtures-preview-grid" });
+    const uniqueTeams = [...new Set(rows.map(r => r.teamId))];
+    
+    for (const teamId of uniqueTeams) {
+      const team = teamById.get(teamId);
+      const teamRow = utils.el("div", { class: "fixture-team-row" });
+      teamRow.innerHTML = `
+        <img class="fixture-team-badge" src="${TEAM_BADGE_URL(team?.code)}" alt="${team?.short_name}" onerror="this.style.display='none'">
+        <span class="fixture-team-name">${team?.short_name || '?'}</span>
+      `;
+      teamRow.append(fixturesStrip(teamId, windowGwIds()));
+      fixturesGrid.append(teamRow);
+    }
+    
+    fixturesCard.append(fixturesGrid);
+    page.append(fixturesCard);
 
-    ui.mount(main, utils.el("div",{}, [
-      utils.el("div",{class:"card"},[utils.el("h3",{},"Overview"), header, quick]),
-      utils.el("div",{class:"card"},[utils.el("h3",{},`Starting XI — ${titleRoster}`), startersTable]),
-      benchCard,
-      bottomGrid
-    ]));
+    ui.mount(main, page);
+
   } catch (e) {
     ui.mount(main, ui.error("Failed to load My Team", e));
   }

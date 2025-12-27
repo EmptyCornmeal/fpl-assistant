@@ -11,7 +11,7 @@ import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
 import { state } from "./state.js";
 
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 
 const routes = {
   "my-team": renderMyTeam,
@@ -24,6 +24,238 @@ const routes = {
   "help": renderHelp,
 };
 
+/* ---------- Auto-refresh state ---------- */
+let autoRefreshInterval = null;
+let countdownInterval = null;
+let countdownSeconds = 60;
+let lastFetchTime = null;
+let isLiveGw = false;
+
+/* ---------- Deadline Countdown ---------- */
+let deadlineInterval = null;
+
+function updateDeadlineCountdown() {
+  const bs = state.bootstrap;
+  if (!bs?.events) return;
+
+  const now = Date.now();
+  
+  // Find next GW with deadline in the future
+  const upcomingEvent = bs.events.find(e => {
+    const deadline = new Date(e.deadline_time).getTime();
+    return deadline > now;
+  });
+
+  const deadlineBox = document.getElementById("deadlineBox");
+  const deadlineTimer = document.getElementById("deadlineTimer");
+  const deadlineGw = document.getElementById("deadlineGw");
+
+  if (!upcomingEvent) {
+    if (deadlineTimer) deadlineTimer.textContent = "Season Over";
+    if (deadlineGw) deadlineGw.textContent = "";
+    if (deadlineBox) deadlineBox.classList.add("deadline-ended");
+    return;
+  }
+
+  const deadline = new Date(upcomingEvent.deadline_time).getTime();
+  const diff = deadline - now;
+
+  if (diff <= 0) {
+    if (deadlineTimer) deadlineTimer.textContent = "LOCKED";
+    if (deadlineBox) deadlineBox.classList.add("deadline-locked");
+    return;
+  }
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+  let timeStr;
+  if (days > 0) {
+    timeStr = `${days}d ${hours}h ${minutes}m`;
+  } else if (hours > 0) {
+    timeStr = `${hours}h ${minutes}m ${seconds}s`;
+  } else {
+    timeStr = `${minutes}m ${seconds}s`;
+  }
+
+  if (deadlineTimer) deadlineTimer.textContent = timeStr;
+  if (deadlineGw) deadlineGw.textContent = `GW ${upcomingEvent.id}`;
+
+  // Add urgency classes
+  if (deadlineBox) {
+    deadlineBox.classList.remove("deadline-urgent", "deadline-critical", "deadline-locked");
+    if (diff < 1000 * 60 * 60) { // Less than 1 hour
+      deadlineBox.classList.add("deadline-critical");
+    } else if (diff < 1000 * 60 * 60 * 24) { // Less than 24 hours
+      deadlineBox.classList.add("deadline-urgent");
+    }
+  }
+}
+
+function startDeadlineCountdown() {
+  updateDeadlineCountdown();
+  if (deadlineInterval) clearInterval(deadlineInterval);
+  deadlineInterval = setInterval(updateDeadlineCountdown, 1000);
+}
+
+/* ---------- Theme Toggle ---------- */
+function initTheme() {
+  const saved = localStorage.getItem("fpl.theme");
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const theme = saved || (prefersDark ? "dark" : "dark"); // default dark
+  
+  document.documentElement.setAttribute("data-theme", theme);
+  updateThemeIcon(theme);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  const next = current === "dark" ? "light" : "dark";
+  
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem("fpl.theme", next);
+  updateThemeIcon(next);
+}
+
+function updateThemeIcon(theme) {
+  const btn = document.getElementById("themeToggle");
+  if (!btn) return;
+  btn.classList.toggle("is-light", theme === "light");
+}
+
+function bindThemeToggle() {
+  const btn = document.getElementById("themeToggle");
+  if (btn) {
+    btn.addEventListener("click", toggleTheme);
+  }
+}
+
+/* ---------- Last Updated Timestamp ---------- */
+function updateLastFetchTime() {
+  lastFetchTime = Date.now();
+  updateLastUpdatedDisplay();
+}
+
+function updateLastUpdatedDisplay() {
+  const el = document.getElementById("lastUpdatedText");
+  if (!el || !lastFetchTime) return;
+
+  const now = Date.now();
+  const diff = Math.floor((now - lastFetchTime) / 1000);
+
+  let text;
+  if (diff < 5) {
+    text = "Just now";
+  } else if (diff < 60) {
+    text = `${diff}s ago`;
+  } else if (diff < 3600) {
+    const mins = Math.floor(diff / 60);
+    text = `${mins}m ago`;
+  } else {
+    const hrs = Math.floor(diff / 3600);
+    text = `${hrs}h ago`;
+  }
+
+  el.textContent = `Updated ${text}`;
+  
+  // Update dot color based on freshness
+  const dot = el.previousElementSibling;
+  if (dot && dot.classList.contains("update-dot")) {
+    dot.classList.remove("stale", "old");
+    if (diff > 300) dot.classList.add("old"); // >5 min
+    else if (diff > 60) dot.classList.add("stale"); // >1 min
+  }
+}
+
+// Update display every 10 seconds
+setInterval(updateLastUpdatedDisplay, 10000);
+
+/* ---------- Auto-Refresh for Live GW ---------- */
+function checkIfLiveGw() {
+  const bs = state.bootstrap;
+  if (!bs?.events) return false;
+  
+  const current = bs.events.find(e => e.is_current);
+  return current && !current.data_checked;
+}
+
+function updateAutoRefreshUI() {
+  const statusEl = document.getElementById("autoRefreshStatus");
+  const countdownEl = document.getElementById("refreshCountdown");
+  
+  if (!statusEl) return;
+  
+  if (isLiveGw) {
+    statusEl.style.display = "flex";
+    if (countdownEl) countdownEl.textContent = `${countdownSeconds}s`;
+  } else {
+    statusEl.style.display = "none";
+  }
+}
+
+function startAutoRefresh() {
+  if (!isLiveGw) return;
+  
+  // Clear existing intervals
+  if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+  if (countdownInterval) clearInterval(countdownInterval);
+  
+  countdownSeconds = 60;
+  updateAutoRefreshUI();
+  
+  // Countdown ticker
+  countdownInterval = setInterval(() => {
+    countdownSeconds--;
+    updateAutoRefreshUI();
+    
+    if (countdownSeconds <= 0) {
+      countdownSeconds = 60;
+      refreshData();
+    }
+  }, 1000);
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+    autoRefreshInterval = null;
+  }
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
+  
+  const statusEl = document.getElementById("autoRefreshStatus");
+  if (statusEl) statusEl.style.display = "none";
+}
+
+async function refreshData() {
+  try {
+    // Clear cache and refetch
+    api.clearCache();
+    state.bootstrap = await api.bootstrap();
+    updateLastFetchTime();
+    
+    // Check if still live
+    isLiveGw = checkIfLiveGw();
+    if (!isLiveGw) {
+      stopAutoRefresh();
+    }
+    
+    // Update UI
+    setHeaderStatusFromBootstrap(state.bootstrap);
+    
+    // Refresh current page
+    navigate(location.hash);
+    
+  } catch (e) {
+    console.error("Auto-refresh failed:", e);
+  }
+}
+
+/* ---------- Routing ---------- */
 function getTabFromHash(hash) {
   const raw = (hash || location.hash || "#/my-team").replace(/^#\//, "");
   return routes[raw] ? raw : "my-team";
@@ -144,10 +376,13 @@ function setHeaderStatusFromBootstrap(bs) {
   const liveBadge = document.getElementById("liveBadge");
   const headerChips = document.getElementById("headerChips");
 
+  // Check if live
+  isLiveGw = current && !current.data_checked;
+
   if (liveBadge) {
-    if (current && !current.data_checked) {
+    if (isLiveGw) {
       liveBadge.style.display = "inline-flex";
-      liveBadge.textContent = `LIVE • GW ${current.id}`;
+      liveBadge.querySelector(".live-text").textContent = `LIVE GW${current.id}`;
     } else {
       liveBadge.style.display = "none";
     }
@@ -156,12 +391,17 @@ function setHeaderStatusFromBootstrap(bs) {
   if (headerChips) {
     headerChips.innerHTML = "";
     if (lastFinished) headerChips.appendChild(chip(`Last: GW${lastFinished.id}`));
-    if (current) {
-      headerChips.appendChild(
-        chip(current.data_checked ? `Current: GW${current.id} (final)` : `Current: GW${current.id} (live)`)
-      );
+    if (current && !isLiveGw) {
+      headerChips.appendChild(chip(`Current: GW${current.id}`));
     }
     if (next) headerChips.appendChild(chip(`Next: GW${next.id}`));
+  }
+
+  // Start/stop auto-refresh based on live status
+  if (isLiveGw) {
+    startAutoRefresh();
+  } else {
+    stopAutoRefresh();
   }
 }
 
@@ -192,9 +432,14 @@ function adjustForFixedFooter() {
 
 /* -------------------- INIT -------------------- */
 async function init() {
+  // Initialize theme first (prevents flash)
+  initTheme();
+  bindThemeToggle();
+
   // Prefetch bootstrap (non-fatal if it fails)
   try {
     state.bootstrap = await api.bootstrap();
+    updateLastFetchTime();
   } catch {}
 
   // Sidebar stats + header status
@@ -208,8 +453,11 @@ async function init() {
     setText("lastFinishedGw", lastFinished ? String(lastFinished.id) : "—");
 
     const note = document.querySelector(".sidebar .sidebar-note");
-    if (note) note.textContent = "Live-aware: shows the current GW when it’s in progress.";
+    if (note) note.textContent = "Live-aware: shows the current GW when it's in progress.";
     setHeaderStatusFromBootstrap(bs);
+    
+    // Start deadline countdown
+    startDeadlineCountdown();
   }
 
   // Footer meta
