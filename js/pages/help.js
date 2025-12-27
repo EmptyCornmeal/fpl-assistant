@@ -6,17 +6,17 @@ import { state } from "../state.js";
 export function renderHelp(main){
   main.innerHTML = "";
 
-  const page = utils.el("div");
+  const page = utils.el("div", { class: "help-page" });
 
   // --- Quick start ----------------------------------------------------------
   page.append(utils.el("div",{class:"card"},[
-    utils.el("h3",{},"Quick start"),
+    utils.el("h3",{},"Quick Start"),
     utils.el("ol",{},[
       utils.el("li",{},"Enter your FPL Entry ID in the left sidebar (and press Save)."),
       utils.el("li",{},"Optionally add one or more Classic League IDs (comma-separated)."),
-      utils.el("li",{},"Use the top navigation to explore: My Team → All Players → Fixtures → GW Explorer → Planner → Mini-League."),
+      utils.el("li",{},"Use the top navigation to explore: My Team → Players → Fixtures → Explorer → League."),
       utils.el("li",{},[
-        "Use the ", utils.el("b",{},"🌓 Theme"), " button (top right) to switch light/dark."
+        "Use the ", utils.el("b",{},"theme toggle"), " (top right) to switch light/dark mode."
       ]),
     ])
   ]));
@@ -62,33 +62,29 @@ export function renderHelp(main){
       ])
     ]),
 
-    section("Planner", [
-      "Build a plan with your live squad, minute-risk, and expected points.",
-      bullet([
-        ["Squad board", "Shows XI/bench, xP for next & window (matches the selected window)."],
-        ["Transfer builder", "Choose OUT, set filters/price cap, then Suggest or Auto-recommend (1 FT)."],
-        ["Recommendations", "Ranked by ΔxP over the window; enforces budget and 3-per-club. Apply to preview bank & deltas."],
-        ["Copy plan", "One click to copy a concise plan summary for ChatGPT to refine (captain, bench order, alternatives)."]
-      ])
-    ]),
-
     section("Mini-League", [
-      "Standings plus two charts and a league Top XI.",
+      "View standings, charts, and league statistics for your classic leagues.",
       bullet([
-        ["Charts", "Cumulative total points by GW and per-GW points (Y-axis always starts at 0)."],
-        ["Tooltips", "Show “Manager — Team”. Every manager on page 1 is included."],
-        ["League Top XI", "Most-picked 3-4-3 for the last finished GW (ties use captain votes)."]
+        ["Expand/Collapse", "Click Expand to see detailed charts and Top XI for each league."],
+        ["Charts", "Cumulative total points by GW and per-GW points progression."],
+        ["League Top XI", "Most-picked 3-4-3 formation for the last finished GW."]
       ])
     ]),
+  ]));
 
-    section("Meta", [
-      "Explains how modelled metrics are derived at a high level.",
-      bullet([
-        ["xP", "Combines fixture difficulty (FDR/xFDR), role/position tendencies and recent data to estimate next-GW/window points."],
-        ["xMins", "Heuristic using availability, recent minutes and status flags to flag NAILED/RISK/CAMEO bands."],
-        ["xFDR", "Model-based difficulty that adjusts for home/away and attacker/defender context."]
-      ])
-    ]),
+  // --- Keyboard Shortcuts ---------------------------------------------------
+  page.append(utils.el("div",{class:"card"},[
+    utils.el("h3",{},"Keyboard Shortcuts"),
+    grid([
+      ["1","My Team"],
+      ["2","Players"],
+      ["3","Fixtures"],
+      ["4","Explorer"],
+      ["5","League"],
+      ["6","Help"],
+      ["S","Toggle sidebar"],
+      ["?","Show this help"]
+    ])
   ]));
 
   // --- Glossary -------------------------------------------------------------
