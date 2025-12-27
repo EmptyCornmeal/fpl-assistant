@@ -3,10 +3,8 @@ import { renderMyTeam } from "./pages/my-team.js";
 import { renderAllPlayers } from "./pages/all-players.js";
 import { renderFixtures } from "./pages/fixtures.js";
 import { renderGwExplorer } from "./pages/gw-explorer.js";
-import { renderPlanner } from "./pages/planner.js";
 import { renderMiniLeague } from "./pages/mini-league.js";
 import { renderHelp } from "./pages/help.js";
-import { renderMeta } from "./pages/meta.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
 import { state } from "./state.js";
@@ -99,9 +97,7 @@ const KEYBOARD_SHORTCUTS = {
   "3": "#/fixtures",
   "4": "#/gw-explorer",
   "5": "#/mini-league",
-  "6": "#/planner",
-  "7": "#/meta",
-  "8": "#/help",
+  "6": "#/help",
 };
 
 function bindKeyboardShortcuts() {
@@ -253,9 +249,7 @@ const routes = {
   "all-players": renderAllPlayers,
   "fixtures": renderFixtures,
   "gw-explorer": renderGwExplorer,
-  "planner": renderPlanner,
   "mini-league": renderMiniLeague,
-  "meta": renderMeta,
   "help": renderHelp,
 };
 
