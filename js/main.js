@@ -213,8 +213,6 @@ function showKeyboardShortcutsHelp() {
 /* ---------- Collapsible Sidebar ---------- */
 function initSidebar() {
   const sidebar = document.querySelector(".sidebar");
-  const app = document.querySelector(".app");
-  const footer = document.querySelector(".footer");
 
   if (!sidebar) return;
 
@@ -224,14 +222,19 @@ function initSidebar() {
     document.body.classList.add("sidebar-collapsed");
   }
 
-  // Create toggle button
+  // Create toggle button (fixed position, append to body)
   const toggle = document.createElement("button");
   toggle.className = "sidebar-toggle";
   toggle.innerHTML = `<span class="toggle-icon">◀</span>`;
   toggle.title = "Toggle sidebar (S)";
   toggle.addEventListener("click", toggleSidebar);
 
-  sidebar.appendChild(toggle);
+  document.body.appendChild(toggle);
+
+  // Update icon based on initial state
+  if (collapsed) {
+    toggle.querySelector(".toggle-icon").textContent = "▶";
+  }
 }
 
 function toggleSidebar() {
@@ -256,10 +259,7 @@ const routes = {
   "help": renderHelp,
 };
 
-/* ---------- Auto-refresh state ---------- */
-let autoRefreshInterval = null;
-let countdownInterval = null;
-let countdownSeconds = 60;
+/* ---------- Refresh state ---------- */
 let lastFetchTime = null;
 let isLiveGw = false;
 
@@ -404,86 +404,51 @@ function updateLastUpdatedDisplay() {
 // Update display every 10 seconds
 setInterval(updateLastUpdatedDisplay, 10000);
 
-/* ---------- Auto-Refresh for Live GW ---------- */
+/* ---------- Manual Refresh ---------- */
 function checkIfLiveGw() {
   const bs = state.bootstrap;
   if (!bs?.events) return false;
-  
+
   const current = bs.events.find(e => e.is_current);
   return current && !current.data_checked;
 }
 
-function updateAutoRefreshUI() {
-  const statusEl = document.getElementById("autoRefreshStatus");
-  const countdownEl = document.getElementById("refreshCountdown");
-  
-  if (!statusEl) return;
-  
-  if (isLiveGw) {
-    statusEl.style.display = "flex";
-    if (countdownEl) countdownEl.textContent = `${countdownSeconds}s`;
-  } else {
-    statusEl.style.display = "none";
-  }
-}
-
-function startAutoRefresh() {
-  if (!isLiveGw) return;
-  
-  // Clear existing intervals
-  if (autoRefreshInterval) clearInterval(autoRefreshInterval);
-  if (countdownInterval) clearInterval(countdownInterval);
-  
-  countdownSeconds = 60;
-  updateAutoRefreshUI();
-  
-  // Countdown ticker
-  countdownInterval = setInterval(() => {
-    countdownSeconds--;
-    updateAutoRefreshUI();
-    
-    if (countdownSeconds <= 0) {
-      countdownSeconds = 60;
-      refreshData();
-    }
-  }, 1000);
-}
-
-function stopAutoRefresh() {
-  if (autoRefreshInterval) {
-    clearInterval(autoRefreshInterval);
-    autoRefreshInterval = null;
-  }
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-    countdownInterval = null;
-  }
-  
-  const statusEl = document.getElementById("autoRefreshStatus");
-  if (statusEl) statusEl.style.display = "none";
-}
-
 async function refreshData() {
+  const refreshBtn = document.getElementById("refreshDataBtn");
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.innerHTML = '<span class="refresh-icon">⟳</span> Refreshing...';
+  }
+
   try {
     // Clear cache and refetch
     api.clearCache();
     state.bootstrap = await api.bootstrap();
     updateLastFetchTime();
-    
-    // Check if still live
+
+    // Update live status
     isLiveGw = checkIfLiveGw();
-    if (!isLiveGw) {
-      stopAutoRefresh();
-    }
-    
+
     // Update UI
     setHeaderStatusFromBootstrap(state.bootstrap);
-    
+
     // Refresh current page
     navigate(location.hash);
-    
+
   } catch (e) {
-    console.error("Auto-refresh failed:", e);
+    console.error("Refresh failed:", e);
+  } finally {
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.innerHTML = '<span class="refresh-icon">⟳</span> Refresh';
+    }
+  }
+}
+
+function bindRefreshButton() {
+  const refreshBtn = document.getElementById("refreshDataBtn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", refreshData);
   }
 }
 
@@ -637,13 +602,6 @@ function setHeaderStatusFromBootstrap(bs) {
     }
     if (next) headerChips.appendChild(chip(`Next: GW${next.id}`));
   }
-
-  // Start/stop auto-refresh based on live status
-  if (isLiveGw) {
-    startAutoRefresh();
-  } else {
-    stopAutoRefresh();
-  }
 }
 
 /* ---------- Chart.js sensible defaults ---------- */
@@ -708,6 +666,7 @@ async function init() {
   bindSidebar();
   bindCopyEntryId();
   bindKeyboardShortcuts();
+  bindRefreshButton();
   initSidebar();
   initChartDefaults();
   initTooltips(document.body);
