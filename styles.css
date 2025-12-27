@@ -1638,3 +1638,240 @@
   }
   ::selection { background: var(--selection-bg); color: var(--selection-fg); }
   ::-moz-selection { background: var(--selection-bg); color: var(--selection-fg); }
+
+  /* ─── Copy Button ───────────────────────────────────── */
+  .input-with-copy{
+    position:relative;
+    display:flex;
+    align-items:center;
+  }
+  .input-with-copy input{
+    flex:1;
+    padding-right:40px;
+  }
+  .copy-btn{
+    position:absolute;
+    right:4px;
+    top:50%;
+    transform:translateY(-50%);
+    width:32px;
+    height:32px;
+    border:none;
+    background:var(--surface-2);
+    border-radius:8px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:all 0.2s ease;
+  }
+  .copy-btn:hover{
+    background:var(--surface-3);
+    transform:translateY(-50%) scale(1.05);
+  }
+  .copy-btn.copied{
+    background:rgba(16, 185, 129, 0.3);
+  }
+  .copy-btn .copy-icon{
+    font-size:14px;
+  }
+
+  /* ─── Animated Number Transitions ────────────────────── */
+  .animate-points{
+    animation:pointsBounce 0.5s ease;
+  }
+  @keyframes pointsBounce{
+    0% { transform:scale(1); }
+    30% { transform:scale(1.3); }
+    60% { transform:scale(0.95); }
+    100% { transform:scale(1); }
+  }
+
+  .count-up{
+    transition:all 0.3s ease;
+  }
+
+  .points-changed{
+    animation:pointsGlow 1s ease;
+  }
+  @keyframes pointsGlow{
+    0% { box-shadow:0 0 0 0 rgba(16, 185, 129, 0.7); }
+    50% { box-shadow:0 0 20px 4px rgba(16, 185, 129, 0.4); }
+    100% { box-shadow:0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+
+  /* ─── Confetti Celebration ───────────────────────────── */
+  .confetti-container{
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    pointer-events:none;
+    z-index:9999;
+    overflow:hidden;
+  }
+  .confetti{
+    position:absolute;
+    width:10px;
+    height:10px;
+    opacity:0;
+    animation:confettiFall 3s ease-out forwards;
+  }
+  @keyframes confettiFall{
+    0% {
+      opacity:1;
+      transform:translateY(0) rotate(0deg) scale(1);
+    }
+    100% {
+      opacity:0;
+      transform:translateY(100vh) rotate(720deg) scale(0.5);
+    }
+  }
+
+  .haul-badge{
+    position:absolute;
+    top:-8px;
+    left:50%;
+    transform:translateX(-50%);
+    background:linear-gradient(135deg, #fbbf24, #f59e0b);
+    color:#1f2937;
+    font-size:9px;
+    font-weight:800;
+    padding:2px 6px;
+    border-radius:4px;
+    white-space:nowrap;
+    z-index:20;
+    box-shadow:0 2px 8px rgba(251, 191, 36, 0.4);
+    animation:haulPulse 2s ease-in-out infinite;
+  }
+  @keyframes haulPulse{
+    0%, 100% { transform:translateX(-50%) scale(1); }
+    50% { transform:translateX(-50%) scale(1.05); }
+  }
+
+  /* ─── Skeleton Loading States ────────────────────────── */
+  .skeleton{
+    background:linear-gradient(90deg,
+      var(--surface-1) 25%,
+      var(--surface-2) 50%,
+      var(--surface-1) 75%
+    );
+    background-size:200% 100%;
+    animation:shimmer 1.5s infinite;
+    border-radius:8px;
+  }
+  @keyframes shimmer{
+    0% { background-position:200% 0; }
+    100% { background-position:-200% 0; }
+  }
+
+  .skeleton-text{
+    height:14px;
+    margin:4px 0;
+  }
+  .skeleton-text.short{ width:60%; }
+  .skeleton-text.medium{ width:80%; }
+  .skeleton-text.full{ width:100%; }
+
+  .skeleton-card{
+    padding:20px;
+    margin:12px 0;
+  }
+
+  .skeleton-pitch{
+    height:480px;
+    border-radius:16px;
+  }
+
+  .skeleton-stat{
+    height:60px;
+    border-radius:12px;
+  }
+
+  .skeleton-player{
+    width:90px;
+    height:140px;
+    border-radius:12px;
+  }
+
+  .skeleton-header{
+    height:180px;
+    border-radius:16px;
+    margin-bottom:16px;
+  }
+
+  .skeleton-insights{
+    height:120px;
+    border-radius:16px;
+  }
+
+  .skeleton-grid{
+    display:grid;
+    gap:14px;
+  }
+  .skeleton-grid.cols-6{
+    grid-template-columns:repeat(6, 1fr);
+  }
+  @media (max-width:900px){
+    .skeleton-grid.cols-6{grid-template-columns:repeat(3, 1fr)}
+  }
+
+  /* ─── Sparkline Mini-Charts ──────────────────────────── */
+  .sparkline-container{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:2px 8px;
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:8px;
+    cursor:help;
+  }
+  .sparkline-svg{
+    width:50px;
+    height:20px;
+  }
+  .sparkline-line{
+    fill:none;
+    stroke:var(--accent-light);
+    stroke-width:1.5;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .sparkline-area{
+    fill:url(#sparklineGradient);
+    opacity:0.3;
+  }
+  .sparkline-dot{
+    fill:var(--accent-light);
+  }
+  .sparkline-value{
+    font-size:11px;
+    font-weight:600;
+    color:var(--muted);
+  }
+  .sparkline-trend-up .sparkline-line{ stroke:var(--good); }
+  .sparkline-trend-up .sparkline-dot{ fill:var(--good); }
+  .sparkline-trend-down .sparkline-line{ stroke:var(--pain); }
+  .sparkline-trend-down .sparkline-dot{ fill:var(--pain); }
+
+  /* ─── Position Row Tints ─────────────────────────────── */
+  .pos-gkp{ background:rgba(251, 191, 36, 0.05); }
+  .pos-def{ background:rgba(52, 211, 153, 0.05); }
+  .pos-mid{ background:rgba(59, 130, 246, 0.05); }
+  .pos-fwd{ background:rgba(244, 63, 94, 0.05); }
+
+  /* Player card haul glow */
+  .player-card-pitch.player-haul{
+    border-color:rgba(251, 191, 36, 0.6);
+    box-shadow:0 0 20px rgba(251, 191, 36, 0.3);
+  }
+  .player-card-pitch.player-haul::before{
+    content:"";
+    position:absolute;
+    inset:-1px;
+    border-radius:12px;
+    background:linear-gradient(135deg, rgba(251, 191, 36, 0.15), transparent 60%);
+    pointer-events:none;
+  }

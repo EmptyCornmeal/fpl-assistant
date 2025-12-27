@@ -11,7 +11,86 @@ import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
 import { state } from "./state.js";
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
+
+/* ---------- Confetti System ---------- */
+function createConfetti(count = 50) {
+  const container = document.createElement("div");
+  container.className = "confetti-container";
+
+  const colors = ["#fbbf24", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899"];
+  const shapes = ["square", "circle"];
+
+  for (let i = 0; i < count; i++) {
+    const confetti = document.createElement("div");
+    confetti.className = "confetti";
+
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const shape = shapes[Math.floor(Math.random() * shapes.length)];
+    const size = Math.random() * 8 + 6;
+    const left = Math.random() * 100;
+    const delay = Math.random() * 0.5;
+    const duration = Math.random() * 2 + 2;
+
+    confetti.style.cssText = `
+      left: ${left}%;
+      width: ${size}px;
+      height: ${size}px;
+      background: ${color};
+      border-radius: ${shape === "circle" ? "50%" : "2px"};
+      animation-delay: ${delay}s;
+      animation-duration: ${duration}s;
+    `;
+
+    container.appendChild(confetti);
+  }
+
+  document.body.appendChild(container);
+  setTimeout(() => container.remove(), 4000);
+}
+
+// Export for use in other modules
+window.createConfetti = createConfetti;
+
+/* ---------- Copy Entry ID ---------- */
+function bindCopyEntryId() {
+  const input = document.getElementById("entryIdInput");
+  const btn = document.getElementById("copyEntryIdBtn");
+
+  if (!input || !btn) return;
+
+  // Show/hide button based on input value
+  const updateBtnVisibility = () => {
+    const hasValue = input.value.trim().length > 0;
+    btn.style.display = hasValue ? "flex" : "none";
+  };
+
+  input.addEventListener("input", updateBtnVisibility);
+  updateBtnVisibility();
+
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const value = input.value.trim();
+    if (!value) return;
+
+    // Extract just the ID if it's a URL
+    const idMatch = value.match(/\/entry\/(\d+)/) || value.match(/^(\d+)$/);
+    const textToCopy = idMatch ? idMatch[1] : value;
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      btn.classList.add("copied");
+      btn.querySelector(".copy-icon").textContent = "✓";
+
+      setTimeout(() => {
+        btn.classList.remove("copied");
+        btn.querySelector(".copy-icon").textContent = "📋";
+      }, 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  });
+}
 
 const routes = {
   "my-team": renderMyTeam,
@@ -465,6 +544,7 @@ async function init() {
   setText("appVersion", APP_VERSION);
 
   bindSidebar();
+  bindCopyEntryId();
   initChartDefaults();
   initTooltips(document.body);
 

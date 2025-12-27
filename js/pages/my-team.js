@@ -41,6 +41,133 @@ const TEAM_BADGE_URL = (teamCode) =>
 
 const posKey = p => POS_ORDER[p] ?? 99;
 
+// Haul threshold
+const HAUL_THRESHOLD = 15;
+
+// Track if we've shown confetti this session to avoid spam
+let confettiShownForPlayers = new Set();
+
+/* ───────────────── Skeleton Loading ───────────────── */
+function renderSkeletonLoading() {
+  const wrap = utils.el("div", { class: "my-team-page" });
+
+  // Header skeleton
+  const headerSkeleton = utils.el("div", { class: "skeleton skeleton-header" });
+  wrap.append(headerSkeleton);
+
+  // Stats grid skeleton
+  const statsWrap = utils.el("div", { class: "card" });
+  const statsGrid = utils.el("div", { class: "skeleton-grid cols-6" });
+  for (let i = 0; i < 6; i++) {
+    statsGrid.append(utils.el("div", { class: "skeleton skeleton-stat" }));
+  }
+  statsWrap.append(statsGrid);
+  wrap.append(statsWrap);
+
+  // Pitch skeleton
+  const pitchSkeleton = utils.el("div", { class: "card" });
+  pitchSkeleton.append(utils.el("div", { class: "skeleton skeleton-pitch" }));
+  wrap.append(pitchSkeleton);
+
+  // Insights skeleton
+  const insightsSkeleton = utils.el("div", { class: "skeleton skeleton-insights" });
+  wrap.append(insightsSkeleton);
+
+  return wrap;
+}
+
+/* ───────────────── Sparkline Mini-Chart ───────────────── */
+function createSparkline(data, label = "") {
+  if (!data || data.length === 0) return null;
+
+  const container = utils.el("div", { class: "sparkline-container" });
+
+  const width = 50;
+  const height = 20;
+  const padding = 2;
+
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+
+  // Generate points
+  const points = data.map((val, i) => {
+    const x = padding + (i / (data.length - 1 || 1)) * (width - 2 * padding);
+    const y = height - padding - ((val - min) / range) * (height - 2 * padding);
+    return { x, y, val };
+  });
+
+  // Build path
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+
+  // Area path (for subtle fill)
+  const areaPath = linePath + ` L${points[points.length - 1].x},${height - padding} L${points[0].x},${height - padding} Z`;
+
+  // Determine trend
+  const trend = data[data.length - 1] > data[0] ? "up" : (data[data.length - 1] < data[0] ? "down" : "neutral");
+  container.classList.add(`sparkline-trend-${trend}`);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "sparkline-svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+
+  // Gradient definition
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+  gradient.setAttribute("id", "sparklineGradient");
+  gradient.setAttribute("x1", "0%");
+  gradient.setAttribute("y1", "0%");
+  gradient.setAttribute("x2", "0%");
+  gradient.setAttribute("y2", "100%");
+
+  const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+  stop1.setAttribute("offset", "0%");
+  stop1.setAttribute("style", "stop-color:currentColor;stop-opacity:0.3");
+
+  const stop2 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+  stop2.setAttribute("offset", "100%");
+  stop2.setAttribute("style", "stop-color:currentColor;stop-opacity:0");
+
+  gradient.append(stop1, stop2);
+  defs.append(gradient);
+  svg.append(defs);
+
+  // Area
+  const area = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  area.setAttribute("class", "sparkline-area");
+  area.setAttribute("d", areaPath);
+  svg.append(area);
+
+  // Line
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  line.setAttribute("class", "sparkline-line");
+  line.setAttribute("d", linePath);
+  svg.append(line);
+
+  // Last point dot
+  const lastPoint = points[points.length - 1];
+  const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  dot.setAttribute("class", "sparkline-dot");
+  dot.setAttribute("cx", lastPoint.x);
+  dot.setAttribute("cy", lastPoint.y);
+  dot.setAttribute("r", "2");
+  svg.append(dot);
+
+  container.append(svg);
+
+  // Value label
+  if (label) {
+    const valueEl = utils.el("span", { class: "sparkline-value" }, label);
+    container.append(valueEl);
+  }
+
+  // Tooltip
+  container.dataset.tooltip = `Last ${data.length} GWs: ${data.join(", ")}`;
+
+  return container;
+}
+
 /* ───────────────── Pitch Visualization ───────────────── */
 function renderPitchVisualization(starters, benchRows, captain, viceCaptain, playerById, teamById, onPlayerClick) {
   const pitch = utils.el("div", { class: "pitch-container" });
@@ -99,10 +226,29 @@ function renderPitchVisualization(starters, benchRows, captain, viceCaptain, pla
 function createPlayerCard(player, captain, viceCaptain, playerById, teamById, onPlayerClick, benchPos = null) {
   const pl = playerById.get(player.id);
   const team = teamById.get(player.teamId);
-  
-  const card = utils.el("div", { 
-    class: `player-card-pitch ${benchPos ? 'bench-card' : ''} ${player.status !== 'a' ? 'player-flagged' : ''}`
+
+  // Check for haul
+  const pts = player.currPoints ?? player.prevPoints ?? 0;
+  const isHaul = pts >= HAUL_THRESHOLD;
+
+  // Trigger confetti for hauls (only once per player per session)
+  if (isHaul && !benchPos && !confettiShownForPlayers.has(player.id)) {
+    confettiShownForPlayers.add(player.id);
+    // Delay confetti to let the card render first
+    setTimeout(() => {
+      if (window.createConfetti) window.createConfetti(30);
+    }, 500);
+  }
+
+  const card = utils.el("div", {
+    class: `player-card-pitch ${benchPos ? 'bench-card' : ''} ${player.status !== 'a' ? 'player-flagged' : ''} ${isHaul ? 'player-haul' : ''}`
   });
+
+  // Haul badge
+  if (isHaul) {
+    const haulBadge = utils.el("div", { class: "haul-badge" }, `${pts}pts HAUL`);
+    card.append(haulBadge);
+  }
 
   // Captain/VC badge
   if (player.cap === "C") {
@@ -202,9 +348,8 @@ export async function renderMyTeam(main){
     return;
   }
 
-  const wrap = utils.el("div");
-  wrap.append(ui.spinner("Loading team…"));
-  ui.mount(main, wrap);
+  // Show skeleton loading instead of spinner
+  ui.mount(main, renderSkeletonLoading());
 
   try {
     // Bootstrap + core data
@@ -368,6 +513,19 @@ export async function renderMyTeam(main){
         }
       } catch {}
 
+      // Get form data (last 5 GW points) from player summary
+      let formData = [];
+      try {
+        const summary = await api.elementSummary(pl.id);
+        if (summary?.history) {
+          // Get last 5 finished gameweeks
+          const recentHistory = summary.history
+            .filter(h => h.round <= lastFinished)
+            .slice(-5);
+          formData = recentHistory.map(h => h.total_points);
+        }
+      } catch {}
+
       return {
         id: pl.id,
         name: pl.web_name,
@@ -391,6 +549,7 @@ export async function renderMyTeam(main){
 
         prevExplain, currExplain,
         xmins, xpNext, xpWindow,
+        formData,
       };
     }
 
@@ -536,7 +695,22 @@ export async function renderMyTeam(main){
     function renderBreakdown(r){
       ensureBreakdownStyles();
       const box = utils.el("div",{class:"bd-wrap"});
-      box.append(utils.el("div",{class:"bd-title"}, `${r.name} (${r.team}, ${r.pos})`));
+
+      // Header with name and sparkline
+      const headerRow = utils.el("div", { style: "display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;" });
+      headerRow.append(utils.el("div",{class:"bd-title"}, `${r.name} (${r.team}, ${r.pos})`));
+
+      // Add sparkline if form data exists
+      if (r.formData && r.formData.length > 0) {
+        const avgForm = (r.formData.reduce((a, b) => a + b, 0) / r.formData.length).toFixed(1);
+        const sparkline = createSparkline(r.formData, `Avg: ${avgForm}`);
+        if (sparkline) {
+          sparkline.dataset.tooltip = `Last ${r.formData.length} GW points: ${r.formData.join(", ")}`;
+          headerRow.append(sparkline);
+        }
+      }
+
+      box.append(headerRow);
 
       const hasPrev = (typeof r.prevPoints === "number") || (r.prevExplain && r.prevExplain.length);
       if (hasPrev){
