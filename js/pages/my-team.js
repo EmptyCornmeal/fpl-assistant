@@ -31,9 +31,13 @@ const STAT_LABEL = {
   bps: "BPS",
 };
 
-// FPL photo URL template
-const PLAYER_PHOTO_URL = (photoId) => 
-  `https://resources.premierleague.com/premierleague/photos/players/110x140/p${photoId?.replace('.png', '')}.png`;
+// FPL photo URL template - photo field is like "12345.png", need to extract just the number
+const PLAYER_PHOTO_URL = (photoId) => {
+  if (!photoId) return null;
+  // Remove .png extension and any leading 'p'
+  const cleanId = String(photoId).replace('.png', '').replace(/^p/, '');
+  return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
+};
 
 // Team badge URL
 const TEAM_BADGE_URL = (teamCode) =>
@@ -346,12 +350,24 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
   return card;
 }
 
+/* ───────────────── Empty State SVG Illustrations ───────────────── */
+const EMPTY_TEAM_SVG = `
+<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="60" cy="60" r="50" stroke="currentColor" stroke-width="2" stroke-dasharray="8 4" opacity="0.4"/>
+  <circle cx="60" cy="60" r="35" fill="currentColor" opacity="0.1"/>
+  <path d="M60 25L75 45L95 50L80 70L82 90L60 80L38 90L40 70L25 50L45 45L60 25Z" fill="currentColor" opacity="0.3"/>
+  <circle cx="60" cy="55" r="12" stroke="currentColor" stroke-width="2" fill="none"/>
+  <path d="M48 75C48 68 53 63 60 63C67 63 72 68 72 75" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <circle cx="85" cy="30" r="8" fill="currentColor" opacity="0.2"/>
+  <path d="M82 27L88 33M88 27L82 33" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>`;
+
 /* ───────────────── page ───────────────── */
 export async function renderMyTeam(main){
   if (!state.entryId) {
-    const emptyState = utils.el("div", { class: "card empty-state" });
+    const emptyState = utils.el("div", { class: "card empty-state empty-state-enhanced empty-team" });
     emptyState.innerHTML = `
-      <div class="empty-icon">🏟️</div>
+      <div class="empty-illustration">${EMPTY_TEAM_SVG}</div>
       <h3>Welcome to FPL Dashboard</h3>
       <p>Enter your FPL Entry ID in the sidebar to view your team.</p>
       <p class="small">You can find it in your FPL team URL: fantasy.premierleague.com/entry/<strong>1234567</strong>/history</p>
@@ -428,15 +444,21 @@ export async function renderMyTeam(main){
        picksPrev?.picks?.length ? { src: "previous", gw: prevGw, data: picksPrev } :
                                   { src: "previous", gw: prevGw, data: picksPrev });
 
-    // Finance snapshot
+    // Finance snapshot - prefer picks entry_history for accurate live data
+    const picksEntryHist = roster.data?.entry_history;
     const histRow = hist.current.find(h => h.event === (lastFinished || prevGw || roster.gw));
-    const teamVal = histRow ? (histRow.value/10).toFixed(1) : "—";
-    const bank    = histRow ? (histRow.bank/10).toFixed(1)  : "—";
-    const totalVal = histRow ? ((histRow.value + histRow.bank)/10).toFixed(1) : "—";
-    const overallRank = histRow?.overall_rank ?? profile?.summary_overall_rank ?? "—";
-    const gwRank = histRow?.rank ?? "—";
-    const gwPoints = histRow?.points ?? "—";
-    const totalPoints = histRow?.total_points ?? profile?.summary_overall_points ?? "—";
+
+    // For finance data, prefer picks entry_history, fallback to hist row
+    const teamVal = picksEntryHist ? (picksEntryHist.value/10).toFixed(1) : histRow ? (histRow.value/10).toFixed(1) : "—";
+    const bank    = picksEntryHist ? (picksEntryHist.bank/10).toFixed(1) : histRow ? (histRow.bank/10).toFixed(1)  : "—";
+    const totalVal = picksEntryHist ? ((picksEntryHist.value + picksEntryHist.bank)/10).toFixed(1) :
+                     histRow ? ((histRow.value + histRow.bank)/10).toFixed(1) : "—";
+
+    const overallRank = picksEntryHist?.overall_rank ?? histRow?.overall_rank ?? profile?.summary_overall_rank ?? "—";
+    const gwRank = picksEntryHist?.rank ?? histRow?.rank ?? "—";
+    // GW points from picks entry_history (actual user points), not hist which may be average
+    const gwPoints = picksEntryHist?.points ?? histRow?.points ?? "—";
+    const totalPoints = picksEntryHist?.total_points ?? histRow?.total_points ?? profile?.summary_overall_points ?? "—";
 
     const livePrevMap = toMap(livePrev?.elements || []);
 
@@ -491,8 +513,8 @@ export async function renderMyTeam(main){
       }
     }
 
-    // Row builder
-    async function buildRow(pk, benchIndex=null) {
+    // Row builder - optimized to not make API calls during initial render
+    function buildRowSync(pk, benchIndex=null) {
       const pl   = playerById.get(pk.element);
       const team = teamById.get(pl.team);
       const pos  = posById.get(pl.element_type);
@@ -505,8 +527,6 @@ export async function renderMyTeam(main){
       const prevExplain = Array.isArray(prevE.explain) ? prevE.explain : [];
       const currExplain = liveGw && Array.isArray(liveE.explain) ? liveE.explain : [];
 
-      const xmins = await estimateXMinsForPlayer(pl).catch(()=>0);
-
       const overallEO = +Number(pl.selected_by_percent || 0);
       const metaEO = (state.metaEO && typeof state.metaEO.get === "function")
         ? Number(state.metaEO.get(pl.id) || 0)
@@ -516,32 +536,21 @@ export async function renderMyTeam(main){
       const momentum = Number((pl.transfers_in_event || 0) - (pl.transfers_out_event || 0));
       const priceMomentum = momentum > 10000 ? "▲" : (momentum < -10000 ? "▼" : "");
 
-      // xP from upcoming
-      let xpNext = 0, xpWindow = 0;
-      try {
-        if (upcGw) {
-          xpNext   = (await xPWindow(pl, [upcGw])).total || 0;
-          xpWindow = (await xPWindow(pl, windowGwIds())).total || 0;
-        }
-      } catch {}
+      // Use form from bootstrap (already available, no API call needed)
+      // pl.form is a string like "5.0" representing average points over last 5
+      const formValue = parseFloat(pl.form || "0");
 
-      // Get form data (last 5 GW points) from player summary
-      let formData = [];
-      try {
-        const summary = await api.elementSummary(pl.id);
-        if (summary?.history) {
-          // Get last 5 finished gameweeks
-          const recentHistory = summary.history
-            .filter(h => h.round <= lastFinished)
-            .slice(-5);
-          formData = recentHistory.map(h => h.total_points);
-        }
-      } catch {}
+      // Estimate xMins from status and minutes_percent (no API call)
+      const minutesPercent = pl.minutes ? (pl.minutes / (lastFinished * 90)) : 0;
+      const statusMultiplier = pl.status === 'a' ? 1 : (pl.status === 'd' ? 0.5 : 0);
+      const xmins = Math.round(90 * Math.min(1, minutesPercent) * statusMultiplier);
 
       return {
         id: pl.id,
         name: pl.web_name,
+        photo: pl.photo,
         teamId: team.id,
+        teamCode: team.code,
         team: team.short_name,
         pos: pos.singular_name_short,
         posKey: posKey(pos.singular_name_short),
@@ -560,16 +569,49 @@ export async function renderMyTeam(main){
         currMinutes: (liveGw ? (currStats.minutes ?? null) : null),
 
         prevExplain, currExplain,
-        xmins, xpNext, xpWindow,
-        formData,
+        xmins,
+        xpNext: 0,  // Will be calculated lazily
+        xpWindow: 0,
+        formData: [], // Will be loaded lazily
+        form: formValue,
+        player: pl, // Keep reference for lazy loading
       };
     }
 
-    // Build rows
-    const rows = [];
-    for (const pk of starters) rows.push(await buildRow(pk));
-    const benchRows = [];
-    for (let i=0;i<benchAll.length;i++) benchRows.push(await buildRow(benchAll[i], i));
+    // Build rows synchronously (fast)
+    const rows = starters.map(pk => buildRowSync(pk));
+    const benchRows = benchAll.map((pk, i) => buildRowSync(pk, i));
+
+    // Lazy load xP and form data in background (don't block render)
+    async function enrichRowsAsync() {
+      const allRows = [...rows, ...benchRows];
+      // Process in parallel batches of 4 to avoid overwhelming API
+      const batchSize = 4;
+      for (let i = 0; i < allRows.length; i += batchSize) {
+        const batch = allRows.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (r) => {
+          try {
+            // xP calculations
+            if (upcGw) {
+              r.xpNext = (await xPWindow(r.player, [upcGw])).total || 0;
+              r.xpWindow = (await xPWindow(r.player, windowGwIds())).total || 0;
+            }
+            // Element summary for form sparkline
+            const summary = await api.elementSummary(r.id);
+            if (summary?.history) {
+              r.formData = summary.history
+                .filter(h => h.round <= lastFinished)
+                .slice(-5)
+                .map(h => h.total_points);
+            }
+            r.xmins = await estimateXMinsForPlayer(r.player).catch(() => r.xmins);
+          } catch {}
+        }));
+      }
+    }
+
+    // Start async enrichment but don't await it
+    enrichRowsAsync();
 
     // Player click handler for modal
     const handlePlayerClick = (player) => {

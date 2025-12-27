@@ -11,6 +11,14 @@ const LS_AP_FILTERS = "fpl.ap.filters";
 const LS_AP_SORT    = "fpl.ap.sort";
 const LS_AP_CHART   = "fpl.ap.chartmode"; // "points" | "xp"
 
+/* ========= Player Photo URL ========= */
+const PLAYER_PHOTO_URL = (photoId) =>
+  `https://resources.premierleague.com/premierleague/photos/players/110x140/p${photoId?.replace('.png', '')}.png`;
+
+/* ========= Compare Selection State ========= */
+let compareSelection = []; // Array of player IDs (max 2)
+let selectionBar = null;
+
 /* ========= Defaults ========= */
 const DEFAULTS = {
   q: "",
@@ -78,8 +86,191 @@ function computeFixtureEase(fixturesByEvent, teamId, gws){
 }
 const priceM = p => +(p.now_cost/10).toFixed(1);
 
+/* ========= Compare Selection Functions ========= */
+function updateSelectionBar(playerById, posShortById, teamShortById) {
+  // Remove existing bar if no players selected
+  if (compareSelection.length === 0) {
+    if (selectionBar) {
+      selectionBar.remove();
+      selectionBar = null;
+    }
+    return;
+  }
+
+  // Create bar if it doesn't exist
+  if (!selectionBar) {
+    selectionBar = utils.el("div", { class: "compare-selection-bar" });
+    document.body.appendChild(selectionBar);
+  }
+
+  // Update content
+  selectionBar.innerHTML = "";
+
+  const chipsWrap = utils.el("div", { class: "compare-chips" });
+  compareSelection.forEach(id => {
+    const p = playerById.get(id);
+    if (!p) return;
+
+    const chip = utils.el("div", { class: "compare-chip" });
+    chip.innerHTML = `
+      <span>${p.web_name}</span>
+      <button class="remove-btn" data-id="${id}">&times;</button>
+    `;
+    chip.querySelector(".remove-btn").addEventListener("click", () => {
+      compareSelection = compareSelection.filter(x => x !== id);
+      updateSelectionBar(playerById, posShortById, teamShortById);
+      updateCheckboxes();
+    });
+    chipsWrap.append(chip);
+  });
+
+  const compareBtn = utils.el("button", {
+    class: "compare-btn",
+    disabled: compareSelection.length < 2
+  }, `Compare${compareSelection.length < 2 ? ` (${compareSelection.length}/2)` : ""}`);
+
+  compareBtn.addEventListener("click", () => {
+    if (compareSelection.length === 2) {
+      showCompareModal(playerById, posShortById, teamShortById);
+    }
+  });
+
+  const clearBtn = utils.el("button", { class: "clear-btn" }, "Clear");
+  clearBtn.addEventListener("click", () => {
+    compareSelection = [];
+    updateSelectionBar(playerById, posShortById, teamShortById);
+    updateCheckboxes();
+  });
+
+  selectionBar.append(chipsWrap, compareBtn, clearBtn);
+}
+
+function updateCheckboxes() {
+  document.querySelectorAll(".player-select-checkbox").forEach(cb => {
+    const id = Number(cb.dataset.playerId);
+    cb.checked = compareSelection.includes(id);
+    cb.disabled = !cb.checked && compareSelection.length >= 2;
+  });
+}
+
+function showCompareModal(playerById, posShortById, teamShortById) {
+  if (compareSelection.length !== 2) return;
+
+  const [p1Data, p2Data] = compareSelection.map(id => playerById.get(id));
+  if (!p1Data || !p2Data) return;
+
+  const stats = [
+    { label: "Total Points", key: "total_points", higher: true },
+    { label: "Price", key: "now_cost", format: v => `£${(v/10).toFixed(1)}m`, higher: false },
+    { label: "Form", key: "form", higher: true },
+    { label: "Ownership", key: "selected_by_percent", format: v => `${(+v).toFixed(1)}%`, higher: false },
+    { label: "Goals", key: "goals_scored", higher: true },
+    { label: "Assists", key: "assists", higher: true },
+    { label: "Clean Sheets", key: "clean_sheets", higher: true },
+    { label: "Bonus", key: "bonus", higher: true },
+    { label: "BPS", key: "bps", higher: true },
+    { label: "ICT Index", key: "ict_index", higher: true },
+  ];
+
+  function createPlayerColumn(player, otherPlayer, isLeft) {
+    const col = utils.el("div", { class: "compare-player" });
+
+    // Header
+    const header = utils.el("div", { class: "compare-player-header" });
+    const photo = utils.el("img", {
+      class: "compare-player-photo",
+      src: PLAYER_PHOTO_URL(player.photo),
+      alt: player.web_name
+    });
+    photo.onerror = () => {
+      photo.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 110 140'%3E%3Crect fill='%23334155' width='110' height='140'/%3E%3Ctext x='55' y='80' text-anchor='middle' fill='%2394a3b8' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+    };
+
+    const info = utils.el("div", { class: "compare-player-info" });
+    info.innerHTML = `
+      <h4>${player.web_name}</h4>
+      <div class="sub">${teamShortById.get(player.team)} · ${posShortById.get(player.element_type)} · £${(player.now_cost/10).toFixed(1)}m</div>
+    `;
+    header.append(photo, info);
+
+    // Stats
+    const statsDiv = utils.el("div", { class: "compare-stats" });
+    stats.forEach(stat => {
+      const v1 = Number(player[stat.key]) || 0;
+      const v2 = Number(otherPlayer[stat.key]) || 0;
+
+      const isWinner = stat.higher ? (v1 > v2) : (v1 < v2);
+      const isTie = v1 === v2;
+
+      const row = utils.el("div", {
+        class: `compare-stat-row ${isWinner && !isTie ? 'winner' : ''} ${!isWinner && !isTie ? 'loser' : ''}`
+      });
+
+      const displayVal = stat.format ? stat.format(player[stat.key]) : (player[stat.key] ?? 0);
+      row.innerHTML = `
+        <span class="label">${stat.label}</span>
+        <span class="value">${displayVal}</span>
+      `;
+      statsDiv.append(row);
+    });
+
+    col.append(header, statsDiv);
+    return col;
+  }
+
+  // Count wins
+  let p1Wins = 0, p2Wins = 0;
+  stats.forEach(stat => {
+    const v1 = Number(p1Data[stat.key]) || 0;
+    const v2 = Number(p2Data[stat.key]) || 0;
+    if (stat.higher) {
+      if (v1 > v2) p1Wins++;
+      else if (v2 > v1) p2Wins++;
+    } else {
+      if (v1 < v2) p1Wins++;
+      else if (v2 < v1) p2Wins++;
+    }
+  });
+
+  const modalContent = utils.el("div", { class: "compare-modal" });
+  modalContent.append(
+    createPlayerColumn(p1Data, p2Data, true),
+    createPlayerColumn(p2Data, p1Data, false)
+  );
+
+  // Verdict
+  const verdict = utils.el("div", { class: "compare-verdict" });
+  if (p1Wins > p2Wins) {
+    verdict.innerHTML = `
+      <h4>${p1Data.web_name} wins!</h4>
+      <div class="sub">${p1Wins} stats better vs ${p2Wins}</div>
+    `;
+  } else if (p2Wins > p1Wins) {
+    verdict.innerHTML = `
+      <h4>${p2Data.web_name} wins!</h4>
+      <div class="sub">${p2Wins} stats better vs ${p1Wins}</div>
+    `;
+  } else {
+    verdict.innerHTML = `
+      <h4>It's a tie!</h4>
+      <div class="sub">Both players have ${p1Wins} better stats each</div>
+    `;
+    verdict.querySelector("h4").style.color = "var(--accent-light)";
+  }
+  modalContent.append(verdict);
+
+  openModal(`${p1Data.web_name} vs ${p2Data.web_name}`, modalContent);
+}
+
 /* ========= Render ========= */
 export async function renderAllPlayers(main){
+  // Reset compare selection when entering the page
+  compareSelection = [];
+  if (selectionBar) {
+    selectionBar.remove();
+    selectionBar = null;
+  }
+
   const wrap = utils.el("div");
   wrap.append(ui.spinner("Loading players…"));
   ui.mount(main, wrap);
@@ -124,7 +315,11 @@ export async function renderAllPlayers(main){
       selected_by_percent: +p.selected_by_percent || 0,
       status: p.status,
       now_cost: p.now_cost || 0,
-      ppm: (p.total_points / (p.now_cost/10)) || 0
+      ppm: (p.total_points / (p.now_cost/10)) || 0,
+      transfers_in_event: p.transfers_in_event || 0,
+      transfers_out_event: p.transfers_out_event || 0,
+      net_transfers: (p.transfers_in_event || 0) - (p.transfers_out_event || 0),
+      cost_change_event: p.cost_change_event || 0
     }));
 
     /* ---- Filters / sort state ---- */
@@ -443,8 +638,72 @@ export async function renderAllPlayers(main){
       return wrap;
     }
 
+    // Price cell with change prediction
+    function priceCellWithPrediction(p){
+      const wrap = utils.el("div", { class: "price-cell" });
+
+      // Price value
+      const priceEl = utils.el("span", { class: "price-value" }, `£${p.price_m.toFixed(1)}m`);
+      wrap.append(priceEl);
+
+      // Price change indicator based on net transfers
+      const net = p.net_transfers;
+      const threshold = 5000; // Significant transfer threshold
+
+      // Already changed this GW?
+      if (p.cost_change_event !== 0) {
+        const changeClass = p.cost_change_event > 0 ? "rise" : "fall";
+        const arrow = p.cost_change_event > 0 ? "▲" : "▼";
+        const changeAmount = Math.abs(p.cost_change_event / 10).toFixed(1);
+        const indicator = utils.el("span", { class: `price-change-indicator ${changeClass}` });
+        indicator.innerHTML = `<span class="arrow">${arrow}</span> £${changeAmount}m`;
+        indicator.dataset.tooltip = `Price ${p.cost_change_event > 0 ? "rose" : "fell"} this GW`;
+        wrap.append(indicator);
+      } else if (Math.abs(net) > threshold) {
+        // Prediction based on net transfers
+        const isRising = net > threshold;
+        const isFalling = net < -threshold;
+
+        if (isRising || isFalling) {
+          const predClass = isRising ? "rise" : "fall";
+          const arrow = isRising ? "▲" : "▼";
+          const likelihood = Math.abs(net) > 50000 ? "likely" : "possible";
+          const indicator = utils.el("span", { class: `price-change-indicator ${predClass}` });
+          indicator.innerHTML = `<span class="arrow">${arrow}</span> ${isRising ? "Rise" : "Fall"}`;
+          indicator.dataset.tooltip = `${likelihood.charAt(0).toUpperCase() + likelihood.slice(1)} price ${isRising ? "rise" : "fall"} (Net: ${net > 0 ? '+' : ''}${(net / 1000).toFixed(1)}k)`;
+          wrap.append(indicator);
+        }
+      }
+
+      return wrap;
+    }
+
     function renderTable(rows){
+      // Compare checkbox cell
+      const compareCell = (r) => {
+        const cb = utils.el("input", {
+          type: "checkbox",
+          class: "player-select-checkbox",
+          "data-player-id": r.id
+        });
+        cb.checked = compareSelection.includes(r.id);
+        cb.disabled = !cb.checked && compareSelection.length >= 2;
+        cb.addEventListener("change", () => {
+          if (cb.checked) {
+            if (compareSelection.length < 2) {
+              compareSelection.push(r.id);
+            }
+          } else {
+            compareSelection = compareSelection.filter(x => x !== r.id);
+          }
+          updateSelectionBar(playerById, posShortById, teamShortById);
+          updateCheckboxes();
+        });
+        return cb;
+      };
+
       const cols = [
+        { header:"", cell:compareCell, thClass:"select-cell", tdClass:"select-cell" },
         { header:"Name", accessor:r=>r.web_name, sortBy:r=>r.web_name, cell:r=>{
             const w = utils.el("div",{class:"name-cell"});
             w.append(utils.el("span",{class:"team-chip"}, r.team_short));
@@ -463,6 +722,9 @@ export async function renderAllPlayers(main){
         { header:"Ease (Next 5)", accessor:r=> r._ease!=null ? r._ease.toFixed(2) : "", sortBy:r=> r._ease ?? 999 }
       ];
       tableSlot.append(ui.table(cols, rows));
+
+      // Update selection bar after table renders
+      updateSelectionBar(playerById, posShortById, teamShortById);
     }
 
     // Scatter chart (double height, no resize loop)
