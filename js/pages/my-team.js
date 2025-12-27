@@ -829,19 +829,21 @@ export async function renderMyTeam(main){
       return list.filter(r => (r.status && r.status !== "a") || (r.news && r.news.length));
     }
 
-    /* ───────────────── Mount UI ───────────────── */
-    const page = utils.el("div", { class: "my-team-page" });
+    /* ───────────────── Mount UI (FM26 Dashboard Layout) ───────────────── */
+    const page = utils.el("div", { class: "dashboard" });
 
-    // Header card with stats
+    // ═══════════════════════════════════════════════════════
+    // HEADER ROW
+    // ═══════════════════════════════════════════════════════
     const headerCard = utils.el("div", { class: "card team-header-card" });
-    
+
     const headerTop = utils.el("div", { class: "team-header-top" });
     const managerInfo = utils.el("div", { class: "manager-info" });
     managerInfo.innerHTML = `
       <h2 class="team-name">${profile.name}</h2>
       <div class="manager-name">${profile.player_first_name} ${profile.player_last_name}</div>
     `;
-    
+
     const gwBadge = utils.el("div", { class: "gw-status-badge" });
     if (liveGw) {
       gwBadge.innerHTML = `<span class="live-dot"></span> GW${liveGw} LIVE`;
@@ -849,31 +851,31 @@ export async function renderMyTeam(main){
     } else {
       gwBadge.textContent = `GW${prevGw || roster.gw}`;
     }
-    
+
     headerTop.append(managerInfo, gwBadge);
 
-    // Stats grid
+    // Stats grid - compact inline
     const statsGrid = utils.el("div", { class: "team-stats-grid" });
     statsGrid.innerHTML = `
       <div class="stat-item">
         <div class="stat-value">${totalPoints}</div>
-        <div class="stat-label">Total Points</div>
+        <div class="stat-label">Total Pts</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">${typeof overallRank === 'number' ? overallRank.toLocaleString() : overallRank}</div>
-        <div class="stat-label">Overall Rank</div>
+        <div class="stat-value">${typeof overallRank === 'number' ? (overallRank > 999999 ? (overallRank/1000000).toFixed(1) + 'M' : overallRank > 999 ? (overallRank/1000).toFixed(0) + 'K' : overallRank) : overallRank}</div>
+        <div class="stat-label">Rank</div>
       </div>
       <div class="stat-item">
         <div class="stat-value">${gwPoints}</div>
-        <div class="stat-label">GW Points</div>
+        <div class="stat-label">GW Pts</div>
       </div>
       <div class="stat-item">
         <div class="stat-value">£${totalVal}m</div>
-        <div class="stat-label">Squad Value</div>
+        <div class="stat-label">Value</div>
       </div>
       <div class="stat-item">
         <div class="stat-value">£${bank}m</div>
-        <div class="stat-label">In Bank</div>
+        <div class="stat-label">Bank</div>
       </div>
       <div class="stat-item captain-stat">
         <div class="stat-value">${capName}</div>
@@ -884,20 +886,30 @@ export async function renderMyTeam(main){
     headerCard.append(headerTop, statsGrid);
     page.append(headerCard);
 
-    // Pitch visualization
-    const pitchCard = utils.el("div", { class: "card pitch-card" });
-    const pitchTitle = utils.el("div", { class: "pitch-title" });
-    pitchTitle.innerHTML = `
-      <h3>Starting XI</h3>
-      <div class="pitch-subtitle">Click a player for detailed breakdown</div>
-    `;
-    const pitch = renderPitchVisualization(rows, benchRows, capId, vcId, playerById, teamById, handlePlayerClick);
-    pitchCard.append(pitchTitle, pitch);
-    page.append(pitchCard);
+    // ═══════════════════════════════════════════════════════
+    // MAIN CONTENT (Left: Pitch, Right: Tiles)
+    // ═══════════════════════════════════════════════════════
+    const mainContent = utils.el("div", { class: "dashboard-main" });
 
-    // Insights panel
-    const insightsCard = utils.el("div", { class: "card insights-card" });
-    const insightsTitle = utils.el("h3", {}, "💡 Smart Insights");
+    // LEFT: Pitch visualization
+    const leftCol = utils.el("div", { class: "dashboard-left" });
+    const pitchTile = utils.el("div", { class: "tile tile-flush" });
+    const pitchHeader = utils.el("div", { class: "tile-header" });
+    pitchHeader.innerHTML = `<span class="tile-title">Starting XI</span>`;
+    const pitchBody = utils.el("div", { class: "tile-body" });
+    const pitch = renderPitchVisualization(rows, benchRows, capId, vcId, playerById, teamById, handlePlayerClick);
+    pitchBody.append(pitch);
+    pitchTile.append(pitchHeader, pitchBody);
+    leftCol.append(pitchTile);
+
+    // RIGHT: Info tiles grid
+    const rightCol = utils.el("div", { class: "dashboard-right" });
+
+    // Insights tile
+    const insightsTile = utils.el("div", { class: "tile tile-wide" });
+    const insightsHeader = utils.el("div", { class: "tile-header" });
+    insightsHeader.innerHTML = `<span class="tile-title">💡 Insights</span>`;
+    const insightsBody = utils.el("div", { class: "tile-body" });
     const insightsList = utils.el("div", { class: "insights-list" });
 
     const capSug = captainSuggestion();
@@ -908,7 +920,7 @@ export async function renderMyTeam(main){
       insightsList.innerHTML = `
         <div class="insight-item insight-good">
           <span class="insight-icon">✅</span>
-          <span class="insight-text">Your team looks good! No obvious issues detected.</span>
+          <span class="insight-text">Team looks good!</span>
         </div>
       `;
     } else {
@@ -932,28 +944,28 @@ export async function renderMyTeam(main){
       }
       if (issues.length) {
         const item = utils.el("div", { class: "insight-item insight-warning" });
-        const playerList = issues.map(r => {
-          const chance = players.find(p=>p.id===r.id)?.chance_of_playing_next_round;
-          return `${r.name} (${STATUS_MAP[r.status]?.label || r.status}${chance != null ? `, ${chance}%` : ''})`;
-        }).join(", ");
+        const shortList = issues.slice(0, 3).map(r => r.name).join(", ");
+        const more = issues.length > 3 ? ` +${issues.length - 3}` : "";
         item.innerHTML = `
           <span class="insight-icon">⚠️</span>
-          <span class="insight-text">Flagged: ${playerList}</span>
+          <span class="insight-text">Flagged: ${shortList}${more}</span>
         `;
+        item.title = issues.map(r => `${r.name}: ${STATUS_MAP[r.status]?.label || r.status}`).join("\n");
         insightsList.append(item);
       }
     }
+    insightsBody.append(insightsList);
+    insightsTile.append(insightsHeader, insightsBody);
+    rightCol.append(insightsTile);
 
-    insightsCard.append(insightsTitle, insightsList);
-    page.append(insightsCard);
-
-    // Fixtures preview
-    const fixturesCard = utils.el("div", { class: "card fixtures-preview-card" });
-    fixturesCard.innerHTML = `<h3>📅 Upcoming Fixtures</h3>`;
-    
+    // Fixtures tile
+    const fixturesTile = utils.el("div", { class: "tile tile-wide" });
+    const fixturesHeader = utils.el("div", { class: "tile-header" });
+    fixturesHeader.innerHTML = `<span class="tile-title">📅 Fixtures (Next 4 GWs)</span>`;
+    const fixturesBody = utils.el("div", { class: "tile-body" });
     const fixturesGrid = utils.el("div", { class: "fixtures-preview-grid" });
     const uniqueTeams = [...new Set(rows.map(r => r.teamId))];
-    
+
     for (const teamId of uniqueTeams) {
       const team = teamById.get(teamId);
       const teamRow = utils.el("div", { class: "fixture-team-row" });
@@ -964,9 +976,37 @@ export async function renderMyTeam(main){
       teamRow.append(fixturesStrip(teamId, windowGwIds()));
       fixturesGrid.append(teamRow);
     }
-    
-    fixturesCard.append(fixturesGrid);
-    page.append(fixturesCard);
+    fixturesBody.append(fixturesGrid);
+    fixturesTile.append(fixturesHeader, fixturesBody);
+    rightCol.append(fixturesTile);
+
+    // Quick stats tiles row
+    const quickStatsTile1 = utils.el("div", { class: "tile tile-compact tile-clickable" });
+    quickStatsTile1.innerHTML = `
+      <div class="tile-header"><span class="tile-title">Top Performer</span></div>
+      <div class="tile-body">
+        <div style="text-align:center">
+          <div style="font-size:1.5rem;font-weight:700;color:var(--brand-light)">${rows.sort((a,b) => (b.prevPoints||0) - (a.prevPoints||0))[0]?.name || '—'}</div>
+          <div style="font-size:0.85rem;color:var(--muted)">${rows.sort((a,b) => (b.prevPoints||0) - (a.prevPoints||0))[0]?.prevPoints || 0} pts</div>
+        </div>
+      </div>
+    `;
+
+    const quickStatsTile2 = utils.el("div", { class: "tile tile-compact tile-clickable" });
+    const totalXp = rows.reduce((sum, r) => sum + (r.xpNext || 0), 0);
+    quickStatsTile2.innerHTML = `
+      <div class="tile-header"><span class="tile-title">Team xP (Next)</span></div>
+      <div class="tile-body">
+        <div style="text-align:center">
+          <div style="font-size:1.5rem;font-weight:700;color:var(--accent-light)">${totalXp.toFixed(1)}</div>
+          <div style="font-size:0.85rem;color:var(--muted)">projected pts</div>
+        </div>
+      </div>
+    `;
+    rightCol.append(quickStatsTile1, quickStatsTile2);
+
+    mainContent.append(leftCol, rightCol);
+    page.append(mainContent);
 
     ui.mount(main, page);
 
