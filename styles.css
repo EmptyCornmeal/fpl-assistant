@@ -429,14 +429,15 @@
   .sidebar{
     position:fixed;
     left:0;
-    top:64px;
-    bottom:44px;
+    top:0;
+    bottom:0;
     width:300px;
-    padding:20px;
+    padding:80px 20px 60px;
     overflow:auto;
     background:var(--bg2);
     border-right:1px solid var(--border-strong);
     box-shadow:var(--shadow-md);
+    z-index:90;
   }
   .sidebar h3{
     margin:0 0 16px 0;
