@@ -381,33 +381,61 @@ export async function renderMiniLeague(main){
         xiBox.innerHTML = "";
         xiBox.append(utils.el("h4",{}, xiTitle), xiTable);
 
-        // Assemble card
+        // Assemble card with expand/collapse functionality
         card.innerHTML = "";
-        card.append(
-          utils.el("h3",{},`${leagueName}`),
-          headRow,
-          (()=>{
-            const me = rows.find(r=>r.my);
-            return me ? utils.el("div",{class:"chips", style:"margin:6px 0"},[
-              utils.el("span",{class:"chip chip-accent"}, `You: ${me.manager} — ${me.team} (rank ${me.currRank})`)
-            ]) : utils.el("div")
-          })(),
-          table,
-          utils.el("div",{class:"grid cols-2", style:"margin-top:12px; min-height:640px;"},
-            [
-              utils.el("div",{class:"card"},[
-                utils.el("h4",{},"Cumulative total points by GW"),
-                utils.el("div",{style:"height:600px;margin-top:8px;"}, [canvasTotal])
-              ]),
-              utils.el("div",{class:"card"},[
-                utils.el("h4",{},"GW points by GW"),
-                utils.el("div",{style:"height:600px;margin-top:8px;"}, [canvasGW])
-              ])
-            ]
-          ),
-          utils.el("div",{style:"height:10px"}),
-          xiBox
+        card.className = "league-card";
+
+        // Header bar (always visible, clickable)
+        const cardHeader = utils.el("div", { class: "league-card-header" });
+        const headerLeft = utils.el("div", { class: "league-header-left" });
+        headerLeft.append(
+          utils.el("h3", {}, leagueName),
+          ...headRow.children
         );
+        const me = rows.find(r => r.my);
+        const headerRight = utils.el("div", { class: "league-header-right" });
+        if (me) {
+          headerRight.append(utils.el("span", { class: "chip chip-accent" }, `You: #${me.currRank} (${me.currTotal} pts)`));
+        }
+        const expandBtn = utils.el("button", { class: "league-expand-btn" }, "Expand");
+        headerRight.append(expandBtn);
+        cardHeader.append(headerLeft, headerRight);
+
+        // Content (collapsible)
+        const cardContent = utils.el("div", { class: "league-card-content" });
+
+        // Standings table (compact)
+        const standingsSection = utils.el("div", { class: "league-standings" });
+        standingsSection.append(table);
+
+        // Charts (hidden by default, shown on expand)
+        const chartsSection = utils.el("div", { class: "league-charts collapsed" });
+        chartsSection.append(
+          utils.el("div", { class: "chart-wrap" }, [
+            utils.el("h4", {}, "Cumulative Total"),
+            utils.el("div", { class: "chart-container" }, [canvasTotal])
+          ]),
+          utils.el("div", { class: "chart-wrap" }, [
+            utils.el("h4", {}, "GW Points"),
+            utils.el("div", { class: "chart-container" }, [canvasGW])
+          ])
+        );
+
+        // Top XI (compact)
+        xiBox.className = "league-xi";
+
+        cardContent.append(standingsSection, chartsSection, xiBox);
+
+        // Toggle expand
+        let isExpanded = false;
+        expandBtn.addEventListener("click", () => {
+          isExpanded = !isExpanded;
+          card.classList.toggle("expanded", isExpanded);
+          chartsSection.classList.toggle("collapsed", !isExpanded);
+          expandBtn.textContent = isExpanded ? "Collapse" : "Expand";
+        });
+
+        card.append(cardHeader, cardContent);
 
         await ui.chart(canvasTotal, cfgTotal);
         await ui.chart(canvasGW, cfgGW);

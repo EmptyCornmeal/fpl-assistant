@@ -2060,6 +2060,113 @@
     100% { box-shadow:0 0 0 0 rgba(16, 185, 129, 0); }
   }
 
+  /* ─── League Page Styling ────────────────────────────── */
+  .league-card{
+    background:var(--bg2);
+    border:1px solid var(--border);
+    border-radius:12px;
+    margin-bottom:12px;
+    overflow:hidden;
+    transition:all 0.3s ease;
+  }
+  .league-card.expanded{
+    box-shadow:var(--shadow-lg);
+  }
+  .league-card-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:12px 16px;
+    background:var(--surface-1);
+    border-bottom:1px solid var(--border);
+    gap:12px;
+    flex-wrap:wrap;
+  }
+  .league-header-left{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .league-header-left h3{
+    margin:0;
+    font-size:1rem;
+  }
+  .league-header-right{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .league-expand-btn{
+    padding:6px 14px;
+    background:var(--accent-weak);
+    border:1px solid var(--accent);
+    border-radius:6px;
+    color:var(--accent-light);
+    font-size:12px;
+    font-weight:600;
+    cursor:pointer;
+    transition:all 0.2s;
+  }
+  .league-expand-btn:hover{
+    background:var(--accent);
+    color:white;
+  }
+  .league-card-content{
+    padding:12px 16px;
+  }
+  .league-standings{
+    margin-bottom:12px;
+  }
+  .league-standings .table{
+    font-size:12px;
+  }
+  .league-standings th,
+  .league-standings td{
+    padding:6px 10px;
+  }
+  .league-charts{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    margin-bottom:12px;
+  }
+  .league-charts.collapsed{
+    display:none;
+  }
+  .league-charts .chart-wrap{
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:12px;
+  }
+  .league-charts .chart-wrap h4{
+    margin:0 0 8px;
+    font-size:0.85rem;
+    color:var(--muted);
+  }
+  .league-charts .chart-container{
+    height:250px;
+  }
+  .league-xi{
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:12px;
+  }
+  .league-xi h4{
+    margin:0 0 8px;
+    font-size:0.85rem;
+  }
+  .league-xi .table{
+    font-size:12px;
+  }
+  @media (max-width:900px){
+    .league-charts{
+      grid-template-columns:1fr;
+    }
+  }
+
   /* ─── Confetti Celebration ───────────────────────────── */
   .confetti-container{
     position:fixed;
@@ -2747,3 +2854,98 @@
   }
   .net-transfers.positive{ color:var(--good); }
   .net-transfers.negative{ color:var(--pain); }
+
+  /* ─── Help Page ─────────────────────────────────────────── */
+  .help-page{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(380px, 1fr));
+    gap:16px;
+    max-width:1200px;
+    margin:0 auto;
+    padding:0 0 40px;
+  }
+  .help-page .card{
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:20px;
+    height:fit-content;
+  }
+  .help-page .card h3{
+    margin:0 0 16px;
+    font-size:1.1rem;
+    font-weight:700;
+    color:var(--text);
+    padding-bottom:10px;
+    border-bottom:1px solid var(--border);
+  }
+  .help-page .card h4{
+    margin:16px 0 8px;
+    font-size:0.95rem;
+    font-weight:600;
+    color:var(--accent-light);
+  }
+  .help-page .card p{
+    margin:8px 0;
+    font-size:14px;
+    line-height:1.5;
+    color:var(--text-muted);
+  }
+  .help-page .card ol,
+  .help-page .card ul{
+    margin:8px 0 8px 20px;
+    padding:0;
+    font-size:14px;
+    line-height:1.6;
+    color:var(--text-muted);
+  }
+  .help-page .card li{
+    margin:6px 0;
+  }
+  .help-page .bullets{
+    margin:8px 0 8px 16px;
+  }
+  .help-page .bullets li{
+    margin:6px 0;
+  }
+  .help-page .bullets b{
+    color:var(--text);
+  }
+  .help-page .grid{
+    display:grid;
+    gap:10px;
+  }
+  .help-page .grid.cols-3{
+    grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
+  }
+  .help-page .metric{
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:10px 12px;
+  }
+  .help-page .metric .label{
+    font-size:12px;
+    font-weight:700;
+    color:var(--accent-light);
+    margin-bottom:4px;
+  }
+  .help-page .metric .value{
+    font-size:12px;
+    color:var(--text-muted);
+    line-height:1.4;
+  }
+  .help-page .tag{
+    margin-top:16px;
+    padding:10px 12px;
+    background:var(--surface-2);
+    border-radius:8px;
+    font-size:12px;
+    color:var(--muted);
+    font-family:var(--font-mono);
+  }
+  @media (max-width:800px){
+    .help-page{
+      grid-template-columns:1fr;
+    }
+  }
