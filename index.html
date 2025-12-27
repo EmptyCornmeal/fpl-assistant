@@ -56,7 +56,12 @@
   <aside class="sidebar">
     <h3>Settings</h3>
     <label>FPL Entry ID
-      <input id="entryIdInput" placeholder="e.g., 1234567 or paste your FPL team URL" inputmode="numeric" />
+      <div class="input-with-copy">
+        <input id="entryIdInput" placeholder="e.g., 1234567 or paste your FPL team URL" inputmode="numeric" />
+        <button id="copyEntryIdBtn" class="copy-btn" title="Copy Entry ID" style="display:none;">
+          <span class="copy-icon">📋</span>
+        </button>
+      </div>
     </label>
     <label>Classic League IDs (comma-separated)
       <input id="leagueIdInput" placeholder="e.g., 12345, 67890 or paste league URLs" />
