@@ -296,9 +296,8 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
   
   // Points row
   const pointsRow = utils.el("div", { class: "player-points-row" });
-  
-  // Current/Live points
-  const pts = player.currPoints ?? player.prevPoints ?? 0;
+
+  // Current/Live points (pts already defined above for haul check)
   const ptsClass = pts >= 10 ? "pts-high" : (pts <= 1 ? "pts-low" : "");
   const ptsEl = utils.el("div", { class: `player-pts ${ptsClass}` }, String(pts));
   
