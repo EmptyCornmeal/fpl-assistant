@@ -1,6 +1,6 @@
 // js/pages/my-team.js
 import { api } from "../api.js";
-import { state } from "../state.js";
+import { state, isInWatchlist, toggleWatchlist } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
@@ -296,9 +296,8 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
   
   // Points row
   const pointsRow = utils.el("div", { class: "player-points-row" });
-  
-  // Current/Live points
-  const pts = player.currPoints ?? player.prevPoints ?? 0;
+
+  // Current/Live points (pts already defined above for haul check)
   const ptsClass = pts >= 10 ? "pts-high" : (pts <= 1 ? "pts-low" : "");
   const ptsEl = utils.el("div", { class: `player-pts ${ptsClass}` }, String(pts));
   
@@ -325,6 +324,19 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
 
   info.append(name, pointsRow, minsBadge);
   card.append(photoWrapper, info);
+
+  // Watchlist button
+  const watchlistBtn = utils.el("button", { class: `watchlist-btn ${isInWatchlist(player.id) ? 'active' : ''}` });
+  watchlistBtn.innerHTML = `<span class="star-icon">${isInWatchlist(player.id) ? '★' : '☆'}</span>`;
+  watchlistBtn.title = isInWatchlist(player.id) ? "Remove from watchlist" : "Add to watchlist";
+  watchlistBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isNowWatched = toggleWatchlist(player.id);
+    watchlistBtn.classList.toggle("active", isNowWatched);
+    watchlistBtn.querySelector(".star-icon").textContent = isNowWatched ? "★" : "☆";
+    watchlistBtn.title = isNowWatched ? "Remove from watchlist" : "Add to watchlist";
+  });
+  card.append(watchlistBtn);
 
   // Click handler
   card.addEventListener("click", () => {

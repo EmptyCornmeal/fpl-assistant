@@ -92,6 +92,159 @@ function bindCopyEntryId() {
   });
 }
 
+/* ---------- Keyboard Shortcuts ---------- */
+const KEYBOARD_SHORTCUTS = {
+  "1": "#/my-team",
+  "2": "#/all-players",
+  "3": "#/fixtures",
+  "4": "#/gw-explorer",
+  "5": "#/mini-league",
+  "6": "#/planner",
+  "7": "#/meta",
+  "8": "#/help",
+};
+
+function bindKeyboardShortcuts() {
+  document.addEventListener("keydown", (e) => {
+    // Ignore if user is typing in an input
+    if (e.target.matches("input, textarea, select")) return;
+
+    // Ignore if modifier keys are held
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const key = e.key.toLowerCase();
+
+    // Number keys for navigation
+    if (KEYBOARD_SHORTCUTS[key]) {
+      e.preventDefault();
+      location.hash = KEYBOARD_SHORTCUTS[key];
+      return;
+    }
+
+    // "/" for search - focus the search input on All Players
+    if (key === "/") {
+      e.preventDefault();
+      // Navigate to all-players if not there
+      if (!location.hash.includes("all-players")) {
+        location.hash = "#/all-players";
+      }
+      // Focus search after a small delay for page render
+      setTimeout(() => {
+        const searchInput = document.querySelector("#playerSearch, input[placeholder*='Search']");
+        if (searchInput) searchInput.focus();
+      }, 100);
+      return;
+    }
+
+    // "?" for help overlay
+    if (key === "?" || (e.shiftKey && key === "/")) {
+      e.preventDefault();
+      showKeyboardShortcutsHelp();
+      return;
+    }
+
+    // "Escape" to close modals/overlays
+    if (key === "escape") {
+      const modal = document.querySelector(".modal__backdrop");
+      if (modal) modal.click();
+      const helpOverlay = document.getElementById("keyboardHelpOverlay");
+      if (helpOverlay) helpOverlay.remove();
+      return;
+    }
+
+    // "s" to toggle sidebar
+    if (key === "s") {
+      e.preventDefault();
+      toggleSidebar();
+      return;
+    }
+  });
+}
+
+function showKeyboardShortcutsHelp() {
+  // Remove existing overlay if present
+  const existing = document.getElementById("keyboardHelpOverlay");
+  if (existing) {
+    existing.remove();
+    return;
+  }
+
+  const overlay = document.createElement("div");
+  overlay.id = "keyboardHelpOverlay";
+  overlay.className = "keyboard-help-overlay";
+  overlay.innerHTML = `
+    <div class="keyboard-help-modal">
+      <div class="keyboard-help-header">
+        <h3>Keyboard Shortcuts</h3>
+        <button class="keyboard-help-close">&times;</button>
+      </div>
+      <div class="keyboard-help-content">
+        <div class="shortcut-group">
+          <h4>Navigation</h4>
+          <div class="shortcut-row"><kbd>1</kbd> My Team</div>
+          <div class="shortcut-row"><kbd>2</kbd> All Players</div>
+          <div class="shortcut-row"><kbd>3</kbd> Fixtures</div>
+          <div class="shortcut-row"><kbd>4</kbd> GW Explorer</div>
+          <div class="shortcut-row"><kbd>5</kbd> Mini-League</div>
+          <div class="shortcut-row"><kbd>6</kbd> Planner</div>
+          <div class="shortcut-row"><kbd>7</kbd> Meta</div>
+          <div class="shortcut-row"><kbd>8</kbd> Help</div>
+        </div>
+        <div class="shortcut-group">
+          <h4>Actions</h4>
+          <div class="shortcut-row"><kbd>/</kbd> Search players</div>
+          <div class="shortcut-row"><kbd>S</kbd> Toggle sidebar</div>
+          <div class="shortcut-row"><kbd>?</kbd> Show shortcuts</div>
+          <div class="shortcut-row"><kbd>Esc</kbd> Close modal</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay || e.target.closest(".keyboard-help-close")) {
+      overlay.remove();
+    }
+  });
+
+  document.body.appendChild(overlay);
+}
+
+/* ---------- Collapsible Sidebar ---------- */
+function initSidebar() {
+  const sidebar = document.querySelector(".sidebar");
+  const app = document.querySelector(".app");
+  const footer = document.querySelector(".footer");
+
+  if (!sidebar) return;
+
+  // Check saved preference
+  const collapsed = localStorage.getItem("fpl.sidebarCollapsed") === "true";
+  if (collapsed) {
+    document.body.classList.add("sidebar-collapsed");
+  }
+
+  // Create toggle button
+  const toggle = document.createElement("button");
+  toggle.className = "sidebar-toggle";
+  toggle.innerHTML = `<span class="toggle-icon">◀</span>`;
+  toggle.title = "Toggle sidebar (S)";
+  toggle.addEventListener("click", toggleSidebar);
+
+  sidebar.appendChild(toggle);
+}
+
+function toggleSidebar() {
+  const isCollapsed = document.body.classList.toggle("sidebar-collapsed");
+  localStorage.setItem("fpl.sidebarCollapsed", isCollapsed);
+
+  // Update toggle icon
+  const toggleIcon = document.querySelector(".sidebar-toggle .toggle-icon");
+  if (toggleIcon) {
+    toggleIcon.textContent = isCollapsed ? "▶" : "◀";
+  }
+}
+
 const routes = {
   "my-team": renderMyTeam,
   "all-players": renderAllPlayers,
@@ -341,6 +494,7 @@ function getTabFromHash(hash) {
 }
 
 function highlightActiveNav(tab) {
+  // Desktop nav
   const links = document.querySelectorAll(".nav a");
   links.forEach((a) => {
     const target = (a.getAttribute("href") || "").replace(/^#\//, "");
@@ -348,6 +502,14 @@ function highlightActiveNav(tab) {
     a.classList.toggle("active", isActive);
     if (isActive) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
+  });
+
+  // Mobile bottom nav
+  const mobileLinks = document.querySelectorAll(".mobile-bottom-nav a");
+  mobileLinks.forEach((a) => {
+    const target = (a.getAttribute("href") || "").replace(/^#\//, "");
+    const isActive = target === tab;
+    a.classList.toggle("active", isActive);
   });
 }
 
@@ -545,6 +707,8 @@ async function init() {
 
   bindSidebar();
   bindCopyEntryId();
+  bindKeyboardShortcuts();
+  initSidebar();
   initChartDefaults();
   initTooltips(document.body);
 
