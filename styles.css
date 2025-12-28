@@ -222,13 +222,62 @@
     color:var(--muted);
   }
   
-  /* ─── Theme Toggle ───────────────────────────────── */
+  /* ─── Topbar Status (moved from footer) ────────────── */
   .topbar-right{
     display:flex;
     align-items:center;
     gap:12px;
     margin-left:auto;
   }
+  .topbar-status{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:4px 10px;
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:8px;
+    font-size:11px;
+    color:var(--muted);
+  }
+  .topbar-status .last-updated{
+    display:flex;
+    align-items:center;
+    gap:5px;
+  }
+  .topbar-status .update-dot{
+    width:6px;
+    height:6px;
+    background:var(--good);
+    border-radius:50%;
+  }
+  .topbar-status .update-dot.stale{ background:var(--yellow); }
+  .topbar-status .update-dot.old{ background:var(--red); }
+  .refresh-btn-compact{
+    background:none;
+    border:none;
+    color:var(--muted);
+    font-size:14px;
+    cursor:pointer;
+    padding:2px;
+    border-radius:4px;
+    transition:all 0.2s;
+  }
+  .refresh-btn-compact:hover{
+    color:var(--accent-light);
+    background:var(--surface-2);
+  }
+  .refresh-btn-compact:disabled{
+    opacity:0.4;
+    cursor:not-allowed;
+  }
+  .topbar-version{
+    font-size:10px;
+    color:var(--muted-2);
+    letter-spacing:0.03em;
+  }
+
+  /* ─── Theme Toggle ───────────────────────────────── */
   .theme-toggle{
     position:relative;
     width:40px;
@@ -1634,6 +1683,7 @@
   .table-scroll-container{
     flex:1;
     min-height:0;
+    max-height:100%;
     overflow:auto;
     border-radius:12px;
     background:var(--bg2);
@@ -1641,6 +1691,16 @@
   }
   .table-scroll-container .table{
     border-radius:0;
+  }
+  /* Sticky table header in scroll container */
+  .table-scroll-container .table th{
+    position:sticky;
+    top:0;
+    z-index:10;
+    background:var(--surface-1);
+  }
+  :root[data-theme="light"] .table-scroll-container .table th{
+    background:#f8fafc;
   }
 
   /* ─── Table / sorting ──────────────────────────────── */
@@ -2158,6 +2218,74 @@
     background:#ffffff;
     color:var(--text);
     border-color:var(--border-strong);
+  }
+
+  /* Light mode contrast improvements */
+  :root[data-theme="light"] .stat-value,
+  :root[data-theme="light"] .stat-row span:last-child{
+    color:#1e293b;
+  }
+  :root[data-theme="light"] .portal-tile .tile-title,
+  :root[data-theme="light"] .profile-name,
+  :root[data-theme="light"] h1, :root[data-theme="light"] h2, :root[data-theme="light"] h3{
+    color:#0f172a;
+  }
+  :root[data-theme="light"] .topbar-status,
+  :root[data-theme="light"] .sidebar-meta{
+    color:#475569;
+  }
+  :root[data-theme="light"] .portal-tile .tile-desc,
+  :root[data-theme="light"] .captain-form,
+  :root[data-theme="light"] .squad-player-pts{
+    color:#64748b;
+  }
+  :root[data-theme="light"] .search-result-item .result-meta{
+    color:#64748b;
+  }
+  :root[data-theme="light"] .table th{
+    color:#374151;
+    background:#f8fafc;
+  }
+  :root[data-theme="light"] .table td{
+    color:#1e293b;
+    border-color:#e2e8f0;
+  }
+  :root[data-theme="light"] .nav-link{
+    color:#475569;
+  }
+  :root[data-theme="light"] .nav-link.active,
+  :root[data-theme="light"] .nav-link:hover{
+    color:#0f172a;
+  }
+  :root[data-theme="light"] .sidebar label{
+    color:#374151;
+  }
+  :root[data-theme="light"] input,
+  :root[data-theme="light"] select{
+    background:#ffffff;
+    border-color:#cbd5e1;
+    color:#1e293b;
+  }
+  :root[data-theme="light"] input:focus,
+  :root[data-theme="light"] select:focus{
+    border-color:#3b82f6;
+  }
+  :root[data-theme="light"] .deadline-timer{
+    color:#0f172a;
+  }
+  :root[data-theme="light"] .deadline-gw{
+    color:#475569;
+  }
+  :root[data-theme="light"] .fixture-team-name,
+  :root[data-theme="light"] .transfer-name,
+  :root[data-theme="light"] .captain-name{
+    color:#1e293b;
+  }
+  :root[data-theme="light"] .global-search input{
+    color:#1e293b;
+  }
+  :root[data-theme="light"] .global-search input::placeholder{
+    color:#94a3b8;
   }
 
   /* Text selection */
@@ -2968,18 +3096,22 @@
   /* ─── Help Page ─────────────────────────────────────────── */
   .help-page{
     display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(380px, 1fr));
-    gap:16px;
+    grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));
+    gap:14px;
     max-width:1200px;
     margin:0 auto;
-    padding:0 0 40px;
+    padding:12px;
+    height:100%;
+    overflow-y:auto;
   }
   .help-page .card{
     background:var(--surface-1);
     border:1px solid var(--border);
     border-radius:12px;
-    padding:20px;
+    padding:16px;
     height:fit-content;
+    max-height:calc(100vh - 140px);
+    overflow-y:auto;
   }
   .help-page .card h3{
     margin:0 0 16px;
@@ -3528,4 +3660,252 @@
   }
   @keyframes spin{
     to { transform:rotate(360deg); }
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     PLAYER & TEAM PROFILE PAGES
+     ═══════════════════════════════════════════════════════════════════ */
+  .player-profile,
+  .team-profile{
+    padding:16px;
+    max-width:900px;
+    margin:0 auto;
+    height:100%;
+    overflow-y:auto;
+  }
+  .profile-header{
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    margin-bottom:20px;
+  }
+  .back-btn{
+    align-self:flex-start;
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    color:var(--muted);
+    padding:8px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:13px;
+    transition:all 0.2s;
+  }
+  .back-btn:hover{
+    background:var(--surface-2);
+    color:var(--text);
+    border-color:var(--border-strong);
+  }
+  .profile-info{
+    display:flex;
+    gap:20px;
+    align-items:center;
+  }
+  .profile-photo{
+    width:120px;
+    height:150px;
+    object-fit:cover;
+    object-position:top;
+    border-radius:12px;
+    background:var(--surface-2);
+  }
+  .profile-photo-placeholder{
+    width:120px;
+    height:150px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:48px;
+    background:var(--surface-2);
+    border-radius:12px;
+  }
+  .team-badge-large{
+    width:100px;
+    height:100px;
+    object-fit:contain;
+  }
+  .profile-badge{
+    width:24px;
+    height:24px;
+    object-fit:contain;
+  }
+  .profile-details{
+    flex:1;
+  }
+  .profile-name{
+    font-size:clamp(1.5rem, 3vw, 2rem);
+    font-weight:800;
+    margin:0 0 8px;
+  }
+  .profile-meta{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+    font-size:14px;
+    color:var(--muted);
+  }
+  .profile-team{
+    font-weight:600;
+    color:var(--text);
+  }
+  .profile-pos{
+    padding:4px 10px;
+    background:var(--surface-2);
+    border-radius:6px;
+    font-size:12px;
+    font-weight:600;
+  }
+  .profile-news{
+    margin:12px 0 0;
+    padding:10px 14px;
+    background:rgba(251, 191, 36, 0.1);
+    border:1px solid rgba(251, 191, 36, 0.3);
+    border-radius:8px;
+    font-size:13px;
+    color:var(--yellow);
+  }
+  .team-short{
+    font-weight:700;
+    font-size:16px;
+    color:var(--accent-light);
+  }
+  .profile-stats-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(100px, 1fr));
+    gap:12px;
+    margin-bottom:20px;
+  }
+  .profile-stats-grid .stat-card{
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:14px;
+    text-align:center;
+  }
+  .profile-stats-grid .stat-value{
+    font-size:1.3rem;
+    font-weight:800;
+    color:var(--text);
+  }
+  .profile-stats-grid .stat-label{
+    font-size:11px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    margin-top:4px;
+  }
+  .profile-section{
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:16px;
+    margin-bottom:16px;
+  }
+  .profile-section h3{
+    font-size:14px;
+    font-weight:700;
+    margin:0 0 12px;
+    color:var(--text);
+  }
+  .stats-table{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .stat-row{
+    display:flex;
+    justify-content:space-between;
+    padding:8px 12px;
+    background:var(--bg2);
+    border-radius:8px;
+    font-size:13px;
+  }
+  .stat-row span:first-child{
+    color:var(--muted);
+  }
+  .stat-row span:last-child{
+    font-weight:600;
+    color:var(--text);
+  }
+  .text-good{ color:var(--good) !important; }
+  .text-bad{ color:var(--pain) !important; }
+
+  /* Squad grid for team profile */
+  .squad-position{
+    margin-bottom:16px;
+  }
+  .squad-position h4{
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--muted);
+    margin:0 0 8px;
+    padding-bottom:6px;
+    border-bottom:1px solid var(--border);
+  }
+  .squad-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
+    gap:8px;
+  }
+  .squad-player{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    padding:10px 12px;
+    background:var(--bg2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    text-decoration:none;
+    transition:all 0.2s;
+  }
+  .squad-player:hover{
+    background:var(--surface-2);
+    border-color:var(--accent);
+    transform:translateY(-1px);
+  }
+  .squad-player-name{
+    font-weight:600;
+    font-size:13px;
+    color:var(--text);
+  }
+  .squad-player-pts{
+    font-size:11px;
+    color:var(--muted);
+  }
+  .squad-player-price{
+    font-size:11px;
+    color:var(--accent-light);
+    font-weight:600;
+  }
+
+  /* Portal Error State */
+  .portal-error{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:48px 24px;
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:16px;
+    margin:24px auto;
+    max-width:400px;
+  }
+  .portal-error .error-icon{
+    font-size:48px;
+    margin-bottom:16px;
+  }
+  .portal-error h2{
+    font-size:1.25rem;
+    margin:0 0 8px;
+  }
+  .portal-error .error-message{
+    color:var(--muted);
+    font-size:13px;
+    margin:0 0 20px;
+  }
+  .portal-error .retry-btn{
+    padding:10px 24px;
   }

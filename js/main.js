@@ -407,7 +407,7 @@ async function refreshData() {
   const refreshBtn = document.getElementById("refreshDataBtn");
   if (refreshBtn) {
     refreshBtn.disabled = true;
-    refreshBtn.innerHTML = '<span class="refresh-icon">⟳</span> Refreshing...';
+    refreshBtn.style.animation = 'spin 0.8s linear infinite';
   }
 
   try {
@@ -430,7 +430,7 @@ async function refreshData() {
   } finally {
     if (refreshBtn) {
       refreshBtn.disabled = false;
-      refreshBtn.innerHTML = '<span class="refresh-icon">⟳</span> Refresh';
+      refreshBtn.style.animation = '';
     }
   }
 }
@@ -444,9 +444,23 @@ function bindRefreshButton() {
 
 /* ---------- Routing ---------- */
 function getTabFromHash(hash) {
-  const raw = (hash || location.hash || "#/my-team").replace(/^#\//, "");
-  if (routes[raw]) return { tab: raw, valid: true };
-  return { tab: raw, valid: false };
+  const raw = (hash || location.hash || "#/").replace(/^#\//, "");
+
+  // Check for static routes first
+  if (routes[raw]) return { tab: raw, valid: true, params: {} };
+
+  // Check for dynamic routes (player/{id}, team/{id})
+  const playerMatch = raw.match(/^player\/(\d+)$/);
+  if (playerMatch) {
+    return { tab: "player", valid: true, params: { playerId: parseInt(playerMatch[1]) } };
+  }
+
+  const teamMatch = raw.match(/^team\/(\d+)$/);
+  if (teamMatch) {
+    return { tab: "team", valid: true, params: { teamId: parseInt(teamMatch[1]) } };
+  }
+
+  return { tab: raw, valid: false, params: {} };
 }
 
 function render404(main, attemptedRoute) {
@@ -482,6 +496,209 @@ function highlightActiveNav(tab) {
   });
 }
 
+/* ---------- Player Profile ---------- */
+async function renderPlayerProfile(main, playerId) {
+  // Show loading
+  main.innerHTML = `<div class="card"><div class="loading-spinner"></div><p style="text-align:center;color:var(--muted)">Loading player...</p></div>`;
+
+  try {
+    const bs = state.bootstrap || await api.bootstrap();
+    const player = (bs.elements || []).find(p => p.id === playerId);
+
+    if (!player) {
+      main.innerHTML = `<div class="card error-404"><h2>Player Not Found</h2><p>No player with ID ${playerId}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
+      return;
+    }
+
+    const team = (bs.teams || []).find(t => t.id === player.team);
+    const pos = (bs.element_types || []).find(p => p.id === player.element_type);
+    const photoUrl = player.photo
+      ? `https://resources.premierleague.com/premierleague/photos/players/250x250/p${String(player.photo).replace(/\.(png|jpg)$/i, '').replace(/^p/, '')}.png`
+      : null;
+    const badgeUrl = team ? `https://resources.premierleague.com/premierleague/badges/70/t${team.code}.png` : null;
+
+    const statusClass = player.status === 'a' ? 'st-okay' :
+                        player.status === 'd' ? 'st-doubt' :
+                        player.status === 'i' ? 'st-inj' : 'st-out';
+    const statusLabel = player.status === 'a' ? 'Available' :
+                        player.status === 'd' ? 'Doubtful' :
+                        player.status === 'i' ? 'Injured' :
+                        player.status === 's' ? 'Suspended' : 'Unavailable';
+
+    main.innerHTML = `
+      <div class="player-profile">
+        <div class="profile-header">
+          <button class="back-btn" onclick="history.back()">← Back</button>
+          <div class="profile-info">
+            ${photoUrl ? `<img class="profile-photo" src="${photoUrl}" alt="${player.web_name}" onerror="this.style.display='none'">` : '<div class="profile-photo-placeholder">👤</div>'}
+            <div class="profile-details">
+              <h1 class="profile-name">${player.first_name} ${player.second_name}</h1>
+              <div class="profile-meta">
+                ${badgeUrl ? `<img class="profile-badge" src="${badgeUrl}" alt="${team?.short_name}">` : ''}
+                <span class="profile-team">${team?.name || 'Unknown'}</span>
+                <span class="profile-pos">${pos?.singular_name || 'Player'}</span>
+                <span class="status-pill ${statusClass}">${statusLabel}</span>
+              </div>
+              ${player.news ? `<p class="profile-news">${player.news}</p>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="profile-stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">£${(player.now_cost / 10).toFixed(1)}m</div>
+            <div class="stat-label">Price</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${player.total_points}</div>
+            <div class="stat-label">Total Points</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${player.form}</div>
+            <div class="stat-label">Form</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${player.selected_by_percent}%</div>
+            <div class="stat-label">Ownership</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${player.points_per_game}</div>
+            <div class="stat-label">PPG</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${player.minutes}</div>
+            <div class="stat-label">Minutes</div>
+          </div>
+        </div>
+
+        <div class="profile-section">
+          <h3>Season Stats</h3>
+          <div class="stats-table">
+            <div class="stat-row"><span>Goals</span><span>${player.goals_scored}</span></div>
+            <div class="stat-row"><span>Assists</span><span>${player.assists}</span></div>
+            <div class="stat-row"><span>Clean Sheets</span><span>${player.clean_sheets}</span></div>
+            <div class="stat-row"><span>Bonus Points</span><span>${player.bonus}</span></div>
+            <div class="stat-row"><span>BPS</span><span>${player.bps}</span></div>
+            <div class="stat-row"><span>Yellow Cards</span><span>${player.yellow_cards}</span></div>
+            <div class="stat-row"><span>Red Cards</span><span>${player.red_cards}</span></div>
+          </div>
+        </div>
+
+        <div class="profile-section">
+          <h3>Expected Stats</h3>
+          <div class="stats-table">
+            <div class="stat-row"><span>xG</span><span>${parseFloat(player.expected_goals || 0).toFixed(2)}</span></div>
+            <div class="stat-row"><span>xA</span><span>${parseFloat(player.expected_assists || 0).toFixed(2)}</span></div>
+            <div class="stat-row"><span>xGI</span><span>${parseFloat(player.expected_goal_involvements || 0).toFixed(2)}</span></div>
+          </div>
+        </div>
+
+        <div class="profile-section">
+          <h3>Transfers This Week</h3>
+          <div class="stats-table">
+            <div class="stat-row"><span>In</span><span class="text-good">+${(player.transfers_in_event || 0).toLocaleString()}</span></div>
+            <div class="stat-row"><span>Out</span><span class="text-bad">-${(player.transfers_out_event || 0).toLocaleString()}</span></div>
+            <div class="stat-row"><span>Net</span><span>${((player.transfers_in_event || 0) - (player.transfers_out_event || 0)).toLocaleString()}</span></div>
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    console.error("Player profile error:", e);
+    main.innerHTML = `<div class="card error-404"><h2>Error Loading Player</h2><p>${e.message}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
+  }
+}
+
+/* ---------- Team Profile ---------- */
+async function renderTeamProfile(main, teamId) {
+  // Show loading
+  main.innerHTML = `<div class="card"><div class="loading-spinner"></div><p style="text-align:center;color:var(--muted)">Loading team...</p></div>`;
+
+  try {
+    const bs = state.bootstrap || await api.bootstrap();
+    const team = (bs.teams || []).find(t => t.id === teamId);
+
+    if (!team) {
+      main.innerHTML = `<div class="card error-404"><h2>Team Not Found</h2><p>No team with ID ${teamId}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
+      return;
+    }
+
+    const badgeUrl = `https://resources.premierleague.com/premierleague/badges/100/t${team.code}.png`;
+    const players = (bs.elements || []).filter(p => p.team === teamId);
+    const positions = bs.element_types || [];
+
+    // Group players by position
+    const byPosition = {};
+    positions.forEach(pos => {
+      byPosition[pos.id] = players
+        .filter(p => p.element_type === pos.id)
+        .sort((a, b) => b.total_points - a.total_points);
+    });
+
+    main.innerHTML = `
+      <div class="team-profile">
+        <div class="profile-header">
+          <button class="back-btn" onclick="history.back()">← Back</button>
+          <div class="profile-info">
+            <img class="team-badge-large" src="${badgeUrl}" alt="${team.name}">
+            <div class="profile-details">
+              <h1 class="profile-name">${team.name}</h1>
+              <div class="profile-meta">
+                <span class="team-short">${team.short_name}</span>
+                <span>Strength: ${team.strength}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="profile-stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">${team.played || 0}</div>
+            <div class="stat-label">Played</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${team.win || 0}</div>
+            <div class="stat-label">Wins</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${team.draw || 0}</div>
+            <div class="stat-label">Draws</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${team.loss || 0}</div>
+            <div class="stat-label">Losses</div>
+          </div>
+        </div>
+
+        <div class="profile-section">
+          <h3>Squad (${players.length} players)</h3>
+          ${positions.map(pos => {
+            const posPlayers = byPosition[pos.id] || [];
+            if (posPlayers.length === 0) return '';
+            return `
+              <div class="squad-position">
+                <h4>${pos.plural_name || pos.singular_name}</h4>
+                <div class="squad-grid">
+                  ${posPlayers.map(p => `
+                    <a href="#/player/${p.id}" class="squad-player">
+                      <span class="squad-player-name">${p.web_name}</span>
+                      <span class="squad-player-pts">${p.total_points} pts</span>
+                      <span class="squad-player-price">£${(p.now_cost / 10).toFixed(1)}m</span>
+                    </a>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    console.error("Team profile error:", e);
+    main.innerHTML = `<div class="card error-404"><h2>Error Loading Team</h2><p>${e.message}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
+  }
+}
+
 function navigate(hash) {
   const main = document.querySelector("main");
   const result = getTabFromHash(hash);
@@ -489,18 +706,25 @@ function navigate(hash) {
   if (!result.valid) {
     render404(main, result.tab);
     highlightActiveNav(null);
-    window.scrollTo({ top: 0, behavior: "instant" });
-    adjustForFixedFooter();
     return;
   }
 
-  const render = routes[result.tab];
   main.innerHTML = "";
-  render(main);
-  highlightActiveNav(result.tab);
+
+  // Handle dynamic routes
+  if (result.tab === "player" && result.params.playerId) {
+    renderPlayerProfile(main, result.params.playerId);
+    highlightActiveNav("all-players");
+  } else if (result.tab === "team" && result.params.teamId) {
+    renderTeamProfile(main, result.params.teamId);
+    highlightActiveNav("fixtures");
+  } else {
+    const render = routes[result.tab];
+    render(main);
+    highlightActiveNav(result.tab);
+  }
+
   initTooltips(main);
-  window.scrollTo({ top: 0, behavior: "instant" });
-  adjustForFixedFooter();
 }
 
 function qsAny(...sel) {
@@ -718,24 +942,17 @@ function bindGlobalSearch() {
       players.forEach(p => {
         const item = document.createElement("div");
         item.className = "search-result-item";
+        item.dataset.playerId = p.id; // Use stable ID
         item.innerHTML = `
           <span class="result-icon">👤</span>
           <span class="result-name">${p.web_name}</span>
           <span class="result-meta">${teamMap.get(p.team) || ""} · £${(p.now_cost / 10).toFixed(1)}m</span>
         `;
         item.addEventListener("click", () => {
-          location.hash = "#/all-players";
+          // Route directly to player profile using ID
+          location.hash = `#/player/${p.id}`;
           hideResults();
           input.value = "";
-          // Focus and fill search on All Players page
-          setTimeout(() => {
-            const searchInput = document.querySelector("#playerSearch, input[placeholder*='Search']");
-            if (searchInput) {
-              searchInput.value = p.web_name;
-              searchInput.dispatchEvent(new Event("input"));
-              searchInput.focus();
-            }
-          }, 150);
         });
         results.appendChild(item);
         searchItems.push(item);
@@ -751,13 +968,15 @@ function bindGlobalSearch() {
       teams.forEach(t => {
         const item = document.createElement("div");
         item.className = "search-result-item";
+        item.dataset.teamId = t.id; // Use stable ID
         item.innerHTML = `
           <span class="result-icon">🏟️</span>
           <span class="result-name">${t.name}</span>
           <span class="result-meta">${t.short_name}</span>
         `;
         item.addEventListener("click", () => {
-          location.hash = "#/fixtures";
+          // Route directly to team fixtures using ID
+          location.hash = `#/team/${t.id}`;
           hideResults();
           input.value = "";
         });
@@ -918,15 +1137,6 @@ function bindQuickLinks() {
   });
 }
 
-/* ---------- Fixed footer padding ---------- */
-function adjustForFixedFooter() {
-  const footer = document.querySelector(".footer");
-  const main = document.querySelector("main");
-  if (!footer || !main) return;
-  const h = Math.ceil(footer.getBoundingClientRect().height);
-  document.body.style.paddingBottom = `${h + 8}px`;
-}
-
 /* -------------------- INIT -------------------- */
 async function init() {
   // Initialize theme first (prevents flash)
@@ -957,8 +1167,7 @@ async function init() {
     startDeadlineCountdown();
   }
 
-  // Footer meta
-  setText("year", new Date().getFullYear());
+  // Top bar version
   setText("appVersion", APP_VERSION);
 
   bindSidebar();
@@ -974,8 +1183,6 @@ async function init() {
   if (!location.hash) location.hash = "#/";
   navigate(location.hash);
   window.addEventListener("hashchange", () => navigate(location.hash));
-  window.addEventListener("resize", adjustForFixedFooter);
-  adjustForFixedFooter();
 }
 
 document.addEventListener("DOMContentLoaded", init);
