@@ -41,7 +41,11 @@ function buildDeadlineTile(events) {
   const tile = utils.el("div", { class: "portal-tile tile-deadline" });
 
   const now = Date.now();
-  const upcoming = events.find(e => new Date(e.deadline) > now);
+  // Use deadlineTime (mapped) or deadline_time (raw)
+  const upcoming = events.find(e => {
+    const dl = e.deadlineTime || e.deadlineDate || e.deadline_time;
+    return dl && new Date(dl) > now;
+  });
 
   if (!upcoming) {
     tile.innerHTML = `
@@ -54,7 +58,7 @@ function buildDeadlineTile(events) {
     return tile;
   }
 
-  const deadline = new Date(upcoming.deadline);
+  const deadline = new Date(upcoming.deadlineTime || upcoming.deadlineDate || upcoming.deadline_time);
   const diff = deadline - now;
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -88,9 +92,14 @@ function buildCaptainTile(players, fixtures, currentGw) {
   const tile = utils.el("div", { class: "portal-tile tile-action tile-clickable" });
 
   // Find top captain picks based on form and fixtures
+  // Use positionId (mapped) or element_type (raw) - Mids (3) and FWDs (4) with good form
   const withForm = players
-    .filter(p => p.position >= 3 && parseFloat(p.form || 0) > 3) // Mids and FWDs with good form
-    .sort((a, b) => parseFloat(b.form || 0) - parseFloat(a.form || 0))
+    .filter(p => {
+      const pos = p.positionId || p.element_type || 0;
+      const form = p.form || 0;
+      return pos >= 3 && form > 3;
+    })
+    .sort((a, b) => (b.form || 0) - (a.form || 0))
     .slice(0, 3);
 
   tile.innerHTML = `
@@ -99,12 +108,12 @@ function buildCaptainTile(players, fixtures, currentGw) {
       <h3 class="tile-title">Captain Picks</h3>
     </div>
     <div class="tile-body captain-picks">
-      ${withForm.map(p => `
+      ${withForm.length === 0 ? '<p class="tile-desc">No captain picks available</p>' : withForm.map(p => `
         <div class="captain-option" data-player-id="${p.id}">
-          <img class="captain-photo" src="${PLAYER_PHOTO_URL(p.photo)}" alt="${p.name}" onerror="this.style.display='none'">
+          <img class="captain-photo" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.style.display='none'">
           <div class="captain-info">
-            <span class="captain-name">${p.name}</span>
-            <span class="captain-form">Form: ${parseFloat(p.form).toFixed(1)}</span>
+            <span class="captain-name">${p.webName || p.web_name || 'Unknown'}</span>
+            <span class="captain-form">Form: ${(p.form || 0).toFixed(1)}</span>
           </div>
         </div>
       `).join('')}
@@ -132,23 +141,30 @@ function buildFixturesTile(teams, fixtures, currentGw) {
   }
 
   // Find teams with easiest upcoming fixtures
+  // Use mapped property names (homeTeamId, awayTeamId, homeDifficulty, awayDifficulty)
   const teamFixtures = teams.map(team => {
     const upcoming = fixtures
       .filter(f => f.event >= currentGw && f.event < currentGw + 5)
-      .filter(f => f.teamHome === team.id || f.teamAway === team.id)
-      .map(f => ({
-        gw: f.event,
-        opponent: f.teamHome === team.id ? f.teamAway : f.teamHome,
-        isHome: f.teamHome === team.id,
-        difficulty: f.teamHome === team.id ? f.difficultyHome : f.difficultyAway,
-      }));
+      .filter(f => (f.homeTeamId || f.team_h) === team.id || (f.awayTeamId || f.team_a) === team.id)
+      .map(f => {
+        const homeId = f.homeTeamId || f.team_h;
+        const awayId = f.awayTeamId || f.team_a;
+        const isHome = homeId === team.id;
+        return {
+          gw: f.event,
+          opponent: isHome ? awayId : homeId,
+          isHome,
+          difficulty: isHome ? (f.homeDifficulty || f.team_h_difficulty) : (f.awayDifficulty || f.team_a_difficulty),
+        };
+      });
 
     const easeResult = fixtureEase(upcoming, 5);
     return { team, fixtures: upcoming, easeScore: easeResult.score || 50 };
   });
 
-  const easiest = teamFixtures.sort((a, b) => b.easeScore - a.easeScore).slice(0, 4);
-  const hardest = teamFixtures.sort((a, b) => a.easeScore - b.easeScore).slice(0, 4);
+  // Sort for easiest and hardest (need to copy array to avoid mutating)
+  const easiest = [...teamFixtures].sort((a, b) => b.easeScore - a.easeScore).slice(0, 4);
+  const hardest = [...teamFixtures].sort((a, b) => a.easeScore - b.easeScore).slice(0, 4);
 
   tile.innerHTML = `
     <div class="tile-header">
@@ -160,8 +176,8 @@ function buildFixturesTile(teams, fixtures, currentGw) {
         <h4 class="fixtures-label good">Easiest Run</h4>
         ${easiest.map(t => `
           <div class="fixture-team-row">
-            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName}" onerror="this.style.display='none'">
-            <span class="fixture-team-name">${t.team.shortName}</span>
+            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            <span class="fixture-team-name">${t.team.shortName || t.team.short_name || '???'}</span>
             <span class="fixture-score score-good">${t.easeScore}</span>
           </div>
         `).join('')}
@@ -170,8 +186,8 @@ function buildFixturesTile(teams, fixtures, currentGw) {
         <h4 class="fixtures-label bad">Toughest Run</h4>
         ${hardest.map(t => `
           <div class="fixture-team-row">
-            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName}" onerror="this.style.display='none'">
-            <span class="fixture-team-name">${t.team.shortName}</span>
+            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            <span class="fixture-team-name">${t.team.shortName || t.team.short_name || '???'}</span>
             <span class="fixture-score score-bad">${t.easeScore}</span>
           </div>
         `).join('')}
@@ -194,16 +210,26 @@ function buildTransfersTile(players) {
   const tile = utils.el("div", { class: "portal-tile tile-action tile-clickable" });
 
   // Find hot transfers (most transferred in this week)
+  // Use transfersIn (mapped) or transfers_in (raw)
   const hotTransfers = players
-    .filter(p => p.transfersIn > 50000)
-    .sort((a, b) => b.transfersIn - a.transfersIn)
+    .filter(p => (p.transfersIn || p.transfers_in || 0) > 50000)
+    .sort((a, b) => (b.transfersIn || b.transfers_in || 0) - (a.transfersIn || a.transfers_in || 0))
     .slice(0, 3);
 
   // Find differential picks (low ownership, good form)
+  // Use selectedByPercent (mapped) or selected_by_percent (raw)
   const differentials = players
-    .filter(p => p.ownership < 10 && parseFloat(p.form || 0) > 4)
-    .sort((a, b) => parseFloat(b.form || 0) - parseFloat(a.form || 0))
+    .filter(p => {
+      const ownership = p.selectedByPercent || parseFloat(p.selected_by_percent) || 0;
+      const form = p.form || 0;
+      return ownership < 10 && form > 4;
+    })
+    .sort((a, b) => (b.form || 0) - (a.form || 0))
     .slice(0, 3);
+
+  const getName = p => p.webName || p.web_name || 'Unknown';
+  const getTransfersIn = p => p.transfersIn || p.transfers_in || 0;
+  const getOwnership = p => p.selectedByPercent || parseFloat(p.selected_by_percent) || 0;
 
   tile.innerHTML = `
     <div class="tile-header">
@@ -213,19 +239,19 @@ function buildTransfersTile(players) {
     <div class="tile-body transfers-preview">
       <div class="transfers-section">
         <h4 class="transfers-label">🔥 Trending</h4>
-        ${hotTransfers.map(p => `
+        ${hotTransfers.length === 0 ? '<p class="tile-desc">No trending transfers</p>' : hotTransfers.map(p => `
           <div class="transfer-row">
-            <span class="transfer-name">${p.name}</span>
-            <span class="transfer-stat">+${(p.transfersIn / 1000).toFixed(0)}K</span>
+            <span class="transfer-name">${getName(p)}</span>
+            <span class="transfer-stat">+${(getTransfersIn(p) / 1000).toFixed(0)}K</span>
           </div>
         `).join('')}
       </div>
       <div class="transfers-section">
         <h4 class="transfers-label">💎 Differentials</h4>
-        ${differentials.map(p => `
+        ${differentials.length === 0 ? '<p class="tile-desc">No differentials found</p>' : differentials.map(p => `
           <div class="transfer-row">
-            <span class="transfer-name">${p.name}</span>
-            <span class="transfer-stat">${p.ownership.toFixed(1)}%</span>
+            <span class="transfer-name">${getName(p)}</span>
+            <span class="transfer-stat">${getOwnership(p).toFixed(1)}%</span>
           </div>
         `).join('')}
       </div>
@@ -451,12 +477,11 @@ export async function renderPortal(main) {
     const bootstrap = mapBootstrap(rawBootstrap);
 
     // Get current GW
-    const currentGw = bootstrap.events.find(e => e.isCurrent)?.id || 1;
+    const currentGw = bootstrap.currentEvent?.id || bootstrap.events.find(e => e.isCurrent)?.id || 1;
 
-    // Load fixtures
+    // Load fixtures - pass array, not Map
     const rawFixtures = await fplClient.fixtures();
-    const teamMap = new Map(bootstrap.teams.map(t => [t.id, t]));
-    const fixtures = rawFixtures.map(f => mapFixture(f, teamMap));
+    const fixtures = rawFixtures.map(f => mapFixture(f, bootstrap.teams));
 
     // Build the portal
     const page = utils.el("div", { class: "portal-page" });
@@ -490,7 +515,18 @@ export async function renderPortal(main) {
 
   } catch (e) {
     console.error("Portal render error:", e);
-    ui.mount(main, ui.error("Failed to load Portal", e));
+    // Render error with retry button
+    const errorPage = utils.el("div", { class: "portal-page" });
+    errorPage.innerHTML = `
+      <div class="portal-error">
+        <div class="error-icon">⚠️</div>
+        <h2>Failed to load Portal</h2>
+        <p class="error-message">${e.message || 'Unknown error'}</p>
+        <button class="btn-primary retry-btn">Retry</button>
+      </div>
+    `;
+    errorPage.querySelector('.retry-btn')?.addEventListener('click', () => renderPortal(main));
+    ui.mount(main, errorPage);
   }
 }
 

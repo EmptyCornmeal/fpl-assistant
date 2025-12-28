@@ -52,6 +52,15 @@
         <div id="globalSearchResults" class="search-results"></div>
       </div>
       <div id="headerChips" class="chips" aria-live="polite"></div>
+      <!-- Data Status (moved from footer) -->
+      <div class="topbar-status">
+        <span id="lastUpdated" class="last-updated">
+          <span class="update-dot"></span>
+          <span id="lastUpdatedText">...</span>
+        </span>
+        <button id="refreshDataBtn" class="refresh-btn-compact" title="Refresh data">⟳</button>
+      </div>
+      <span class="topbar-version">v<span id="appVersion">1.2.0</span></span>
       <button id="themeToggle" class="theme-toggle" title="Toggle theme">
         <span class="theme-icon-dark">🌙</span>
         <span class="theme-icon-light">☀️</span>
@@ -120,23 +129,6 @@
   </aside>
 
   <main id="app" class="app"></main>
-
-  <footer class="footer" aria-label="Footer">
-    <div class="footer-left">
-      <span>© <span id="year"></span> Myles — FPL Dashboard</span>
-      <span class="sep">•</span>
-      <span>v<span id="appVersion">1.1.0</span></span>
-    </div>
-    <div class="footer-right">
-      <span id="lastUpdated" class="last-updated">
-        <span class="update-dot"></span>
-        <span id="lastUpdatedText">Fetching data...</span>
-      </span>
-      <button id="refreshDataBtn" class="refresh-btn" title="Refresh data">
-        <span class="refresh-icon">⟳</span> Refresh
-      </button>
-    </div>
-  </footer>
 
   <script type="module" src="./js/main.js"></script>
 </body>
