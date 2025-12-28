@@ -6,6 +6,7 @@ import { renderFixtures } from "./pages/fixtures.js";
 import { renderGwExplorer } from "./pages/gw-explorer.js";
 import { renderMiniLeague } from "./pages/mini-league.js";
 import { renderHelp } from "./pages/help.js";
+import { renderStatPicker } from "./pages/stat-picker.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
 import { state } from "./state.js";
@@ -100,7 +101,8 @@ const KEYBOARD_SHORTCUTS = {
   "3": "#/fixtures",
   "4": "#/gw-explorer",
   "5": "#/mini-league",
-  "6": "#/help",
+  "6": "#/stat-picker",
+  "7": "#/help",
 };
 
 function bindKeyboardShortcuts() {
@@ -247,6 +249,7 @@ const routes = {
   "fixtures": renderFixtures,
   "gw-explorer": renderGwExplorer,
   "mini-league": renderMiniLeague,
+  "stat-picker": renderStatPicker,
   "help": renderHelp,
 };
 
