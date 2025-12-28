@@ -4740,10 +4740,19 @@
     overflow-y:auto;
     min-height:0;
   }
-  .sp-xi-row, .sp-bench-row{
+  .sp-xi-row{
     display:grid;
-    grid-template-columns:20px 1fr 40px 40px;
-    gap:6px;
+    grid-template-columns:20px 1fr 36px 36px 80px;
+    gap:4px;
+    padding:5px 6px;
+    font-size:12px;
+    align-items:center;
+    border-radius:4px;
+  }
+  .sp-bench-row{
+    display:grid;
+    grid-template-columns:16px 20px 1fr 36px;
+    gap:4px;
     padding:5px 6px;
     font-size:12px;
     align-items:center;
@@ -4770,11 +4779,6 @@
     margin-top:6px;
   }
   .sp-bench-list{ opacity:0.7; }
-  .sp-bench-row{
-    grid-template-columns:20px 1fr 40px;
-    padding:3px 6px;
-    font-size:11px;
-  }
 
   /* Captain Panel */
   .sp-cap-list{ display:flex; flex-direction:column; gap:4px; }
@@ -4819,10 +4823,79 @@
     align-items:center;
     border-bottom:1px solid var(--border);
   }
+  .sp-tr-players{
+    display:grid;
+    grid-template-columns:1fr 20px 1fr 40px;
+    gap:4px;
+    align-items:center;
+  }
   .sp-tr-out{ color:var(--red); }
   .sp-tr-arrow{ text-align:center; color:var(--muted); }
   .sp-tr-in{ color:var(--green); font-weight:500; }
   .sp-tr-gain{ text-align:right; color:var(--green); font-weight:600; }
+  .sp-tr-why{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    font-size:10px;
+    color:var(--muted);
+    padding:4px 0 6px;
+    margin-left:4px;
+    border-left:2px solid var(--border);
+    padding-left:8px;
+  }
+  .sp-tr-why-out{ color:var(--red-faded); }
+  .sp-tr-why-in{ color:var(--green-faded); }
+  .sp-baseline{
+    font-size:10px;
+    color:var(--muted);
+    padding-top:8px;
+    border-top:1px solid var(--border);
+    margin-top:8px;
+  }
+
+  /* Explainability styles */
+  .sp-xi-why{
+    font-size:9px;
+    color:var(--muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .sp-bench-order{
+    width:14px;
+    height:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--surface-2);
+    border-radius:50%;
+    font-size:9px;
+    font-weight:600;
+    color:var(--muted);
+  }
+  .sp-scoring-note{
+    font-size:9px;
+    color:var(--muted-2);
+    padding-top:6px;
+    border-top:1px solid var(--border);
+    margin-top:6px;
+    text-align:center;
+  }
+  .sp-scoring-link{
+    font-size:10px;
+    text-align:center;
+    padding-top:8px;
+    border-top:1px solid var(--border);
+    margin-top:8px;
+  }
+  .sp-scoring-link a{
+    color:var(--accent);
+    text-decoration:none;
+  }
+  .sp-scoring-link a:hover{
+    text-decoration:underline;
+  }
 
   /* Fixtures Panel */
   .sp-fx-grid{ display:flex; flex-direction:column; gap:4px; }
