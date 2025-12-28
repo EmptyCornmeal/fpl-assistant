@@ -1,4 +1,5 @@
 // js/main.js
+import { renderPortal } from "./pages/portal.js";
 import { renderMyTeam } from "./pages/my-team.js";
 import { renderAllPlayers } from "./pages/all-players.js";
 import { renderFixtures } from "./pages/fixtures.js";
@@ -92,6 +93,7 @@ function bindCopyEntryId() {
 
 /* ---------- Keyboard Shortcuts ---------- */
 const KEYBOARD_SHORTCUTS = {
+  "0": "#/",
   "1": "#/my-team",
   "2": "#/all-players",
   "3": "#/fixtures",
@@ -170,6 +172,7 @@ function showKeyboardShortcutsHelp() {
       <div class="keyboard-help-content">
         <div class="shortcut-group">
           <h4>Navigation</h4>
+          <div class="shortcut-row"><kbd>0</kbd> Portal (Home)</div>
           <div class="shortcut-row"><kbd>1</kbd> My Team</div>
           <div class="shortcut-row"><kbd>2</kbd> All Players</div>
           <div class="shortcut-row"><kbd>3</kbd> Fixtures</div>
@@ -236,6 +239,8 @@ function toggleSidebar() {
 }
 
 const routes = {
+  "": renderPortal,
+  "portal": renderPortal,
   "my-team": renderMyTeam,
   "all-players": renderAllPlayers,
   "fixtures": renderFixtures,
@@ -453,6 +458,7 @@ function render404(main, attemptedRoute) {
     <p>The route <code>#/${attemptedRoute}</code> does not exist.</p>
     <p class="sub">Available pages:</p>
     <ul class="route-list">
+      <li><a href="#/">Portal (Home)</a></li>
       <li><a href="#/my-team">My Team</a></li>
       <li><a href="#/all-players">All Players</a></li>
       <li><a href="#/fixtures">Fixtures</a></li>
@@ -460,7 +466,7 @@ function render404(main, attemptedRoute) {
       <li><a href="#/mini-league">Mini-League</a></li>
       <li><a href="#/help">Help</a></li>
     </ul>
-    <button class="btn-primary" onclick="location.hash='#/my-team'">Go to My Team</button>
+    <button class="btn-primary" onclick="location.hash='#/'">Go to Portal</button>
   `;
   main.appendChild(wrap);
 }
@@ -965,7 +971,7 @@ async function init() {
   initChartDefaults();
   initTooltips(document.body);
 
-  if (!location.hash) location.hash = "#/my-team";
+  if (!location.hash) location.hash = "#/";
   navigate(location.hash);
   window.addEventListener("hashchange", () => navigate(location.hash));
   window.addEventListener("resize", adjustForFixedFooter);
