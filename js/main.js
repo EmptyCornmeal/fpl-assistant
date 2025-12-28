@@ -4,6 +4,8 @@ import { renderAllPlayers } from "./pages/all-players.js";
 import { renderFixtures } from "./pages/fixtures.js";
 import { renderGwExplorer } from "./pages/gw-explorer.js";
 import { renderMiniLeague } from "./pages/mini-league.js";
+import { renderPlanner } from "./pages/planner.js";
+import { renderMeta } from "./pages/meta.js";
 import { renderHelp } from "./pages/help.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
@@ -97,7 +99,9 @@ const KEYBOARD_SHORTCUTS = {
   "3": "#/fixtures",
   "4": "#/gw-explorer",
   "5": "#/mini-league",
-  "6": "#/help",
+  "6": "#/planner",
+  "7": "#/meta",
+  "8": "#/help",
 };
 
 function bindKeyboardShortcuts() {
@@ -250,6 +254,8 @@ const routes = {
   "fixtures": renderFixtures,
   "gw-explorer": renderGwExplorer,
   "mini-league": renderMiniLeague,
+  "planner": renderPlanner,
+  "meta": renderMeta,
   "help": renderHelp,
 };
 
@@ -330,8 +336,8 @@ function startDeadlineCountdown() {
 function initTheme() {
   const saved = localStorage.getItem("fpl.theme");
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const theme = saved || (prefersDark ? "dark" : "dark"); // default dark
-  
+  const theme = saved || (prefersDark ? "dark" : "light");
+
   document.documentElement.setAttribute("data-theme", theme);
   updateThemeIcon(theme);
 }
@@ -449,7 +455,31 @@ function bindRefreshButton() {
 /* ---------- Routing ---------- */
 function getTabFromHash(hash) {
   const raw = (hash || location.hash || "#/my-team").replace(/^#\//, "");
-  return routes[raw] ? raw : "my-team";
+  if (routes[raw]) return { tab: raw, valid: true };
+  return { tab: raw, valid: false };
+}
+
+function render404(main, attemptedRoute) {
+  main.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "card error-404";
+  wrap.innerHTML = `
+    <h2>Page Not Found</h2>
+    <p>The route <code>#/${attemptedRoute}</code> does not exist.</p>
+    <p class="sub">Available pages:</p>
+    <ul class="route-list">
+      <li><a href="#/my-team">My Team</a></li>
+      <li><a href="#/all-players">All Players</a></li>
+      <li><a href="#/fixtures">Fixtures</a></li>
+      <li><a href="#/gw-explorer">GW Explorer</a></li>
+      <li><a href="#/mini-league">Mini-League</a></li>
+      <li><a href="#/planner">Planner</a></li>
+      <li><a href="#/meta">Meta</a></li>
+      <li><a href="#/help">Help</a></li>
+    </ul>
+    <button class="btn-primary" onclick="location.hash='#/my-team'">Go to My Team</button>
+  `;
+  main.appendChild(wrap);
 }
 
 function highlightActiveNav(tab) {
@@ -474,11 +504,20 @@ function highlightActiveNav(tab) {
 
 function navigate(hash) {
   const main = document.querySelector("main");
-  const tab = getTabFromHash(hash);
-  const render = routes[tab] || renderMyTeam;
+  const result = getTabFromHash(hash);
+
+  if (!result.valid) {
+    render404(main, result.tab);
+    highlightActiveNav(null);
+    window.scrollTo({ top: 0, behavior: "instant" });
+    adjustForFixedFooter();
+    return;
+  }
+
+  const render = routes[result.tab];
   main.innerHTML = "";
   render(main);
-  highlightActiveNav(tab);
+  highlightActiveNav(result.tab);
   initTooltips(main);
   window.scrollTo({ top: 0, behavior: "instant" });
   adjustForFixedFooter();

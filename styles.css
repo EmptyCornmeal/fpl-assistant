@@ -2498,10 +2498,17 @@
       backdrop-filter:blur(16px);
       border-top:1px solid var(--border-strong);
       display:flex;
-      justify-content:space-around;
+      justify-content:flex-start;
+      overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:none;
       padding:8px 4px;
       padding-bottom:max(8px, env(safe-area-inset-bottom));
       z-index:100;
+      gap:2px;
+    }
+    .mobile-bottom-nav::-webkit-scrollbar{
+      display:none;
     }
 
     .mobile-nav-item{
@@ -2509,14 +2516,15 @@
       flex-direction:column;
       align-items:center;
       gap:2px;
-      padding:6px 8px;
+      padding:6px 6px;
       color:var(--muted);
       text-decoration:none;
-      font-size:10px;
+      font-size:9px;
       font-weight:500;
       border-radius:8px;
       transition:all 0.2s;
-      min-width:52px;
+      min-width:48px;
+      flex-shrink:0;
     }
     .mobile-nav-item:hover,
     .mobile-nav-item.active{
@@ -2524,7 +2532,7 @@
       background:var(--accent-weak);
     }
     .mobile-nav-icon{
-      font-size:20px;
+      font-size:18px;
     }
 
     /* Hide sidebar toggle on mobile */
@@ -2948,4 +2956,58 @@
     .help-page{
       grid-template-columns:1fr;
     }
+  }
+
+  /* ─── 404 Error Page ────────────────────────────────────── */
+  .error-404{
+    max-width:480px;
+    margin:48px auto;
+    text-align:center;
+    padding:32px;
+  }
+  .error-404 h2{
+    font-size:24px;
+    margin-bottom:12px;
+    color:var(--text-bright);
+  }
+  .error-404 p{
+    color:var(--muted);
+    margin-bottom:8px;
+  }
+  .error-404 code{
+    background:var(--surface-2);
+    padding:2px 8px;
+    border-radius:4px;
+    color:var(--accent-light);
+    font-family:var(--font-mono);
+  }
+  .error-404 .sub{
+    font-size:14px;
+    color:var(--muted);
+    margin-top:16px;
+    margin-bottom:8px;
+  }
+  .error-404 .route-list{
+    list-style:none;
+    padding:0;
+    margin:12px 0 24px;
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:8px;
+  }
+  .error-404 .route-list li a{
+    display:inline-block;
+    padding:6px 14px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    color:var(--accent-light);
+    text-decoration:none;
+    font-size:13px;
+    transition:all 0.2s;
+  }
+  .error-404 .route-list li a:hover{
+    background:var(--accent-weak);
+    border-color:var(--accent);
   }

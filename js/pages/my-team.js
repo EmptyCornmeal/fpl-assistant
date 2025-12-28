@@ -31,11 +31,11 @@ const STAT_LABEL = {
   bps: "BPS",
 };
 
-// FPL photo URL template - photo field is like "12345.png", need to extract just the number
+// FPL photo URL template - photo field is like "12345.png" or "12345.jpg", need to extract just the number
 const PLAYER_PHOTO_URL = (photoId) => {
   if (!photoId) return null;
-  // Remove .png extension and any leading 'p'
-  const cleanId = String(photoId).replace('.png', '').replace(/^p/, '');
+  // FPL API may supply .jpg or .png - strip either extension and any leading 'p'
+  const cleanId = String(photoId).replace(/\.(png|jpg)$/i, '').replace(/^p/, '');
   return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
 };
 
