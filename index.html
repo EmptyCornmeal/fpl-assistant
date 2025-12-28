@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>FPL Dashboard — 2025/26</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Myles' FPL Dashboard — live-aware analysis, planner, fixtures, meta, and mini-league tools." />
+  <meta name="description" content="Myles' FPL Dashboard — live-aware analysis, fixtures, and mini-league tools." />
 
   <link rel="icon" type="image/png" href="./favicon.png" />
 
@@ -39,12 +39,17 @@
       <a href="#/fixtures"     class="nav-link" data-route>Fixtures</a>
       <a href="#/gw-explorer"  class="nav-link" data-route>Explorer</a>
       <a href="#/mini-league"  class="nav-link" data-route>League</a>
-      <a href="#/planner"      class="nav-link" data-route>Planner</a>
-      <a href="#/meta"         class="nav-link" data-route>Meta</a>
       <a href="#/help"         class="nav-link" data-route>Help</a>
     </nav>
 
     <div class="topbar-right">
+      <!-- Global Search -->
+      <div class="global-search">
+        <span class="search-icon">🔍</span>
+        <input id="globalSearchInput" type="text" placeholder="Search players, teams..." autocomplete="off" />
+        <kbd class="search-hint">/</kbd>
+        <div id="globalSearchResults" class="search-results"></div>
+      </div>
       <div id="headerChips" class="chips" aria-live="polite"></div>
       <button id="themeToggle" class="theme-toggle" title="Toggle theme">
         <span class="theme-icon-dark">🌙</span>
@@ -67,6 +72,17 @@
       <input id="leagueIdInput" placeholder="e.g., 12345, 67890 or paste league URLs" />
     </label>
     <button id="saveIdsBtn" class="btn">Save</button>
+
+    <!-- Quick Links / Bookmarks -->
+    <div class="quick-links">
+      <h4>Quick Links</h4>
+      <div id="quickLinksContainer" class="quick-links-list">
+        <a href="#/my-team" class="quick-link" data-page="my-team">My Team</a>
+        <a href="#/all-players" class="quick-link" data-page="all-players">Players</a>
+        <a href="#/fixtures" class="quick-link" data-page="fixtures">Fixtures</a>
+      </div>
+      <button id="editQuickLinks" class="btn-ghost btn-small">Edit Links</button>
+    </div>
 
     <div class="sidebar-note">Live-aware: shows the current <u>GW</u> when it's in progress.</div>
     <div class="sidebar-meta">
@@ -103,42 +119,6 @@
   </aside>
 
   <main id="app" class="app"></main>
-
-  <!-- Mobile Bottom Navigation -->
-  <nav class="mobile-bottom-nav" aria-label="Mobile Navigation">
-    <a href="#/my-team" class="mobile-nav-item" data-route>
-      <span class="mobile-nav-icon">⚽</span>
-      <span>Team</span>
-    </a>
-    <a href="#/all-players" class="mobile-nav-item" data-route>
-      <span class="mobile-nav-icon">👥</span>
-      <span>Players</span>
-    </a>
-    <a href="#/fixtures" class="mobile-nav-item" data-route>
-      <span class="mobile-nav-icon">📅</span>
-      <span>Fixtures</span>
-    </a>
-    <a href="#/gw-explorer" class="mobile-nav-item" data-route>
-      <span class="mobile-nav-icon">🔍</span>
-      <span>Explorer</span>
-    </a>
-    <a href="#/mini-league" class="mobile-nav-item" data-route>
-      <span class="mobile-nav-icon">🏆</span>
-      <span>League</span>
-    </a>
-    <a href="#/planner" class="mobile-nav-item" data-route>
-      <span class="mobile-nav-icon">📋</span>
-      <span>Planner</span>
-    </a>
-    <a href="#/meta" class="mobile-nav-item" data-route>
-      <span class="mobile-nav-icon">📊</span>
-      <span>Meta</span>
-    </a>
-    <a href="#/help" class="mobile-nav-item" data-route>
-      <span class="mobile-nav-icon">❓</span>
-      <span>Help</span>
-    </a>
-  </nav>
 
   <footer class="footer" aria-label="Footer">
     <div class="footer-left">

@@ -4,8 +4,6 @@ import { renderAllPlayers } from "./pages/all-players.js";
 import { renderFixtures } from "./pages/fixtures.js";
 import { renderGwExplorer } from "./pages/gw-explorer.js";
 import { renderMiniLeague } from "./pages/mini-league.js";
-import { renderPlanner } from "./pages/planner.js";
-import { renderMeta } from "./pages/meta.js";
 import { renderHelp } from "./pages/help.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
@@ -99,9 +97,7 @@ const KEYBOARD_SHORTCUTS = {
   "3": "#/fixtures",
   "4": "#/gw-explorer",
   "5": "#/mini-league",
-  "6": "#/planner",
-  "7": "#/meta",
-  "8": "#/help",
+  "6": "#/help",
 };
 
 function bindKeyboardShortcuts() {
@@ -121,18 +117,11 @@ function bindKeyboardShortcuts() {
       return;
     }
 
-    // "/" for search - focus the search input on All Players
+    // "/" for global search
     if (key === "/") {
       e.preventDefault();
-      // Navigate to all-players if not there
-      if (!location.hash.includes("all-players")) {
-        location.hash = "#/all-players";
-      }
-      // Focus search after a small delay for page render
-      setTimeout(() => {
-        const searchInput = document.querySelector("#playerSearch, input[placeholder*='Search']");
-        if (searchInput) searchInput.focus();
-      }, 100);
+      const globalSearch = document.getElementById("globalSearchInput");
+      if (globalSearch) globalSearch.focus();
       return;
     }
 
@@ -186,13 +175,11 @@ function showKeyboardShortcutsHelp() {
           <div class="shortcut-row"><kbd>3</kbd> Fixtures</div>
           <div class="shortcut-row"><kbd>4</kbd> GW Explorer</div>
           <div class="shortcut-row"><kbd>5</kbd> Mini-League</div>
-          <div class="shortcut-row"><kbd>6</kbd> Planner</div>
-          <div class="shortcut-row"><kbd>7</kbd> Meta</div>
-          <div class="shortcut-row"><kbd>8</kbd> Help</div>
+          <div class="shortcut-row"><kbd>6</kbd> Help</div>
         </div>
         <div class="shortcut-group">
           <h4>Actions</h4>
-          <div class="shortcut-row"><kbd>/</kbd> Search players</div>
+          <div class="shortcut-row"><kbd>/</kbd> Focus search</div>
           <div class="shortcut-row"><kbd>S</kbd> Toggle sidebar</div>
           <div class="shortcut-row"><kbd>?</kbd> Show shortcuts</div>
           <div class="shortcut-row"><kbd>Esc</kbd> Close modal</div>
@@ -254,8 +241,6 @@ const routes = {
   "fixtures": renderFixtures,
   "gw-explorer": renderGwExplorer,
   "mini-league": renderMiniLeague,
-  "planner": renderPlanner,
-  "meta": renderMeta,
   "help": renderHelp,
 };
 
@@ -473,8 +458,6 @@ function render404(main, attemptedRoute) {
       <li><a href="#/fixtures">Fixtures</a></li>
       <li><a href="#/gw-explorer">GW Explorer</a></li>
       <li><a href="#/mini-league">Mini-League</a></li>
-      <li><a href="#/planner">Planner</a></li>
-      <li><a href="#/meta">Meta</a></li>
       <li><a href="#/help">Help</a></li>
     </ul>
     <button class="btn-primary" onclick="location.hash='#/my-team'">Go to My Team</button>
@@ -483,7 +466,6 @@ function render404(main, attemptedRoute) {
 }
 
 function highlightActiveNav(tab) {
-  // Desktop nav
   const links = document.querySelectorAll(".nav a");
   links.forEach((a) => {
     const target = (a.getAttribute("href") || "").replace(/^#\//, "");
@@ -491,14 +473,6 @@ function highlightActiveNav(tab) {
     a.classList.toggle("active", isActive);
     if (isActive) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
-  });
-
-  // Mobile bottom nav
-  const mobileLinks = document.querySelectorAll(".mobile-bottom-nav a");
-  mobileLinks.forEach((a) => {
-    const target = (a.getAttribute("href") || "").replace(/^#\//, "");
-    const isActive = target === tab;
-    a.classList.toggle("active", isActive);
   });
 }
 
@@ -653,6 +627,291 @@ function initChartDefaults() {
   Chart.defaults.maintainAspectRatio = false;
 }
 
+/* ---------- Global Search ---------- */
+function bindGlobalSearch() {
+  const input = document.getElementById("globalSearchInput");
+  const results = document.getElementById("globalSearchResults");
+  if (!input || !results) return;
+
+  let searchActive = -1;
+  let searchItems = [];
+
+  function hideResults() {
+    results.classList.remove("active");
+    results.innerHTML = "";
+    searchItems = [];
+    searchActive = -1;
+  }
+
+  function showResults() {
+    const term = input.value.trim().toLowerCase();
+    if (term.length < 2) {
+      hideResults();
+      return;
+    }
+
+    const bs = state.bootstrap;
+    if (!bs) {
+      hideResults();
+      return;
+    }
+
+    results.innerHTML = "";
+    searchItems = [];
+
+    // Search players
+    const players = (bs.elements || [])
+      .filter(p => `${p.first_name} ${p.second_name} ${p.web_name}`.toLowerCase().includes(term))
+      .slice(0, 5);
+
+    // Search teams
+    const teams = (bs.teams || [])
+      .filter(t => t.name.toLowerCase().includes(term) || t.short_name.toLowerCase().includes(term))
+      .slice(0, 3);
+
+    // Pages
+    const pages = [
+      { name: "My Team", route: "#/my-team", icon: "⚽" },
+      { name: "All Players", route: "#/all-players", icon: "👥" },
+      { name: "Fixtures", route: "#/fixtures", icon: "📅" },
+      { name: "GW Explorer", route: "#/gw-explorer", icon: "🔍" },
+      { name: "Mini-League", route: "#/mini-league", icon: "🏆" },
+      { name: "Help", route: "#/help", icon: "❓" },
+    ].filter(p => p.name.toLowerCase().includes(term));
+
+    if (pages.length) {
+      const group = document.createElement("div");
+      group.className = "search-result-group";
+      group.textContent = "Pages";
+      results.appendChild(group);
+
+      pages.forEach(page => {
+        const item = document.createElement("div");
+        item.className = "search-result-item";
+        item.innerHTML = `
+          <span class="result-icon">${page.icon}</span>
+          <span class="result-name">${page.name}</span>
+        `;
+        item.addEventListener("click", () => {
+          location.hash = page.route;
+          hideResults();
+          input.value = "";
+        });
+        results.appendChild(item);
+        searchItems.push(item);
+      });
+    }
+
+    if (players.length) {
+      const group = document.createElement("div");
+      group.className = "search-result-group";
+      group.textContent = "Players";
+      results.appendChild(group);
+
+      const teamMap = new Map((bs.teams || []).map(t => [t.id, t.short_name]));
+      players.forEach(p => {
+        const item = document.createElement("div");
+        item.className = "search-result-item";
+        item.innerHTML = `
+          <span class="result-icon">👤</span>
+          <span class="result-name">${p.web_name}</span>
+          <span class="result-meta">${teamMap.get(p.team) || ""} · £${(p.now_cost / 10).toFixed(1)}m</span>
+        `;
+        item.addEventListener("click", () => {
+          location.hash = "#/all-players";
+          hideResults();
+          input.value = "";
+          // Focus and fill search on All Players page
+          setTimeout(() => {
+            const searchInput = document.querySelector("#playerSearch, input[placeholder*='Search']");
+            if (searchInput) {
+              searchInput.value = p.web_name;
+              searchInput.dispatchEvent(new Event("input"));
+              searchInput.focus();
+            }
+          }, 150);
+        });
+        results.appendChild(item);
+        searchItems.push(item);
+      });
+    }
+
+    if (teams.length) {
+      const group = document.createElement("div");
+      group.className = "search-result-group";
+      group.textContent = "Teams";
+      results.appendChild(group);
+
+      teams.forEach(t => {
+        const item = document.createElement("div");
+        item.className = "search-result-item";
+        item.innerHTML = `
+          <span class="result-icon">🏟️</span>
+          <span class="result-name">${t.name}</span>
+          <span class="result-meta">${t.short_name}</span>
+        `;
+        item.addEventListener("click", () => {
+          location.hash = "#/fixtures";
+          hideResults();
+          input.value = "";
+        });
+        results.appendChild(item);
+        searchItems.push(item);
+      });
+    }
+
+    if (searchItems.length === 0) {
+      results.innerHTML = '<div class="search-result-item"><span class="result-name" style="color:var(--muted)">No results found</span></div>';
+    }
+
+    results.classList.add("active");
+    searchActive = -1;
+  }
+
+  input.addEventListener("input", showResults);
+  input.addEventListener("focus", showResults);
+
+  input.addEventListener("keydown", (e) => {
+    if (!results.classList.contains("active")) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      searchActive = Math.min(searchActive + 1, searchItems.length - 1);
+      searchItems.forEach((item, i) => item.classList.toggle("active", i === searchActive));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      searchActive = Math.max(searchActive - 1, 0);
+      searchItems.forEach((item, i) => item.classList.toggle("active", i === searchActive));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (searchActive >= 0 && searchItems[searchActive]) {
+        searchItems[searchActive].click();
+      }
+    } else if (e.key === "Escape") {
+      hideResults();
+      input.blur();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".global-search")) {
+      hideResults();
+    }
+  });
+}
+
+/* ---------- Quick Links / Bookmarks ---------- */
+const QUICK_LINKS_KEY = "fpl.quickLinks";
+const DEFAULT_QUICK_LINKS = [
+  { name: "My Team", route: "my-team" },
+  { name: "Players", route: "all-players" },
+  { name: "Fixtures", route: "fixtures" },
+];
+
+function loadQuickLinks() {
+  try {
+    const saved = localStorage.getItem(QUICK_LINKS_KEY);
+    return saved ? JSON.parse(saved) : DEFAULT_QUICK_LINKS;
+  } catch {
+    return DEFAULT_QUICK_LINKS;
+  }
+}
+
+function saveQuickLinks(links) {
+  try {
+    localStorage.setItem(QUICK_LINKS_KEY, JSON.stringify(links));
+  } catch {}
+}
+
+function renderQuickLinks() {
+  const container = document.getElementById("quickLinksContainer");
+  if (!container) return;
+
+  const links = loadQuickLinks();
+  container.innerHTML = "";
+
+  links.forEach(link => {
+    const a = document.createElement("a");
+    a.href = `#/${link.route}`;
+    a.className = "quick-link";
+    a.dataset.page = link.route;
+    a.textContent = link.name;
+    container.appendChild(a);
+  });
+}
+
+function bindQuickLinks() {
+  renderQuickLinks();
+
+  const editBtn = document.getElementById("editQuickLinks");
+  if (!editBtn) return;
+
+  editBtn.addEventListener("click", () => {
+    const allPages = [
+      { name: "My Team", route: "my-team" },
+      { name: "All Players", route: "all-players" },
+      { name: "Fixtures", route: "fixtures" },
+      { name: "GW Explorer", route: "gw-explorer" },
+      { name: "Mini-League", route: "mini-league" },
+      { name: "Help", route: "help" },
+    ];
+
+    const currentLinks = loadQuickLinks();
+    const currentRoutes = new Set(currentLinks.map(l => l.route));
+
+    const modal = document.createElement("div");
+    modal.className = "modal__backdrop";
+    modal.innerHTML = `
+      <div class="modal" style="max-width:400px">
+        <div class="modal__header">
+          <h3>Edit Quick Links</h3>
+          <button class="modal__close" data-close>&times;</button>
+        </div>
+        <div class="modal__body">
+          <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">Select which pages to show in Quick Links:</p>
+          <div id="quickLinkCheckboxes" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+        <div class="modal__footer" style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn-ghost" data-close>Cancel</button>
+          <button class="btn-primary" id="saveQuickLinksBtn">Save</button>
+        </div>
+      </div>
+    `;
+
+    const checkboxContainer = modal.querySelector("#quickLinkCheckboxes");
+    allPages.forEach(page => {
+      const label = document.createElement("label");
+      label.style.cssText = "display:flex;align-items:center;gap:8px;cursor:pointer";
+      label.innerHTML = `
+        <input type="checkbox" ${currentRoutes.has(page.route) ? "checked" : ""} data-route="${page.route}" data-name="${page.name}" />
+        <span>${page.name}</span>
+      `;
+      checkboxContainer.appendChild(label);
+    });
+
+    modal.querySelector("#saveQuickLinksBtn").addEventListener("click", () => {
+      const checked = checkboxContainer.querySelectorAll("input:checked");
+      const newLinks = Array.from(checked).map(cb => ({
+        name: cb.dataset.name,
+        route: cb.dataset.route,
+      }));
+      saveQuickLinks(newLinks);
+      renderQuickLinks();
+      modal.remove();
+    });
+
+    modal.querySelectorAll("[data-close]").forEach(btn => {
+      btn.addEventListener("click", () => modal.remove());
+    });
+
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) modal.remove();
+    });
+
+    document.body.appendChild(modal);
+  });
+}
+
 /* ---------- Fixed footer padding ---------- */
 function adjustForFixedFooter() {
   const footer = document.querySelector(".footer");
@@ -700,6 +959,8 @@ async function init() {
   bindCopyEntryId();
   bindKeyboardShortcuts();
   bindRefreshButton();
+  bindGlobalSearch();
+  bindQuickLinks();
   initSidebar();
   initChartDefaults();
   initTooltips(document.body);
