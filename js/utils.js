@@ -1,4 +1,6 @@
 export const utils = {
+    // Normalize text for accent-insensitive search (e.g., "Ødegaard" -> "odegaard", "Guéhi" -> "guehi")
+    normalizeText: (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : "",
     moneyMillions: (now_cost) => (now_cost / 10).toFixed(1), // £m
     fmtMoney: (now_cost) => `£${(now_cost/10).toFixed(1)}m`,
     ppm: (points, now_cost) => now_cost ? (points / (now_cost/10)) : 0,

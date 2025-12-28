@@ -356,10 +356,11 @@ export async function renderAllPlayers(main){
     let acActive = -1;
     function hideAC(){ acList.style.display="none"; acList.innerHTML=""; acItems=[]; acActive=-1; }
     function buildAC(){
-      const term = q.value.trim().toLowerCase();
+      const term = utils.normalizeText(q.value.trim());
       if (term.length < 2){ hideAC(); return; }
+      // Accent-insensitive search (e.g., "odegaard" matches "Ødegaard", "guehi" matches "Guéhi")
       const matches = players
-        .filter(p => (`${p.first_name} ${p.second_name} ${p.web_name}`.toLowerCase().includes(term)))
+        .filter(p => utils.normalizeText(`${p.first_name} ${p.second_name} ${p.web_name}`).includes(term))
         .slice(0, 12);
       if (!matches.length){ hideAC(); return; }
 
@@ -595,7 +596,7 @@ export async function renderAllPlayers(main){
       const f = Object.assign({}, DEFAULTS, readLS(LS_AP_FILTERS, DEFAULTS));
       const s = Object.assign({}, DEFAULT_SORT, readLS(LS_AP_SORT, DEFAULT_SORT));
 
-      const qv = (f.q||"").toLowerCase();
+      const qv = utils.normalizeText(f.q||"");
       const pid = f.posId ? +f.posId : null;
       const teamSet = new Set((f.teamIds||[]).map(x=>+x));
       const min = f.priceMin ? +f.priceMin : null;
@@ -603,7 +604,7 @@ export async function renderAllPlayers(main){
       const status = f.status || "";
 
       let rows = base.filter(p=>{
-        if (qv && !(`${p.first_name} ${p.second_name} ${p.web_name}`.toLowerCase().includes(qv))) return false;
+        if (qv && !utils.normalizeText(`${p.first_name} ${p.second_name} ${p.web_name}`).includes(qv)) return false;
         if (pid && p.element_type !== pid) return false;
         if (teamSet.size && !teamSet.has(p.team)) return false;
         if (min!=null && p.price_m < min) return false;

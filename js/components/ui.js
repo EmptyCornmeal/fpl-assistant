@@ -40,6 +40,9 @@ export const ui = {
   // columns: [{ header, accessor?, cell?, sortBy?, className?, tdClass?(row)->string|string[] }]
   table(columns, rows){
     let sortIdx = -1, sortDir = "asc";
+
+    // Create scrollable wrapper container
+    const wrapper = utils.el("div",{class:"table-scroll-wrapper"});
     const table = utils.el("table",{class:"table"});
     const thead = utils.el("thead");
     const trh = utils.el("tr");
@@ -61,6 +64,7 @@ export const ui = {
 
     const tbody = utils.el("tbody");
     table.append(thead, tbody);
+    wrapper.append(table);
 
     function getVal(r, col){
       if (typeof col.sortBy === "function") return col.sortBy(r);
@@ -102,7 +106,7 @@ export const ui = {
       });
     }
     renderBody();
-    return table;
+    return wrapper;
   },
 
   async chart(canvas, cfg, previousInstance=null){
