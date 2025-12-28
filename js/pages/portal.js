@@ -88,37 +88,87 @@ function buildDeadlineTile(events) {
 }
 
 // Quick Action: Captain Pick
-function buildCaptainTile(players, fixtures, currentGw) {
-  const tile = utils.el("div", { class: "portal-tile tile-action tile-clickable" });
+function buildCaptainTile(players, fixtures, currentGw, teams) {
+  const tile = utils.el("div", { class: "portal-tile tile-action tile-wide tile-clickable" });
 
-  // Find top captain picks based on form and fixtures
-  // Use positionId (mapped) or element_type (raw) - Mids (3) and FWDs (4) with good form
-  const withForm = players
+  // Build team map for fixture lookup
+  const teamMap = new Map((teams || []).map(t => [t.id, t]));
+
+  // Helper to get next fixture difficulty for a player
+  const getNextFixture = (player) => {
+    const teamId = player.teamId || player.team;
+    const nextFix = (fixtures || [])
+      .filter(f => f.event === currentGw || f.event === currentGw + 1)
+      .find(f => (f.homeTeamId || f.team_h) === teamId || (f.awayTeamId || f.team_a) === teamId);
+    if (!nextFix) return { opponent: '?', fdr: 3, isHome: false };
+    const isHome = (nextFix.homeTeamId || nextFix.team_h) === teamId;
+    const oppId = isHome ? (nextFix.awayTeamId || nextFix.team_a) : (nextFix.homeTeamId || nextFix.team_h);
+    const oppTeam = teamMap.get(oppId);
+    return {
+      opponent: oppTeam?.shortName || oppTeam?.short_name || '???',
+      fdr: isHome ? (nextFix.homeDifficulty || nextFix.team_h_difficulty || 3) : (nextFix.awayDifficulty || nextFix.team_a_difficulty || 3),
+      isHome
+    };
+  };
+
+  // Score captain candidates - prioritize form, fixtures, and minutes
+  const candidates = players
     .filter(p => {
       const pos = p.positionId || p.element_type || 0;
       const form = p.form || 0;
-      return pos >= 3 && form > 3;
+      const mins = p.minutes || 0;
+      // MIDs and FWDs with form > 2 and has played some minutes
+      return pos >= 3 && form >= 2 && mins > 200;
     })
-    .sort((a, b) => (b.form || 0) - (a.form || 0))
-    .slice(0, 3);
+    .map(p => {
+      const fix = getNextFixture(p);
+      const form = p.form || 0;
+      const ppg = p.pointsPerGame || p.points_per_game || 0;
+      const mins90 = p.minutes ? (p.minutes / 90) : 1;
+      const minsReliability = mins90 > 10 ? 'Nailed' : mins90 > 5 ? 'Regular' : 'Rotation';
+
+      // Score: form*2 + bonus for easy fixtures + PPG
+      const fdrBonus = fix.fdr <= 2 ? 2 : fix.fdr >= 4 ? -1 : 0;
+      const score = (form * 2) + fdrBonus + (parseFloat(ppg) || 0);
+
+      return {
+        ...p,
+        form,
+        ppg: parseFloat(ppg) || 0,
+        fixture: fix,
+        minsReliability,
+        score
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  const fdrClass = (fdr) => fdr <= 2 ? 'fdr-easy' : fdr >= 4 ? 'fdr-hard' : 'fdr-mid';
 
   tile.innerHTML = `
     <div class="tile-header">
       <span class="tile-icon">👑</span>
       <h3 class="tile-title">Captain Picks</h3>
+      <span class="tile-badge" data-tooltip="Ranked by: Form (recent 5 GWs) + Fixture difficulty + Minutes reliability">GW${currentGw}</span>
     </div>
-    <div class="tile-body captain-picks">
-      ${withForm.length === 0 ? '<p class="tile-desc">No captain picks available</p>' : withForm.map(p => `
-        <div class="captain-option" data-player-id="${p.id}">
+    <div class="tile-body captain-picks-expanded">
+      ${candidates.length === 0 ? '<p class="tile-desc">No captain picks available</p>' : candidates.map((p, i) => `
+        <div class="captain-option-row" data-player-id="${p.id}">
+          <span class="captain-rank">${i + 1}</span>
           <img class="captain-photo" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.style.display='none'">
-          <div class="captain-info">
+          <div class="captain-details">
             <span class="captain-name">${p.webName || p.web_name || 'Unknown'}</span>
-            <span class="captain-form">Form: ${(p.form || 0).toFixed(1)}</span>
+            <div class="captain-meta">
+              <span class="captain-chip" data-tooltip="Average points over last 5 GWs. Higher = hotter form.">Form ${p.form.toFixed(1)}</span>
+              <span class="captain-chip ${fdrClass(p.fixture.fdr)}" data-tooltip="Next opponent (FDR ${p.fixture.fdr}/5). Lower FDR = easier fixture.">${p.fixture.isHome ? 'H' : 'A'} ${p.fixture.opponent}</span>
+              <span class="captain-chip chip-mins" data-tooltip="${p.minsReliability === 'Nailed' ? '10+ full games played, regular starter' : p.minsReliability === 'Regular' ? '5-10 full games, usually plays' : 'Rotation risk, under 5 full games'}">${p.minsReliability}</span>
+            </div>
           </div>
         </div>
       `).join('')}
     </div>
     <div class="tile-footer">
+      <span class="tile-hint">Form + Fixture + Minutes = Captain Score</span>
       <span class="tile-link">View all players →</span>
     </div>
   `;
@@ -134,9 +184,24 @@ function buildCaptainTile(players, fixtures, currentGw) {
 function buildFixturesTile(teams, fixtures, currentGw) {
   const tile = utils.el("div", { class: "portal-tile tile-wide tile-clickable" });
 
+  // Defensive check for teams array
+  if (!Array.isArray(teams) || teams.length === 0) {
+    tile.innerHTML = `
+      <div class="tile-header">
+        <span class="tile-icon">📅</span>
+        <h3 class="tile-title">Fixture Outlook</h3>
+      </div>
+      <div class="tile-body empty-prompt">
+        <p>Unable to load fixture data</p>
+      </div>
+    `;
+    return tile;
+  }
+
   // Get next 5 GWs of fixtures per team
+  const windowSize = 5;
   const gwIds = [];
-  for (let i = currentGw; i < currentGw + 5 && i <= 38; i++) {
+  for (let i = currentGw; i < currentGw + windowSize && i <= 38; i++) {
     gwIds.push(i);
   }
 
@@ -144,7 +209,7 @@ function buildFixturesTile(teams, fixtures, currentGw) {
   // Use mapped property names (homeTeamId, awayTeamId, homeDifficulty, awayDifficulty)
   const teamFixtures = teams.map(team => {
     const upcoming = fixtures
-      .filter(f => f.event >= currentGw && f.event < currentGw + 5)
+      .filter(f => f.event >= currentGw && f.event < currentGw + windowSize)
       .filter(f => (f.homeTeamId || f.team_h) === team.id || (f.awayTeamId || f.team_a) === team.id)
       .map(f => {
         const homeId = f.homeTeamId || f.team_h;
@@ -158,7 +223,7 @@ function buildFixturesTile(teams, fixtures, currentGw) {
         };
       });
 
-    const easeResult = fixtureEase(upcoming, 5);
+    const easeResult = fixtureEase(upcoming, windowSize);
     return { team, fixtures: upcoming, easeScore: easeResult.score || 50 };
   });
 
@@ -170,30 +235,32 @@ function buildFixturesTile(teams, fixtures, currentGw) {
     <div class="tile-header">
       <span class="tile-icon">📅</span>
       <h3 class="tile-title">Fixture Outlook</h3>
+      <span class="tile-badge" data-tooltip="Next ${windowSize} gameweeks, scored by average FDR. Higher = easier fixtures.">GW${currentGw}-${currentGw + windowSize - 1}</span>
     </div>
     <div class="tile-body fixtures-overview">
       <div class="fixtures-column">
-        <h4 class="fixtures-label good">Easiest Run</h4>
+        <h4 class="fixtures-label good" data-tooltip="Teams with lowest average FDR over the next ${windowSize} GWs. Target their assets for transfers.">Easiest Run</h4>
         ${easiest.map(t => `
           <div class="fixture-team-row">
             <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
             <span class="fixture-team-name">${t.team.shortName || t.team.short_name || '???'}</span>
-            <span class="fixture-score score-good">${t.easeScore}</span>
+            <span class="fixture-score score-good" data-tooltip="Ease score: ${t.easeScore}/100">${t.easeScore}</span>
           </div>
         `).join('')}
       </div>
       <div class="fixtures-column">
-        <h4 class="fixtures-label bad">Toughest Run</h4>
+        <h4 class="fixtures-label bad" data-tooltip="Teams with highest average FDR. Consider benching or selling their players.">Toughest Run</h4>
         ${hardest.map(t => `
           <div class="fixture-team-row">
             <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
             <span class="fixture-team-name">${t.team.shortName || t.team.short_name || '???'}</span>
-            <span class="fixture-score score-bad">${t.easeScore}</span>
+            <span class="fixture-score score-bad" data-tooltip="Ease score: ${t.easeScore}/100">${t.easeScore}</span>
           </div>
         `).join('')}
       </div>
     </div>
     <div class="tile-footer">
+      <span class="tile-hint">Ease Score: Higher = easier fixtures (0-100 scale based on FDR)</span>
       <span class="tile-link">Full fixtures →</span>
     </div>
   `;
@@ -466,6 +533,174 @@ function buildMetricsTile() {
   return tile;
 }
 
+// Injuries & Unavailable Players Tile
+function buildInjuriesTile(players) {
+  const tile = utils.el("div", { class: "portal-tile tile-warning tile-clickable" });
+
+  // Find highly-owned injured/doubtful players
+  const unavailable = players
+    .filter(p => {
+      const status = p.status || p._raw?.status || 'a';
+      const ownership = p.selectedByPercent || parseFloat(p.selected_by_percent) || 0;
+      return status !== 'a' && ownership > 5; // At least 5% owned
+    })
+    .sort((a, b) => {
+      const ownershipA = a.selectedByPercent || parseFloat(a.selected_by_percent) || 0;
+      const ownershipB = b.selectedByPercent || parseFloat(b.selected_by_percent) || 0;
+      return ownershipB - ownershipA;
+    })
+    .slice(0, 5);
+
+  const statusIcon = (status) => {
+    switch(status) {
+      case 'i': return '🔴';
+      case 'd': return '🟡';
+      case 's': return '⛔';
+      case 'n': return '❌';
+      default: return '❓';
+    }
+  };
+
+  const statusLabel = (status) => {
+    switch(status) {
+      case 'i': return 'Injured';
+      case 'd': return 'Doubtful';
+      case 's': return 'Suspended';
+      case 'n': return 'Unavailable';
+      default: return 'Unknown';
+    }
+  };
+
+  tile.innerHTML = `
+    <div class="tile-header">
+      <span class="tile-icon">🏥</span>
+      <h3 class="tile-title">Injury Watch</h3>
+      <span class="tile-badge" data-tooltip="Highly-owned players who are injured, doubtful, or unavailable">Check before deadline</span>
+    </div>
+    <div class="tile-body injuries-list">
+      ${unavailable.length === 0 ? '<p class="tile-desc">No major injuries among popular players</p>' : unavailable.map(p => {
+        const status = p.status || p._raw?.status || '?';
+        const ownership = p.selectedByPercent || parseFloat(p.selected_by_percent) || 0;
+        const news = p.news || p._raw?.news || '';
+        const chance = p.chanceOfPlayingNextRound ?? p._raw?.chance_of_playing_next_round ?? null;
+        return `
+          <div class="injury-row">
+            <span class="injury-icon">${statusIcon(status)}</span>
+            <div class="injury-details">
+              <span class="injury-name">${p.webName || p.web_name || 'Unknown'}</span>
+              <span class="injury-status">${statusLabel(status)}${chance !== null ? ` (${chance}%)` : ''}</span>
+            </div>
+            <span class="injury-ownership" data-tooltip="${ownership.toFixed(1)}% ownership">${ownership.toFixed(0)}%</span>
+          </div>
+          ${news ? `<div class="injury-news">${news}</div>` : ''}
+        `;
+      }).join('')}
+    </div>
+    <div class="tile-footer">
+      <span class="tile-hint">Check player news before locking your team</span>
+      <span class="tile-link">View all players →</span>
+    </div>
+  `;
+
+  tile.addEventListener("click", () => {
+    window.location.hash = "#/all-players";
+  });
+
+  return tile;
+}
+
+// Fixture Swings Tile - teams whose fixture difficulty changes significantly
+function buildFixtureSwingsTile(teams, fixtures, currentGw) {
+  const tile = utils.el("div", { class: "portal-tile tile-insight tile-clickable" });
+
+  if (!Array.isArray(teams) || teams.length === 0) {
+    tile.innerHTML = `
+      <div class="tile-header">
+        <span class="tile-icon">🔄</span>
+        <h3 class="tile-title">Fixture Swings</h3>
+      </div>
+      <div class="tile-body empty-prompt">
+        <p>Unable to load fixture data</p>
+      </div>
+    `;
+    return tile;
+  }
+
+  // Calculate FDR for GW N-2 to N (recent) vs GW N+1 to N+3 (upcoming)
+  const recentWindow = 3;
+  const upcomingWindow = 3;
+
+  const teamSwings = teams.map(team => {
+    // Recent fixtures (last 3 completed)
+    const recentFixtures = fixtures
+      .filter(f => f.event && f.event >= currentGw - recentWindow && f.event < currentGw)
+      .filter(f => (f.homeTeamId || f.team_h) === team.id || (f.awayTeamId || f.team_a) === team.id)
+      .map(f => {
+        const isHome = (f.homeTeamId || f.team_h) === team.id;
+        return isHome ? (f.homeDifficulty || f.team_h_difficulty || 3) : (f.awayDifficulty || f.team_a_difficulty || 3);
+      });
+
+    // Upcoming fixtures (next 3)
+    const upcomingFixtures = fixtures
+      .filter(f => f.event && f.event >= currentGw && f.event < currentGw + upcomingWindow)
+      .filter(f => (f.homeTeamId || f.team_h) === team.id || (f.awayTeamId || f.team_a) === team.id)
+      .map(f => {
+        const isHome = (f.homeTeamId || f.team_h) === team.id;
+        return isHome ? (f.homeDifficulty || f.team_h_difficulty || 3) : (f.awayDifficulty || f.team_a_difficulty || 3);
+      });
+
+    const recentAvg = recentFixtures.length ? recentFixtures.reduce((a, b) => a + b, 0) / recentFixtures.length : 3;
+    const upcomingAvg = upcomingFixtures.length ? upcomingFixtures.reduce((a, b) => a + b, 0) / upcomingFixtures.length : 3;
+    const swing = recentAvg - upcomingAvg; // Positive = fixtures getting easier
+
+    return { team, recentAvg, upcomingAvg, swing };
+  });
+
+  // Get teams with biggest positive and negative swings
+  const gettingEasier = [...teamSwings].filter(t => t.swing > 0.5).sort((a, b) => b.swing - a.swing).slice(0, 3);
+  const gettingHarder = [...teamSwings].filter(t => t.swing < -0.5).sort((a, b) => a.swing - b.swing).slice(0, 3);
+
+  tile.innerHTML = `
+    <div class="tile-header">
+      <span class="tile-icon">🔄</span>
+      <h3 class="tile-title">Fixture Swings</h3>
+      <span class="tile-badge" data-tooltip="Comparing average FDR of last ${recentWindow} vs next ${upcomingWindow} gameweeks">Turn-around alert</span>
+    </div>
+    <div class="tile-body fixture-swings">
+      <div class="swing-column">
+        <h4 class="swing-label good" data-tooltip="Fixtures getting easier - consider buying these teams' players">Getting Easier</h4>
+        ${gettingEasier.length === 0 ? '<p class="tile-desc">No significant improvements</p>' : gettingEasier.map(t => `
+          <div class="swing-row">
+            <img class="swing-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            <span class="swing-name">${t.team.shortName || t.team.short_name || '???'}</span>
+            <span class="swing-change good" data-tooltip="FDR dropping from ${t.recentAvg.toFixed(1)} to ${t.upcomingAvg.toFixed(1)}">↓${t.swing.toFixed(1)}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div class="swing-column">
+        <h4 class="swing-label bad" data-tooltip="Fixtures getting harder - consider selling or benching these teams' players">Getting Harder</h4>
+        ${gettingHarder.length === 0 ? '<p class="tile-desc">No significant worsening</p>' : gettingHarder.map(t => `
+          <div class="swing-row">
+            <img class="swing-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            <span class="swing-name">${t.team.shortName || t.team.short_name || '???'}</span>
+            <span class="swing-change bad" data-tooltip="FDR rising from ${t.recentAvg.toFixed(1)} to ${t.upcomingAvg.toFixed(1)}">↑${Math.abs(t.swing).toFixed(1)}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="tile-footer">
+      <span class="tile-hint">Plan transfers around fixture swings</span>
+      <span class="tile-link">Full fixtures →</span>
+    </div>
+  `;
+
+  tile.addEventListener("click", () => {
+    window.location.hash = "#/fixtures";
+  });
+
+  return tile;
+}
+
 /* ───────────────── Main Render ───────────────── */
 export async function renderPortal(main) {
   // Show skeleton while loading
@@ -504,9 +739,13 @@ export async function renderPortal(main) {
 
     // Row 2: Fixtures (wide) + Captain Picks
     grid.append(buildFixturesTile(bootstrap.teams, fixtures, currentGw));
-    grid.append(buildCaptainTile(bootstrap.players, fixtures, currentGw));
+    grid.append(buildCaptainTile(bootstrap.players, fixtures, currentGw, bootstrap.teams));
 
-    // Row 3: Transfers + Metrics
+    // Row 3: Injuries + Fixture Swings
+    grid.append(buildInjuriesTile(bootstrap.players));
+    grid.append(buildFixtureSwingsTile(bootstrap.teams, fixtures, currentGw));
+
+    // Row 4: Transfers + Metrics
     grid.append(buildTransfersTile(bootstrap.players));
     grid.append(buildMetricsTile());
 

@@ -943,15 +943,22 @@ export async function renderMyTeam(main){
         insightsList.append(item);
       }
       if (issues.length) {
-        const item = utils.el("div", { class: "insight-item insight-warning" });
-        const shortList = issues.slice(0, 3).map(r => r.name).join(", ");
-        const more = issues.length > 3 ? ` +${issues.length - 3}` : "";
-        item.innerHTML = `
-          <span class="insight-icon">⚠️</span>
-          <span class="insight-text">Flagged: ${shortList}${more}</span>
-        `;
-        item.title = issues.map(r => `${r.name}: ${STATUS_MAP[r.status]?.label || r.status}`).join("\n");
-        insightsList.append(item);
+        // Show each flagged player with their specific issue
+        issues.forEach(player => {
+          const statusInfo = STATUS_MAP[player.status] || { label: 'Unknown', icon: '❓' };
+          const chance = player.chanceOfPlaying ?? player._raw?.chance_of_playing_next_round ?? null;
+          const news = player.news || player._raw?.news || '';
+          const item = utils.el("div", { class: "insight-item insight-warning insight-player" });
+          item.innerHTML = `
+            <span class="insight-icon">${statusInfo.icon || '⚠️'}</span>
+            <div class="insight-player-details">
+              <span class="insight-player-name">${player.name}</span>
+              <span class="insight-player-status">${statusInfo.label}${chance !== null ? ` (${chance}%)` : ''}</span>
+              ${news ? `<span class="insight-player-news">${news}</span>` : ''}
+            </div>
+          `;
+          insightsList.append(item);
+        });
       }
     }
     insightsBody.append(insightsList);
@@ -981,25 +988,40 @@ export async function renderMyTeam(main){
     rightCol.append(fixturesTile);
 
     // Quick stats tiles row
+    const sortedByPrev = [...rows].sort((a,b) => (b.prevPoints||0) - (a.prevPoints||0));
+    const topPerformer = sortedByPrev[0];
     const quickStatsTile1 = utils.el("div", { class: "tile tile-compact tile-clickable" });
     quickStatsTile1.innerHTML = `
-      <div class="tile-header"><span class="tile-title">Top Performer</span></div>
+      <div class="tile-header">
+        <span class="tile-title">Top Performer</span>
+        <span class="tile-gw-badge" data-tooltip="Your highest scorer from last completed gameweek">GW${prevGw || roster.gw}</span>
+      </div>
       <div class="tile-body">
         <div style="text-align:center">
-          <div style="font-size:1.5rem;font-weight:700;color:var(--brand-light)">${rows.sort((a,b) => (b.prevPoints||0) - (a.prevPoints||0))[0]?.name || '—'}</div>
-          <div style="font-size:0.85rem;color:var(--muted)">${rows.sort((a,b) => (b.prevPoints||0) - (a.prevPoints||0))[0]?.prevPoints || 0} pts</div>
+          <div style="font-size:1.5rem;font-weight:700;color:var(--brand-light)">${topPerformer?.name || '—'}</div>
+          <div style="font-size:0.85rem;color:var(--muted)">${topPerformer?.prevPoints || 0} pts</div>
         </div>
       </div>
     `;
 
     const quickStatsTile2 = utils.el("div", { class: "tile tile-compact tile-clickable" });
+    const xpRows = rows.filter(r => r.xpNext != null && r.xpNext > 0);
     const totalXp = rows.reduce((sum, r) => sum + (r.xpNext || 0), 0);
+    const hasXpData = xpRows.length > 0;
     quickStatsTile2.innerHTML = `
-      <div class="tile-header"><span class="tile-title">Team xP (Next)</span></div>
+      <div class="tile-header">
+        <span class="tile-title" data-tooltip="Expected Points projection for next GW based on form, fixtures, and minutes reliability">Team xP</span>
+        <span class="tile-gw-badge">GW${upcGw}</span>
+      </div>
       <div class="tile-body">
         <div style="text-align:center">
-          <div style="font-size:1.5rem;font-weight:700;color:var(--accent-light)">${totalXp.toFixed(1)}</div>
-          <div style="font-size:0.85rem;color:var(--muted)">projected pts</div>
+          ${hasXpData ? `
+            <div style="font-size:1.5rem;font-weight:700;color:var(--accent-light)">${totalXp.toFixed(1)}</div>
+            <div style="font-size:0.85rem;color:var(--muted)">projected pts</div>
+          ` : `
+            <div style="font-size:1rem;color:var(--muted)">Calculating...</div>
+            <div style="font-size:0.75rem;color:var(--muted-2)">xP data loading</div>
+          `}
         </div>
       </div>
     `;

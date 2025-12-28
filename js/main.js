@@ -9,6 +9,7 @@ import { renderHelp } from "./pages/help.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
 import { state } from "./state.js";
+import { utils } from "./utils.js";
 
 const APP_VERSION = "1.2.0";
 
@@ -525,6 +526,14 @@ async function renderPlayerProfile(main, playerId) {
                         player.status === 'i' ? 'Injured' :
                         player.status === 's' ? 'Suspended' : 'Unavailable';
 
+    // Calculate ICT index and value metrics
+    const ictIndex = parseFloat(player.ict_index || 0).toFixed(1);
+    const valueRatio = player.total_points > 0 ? (player.total_points / (player.now_cost / 10)).toFixed(1) : "0.0";
+    const xGI = parseFloat(player.expected_goal_involvements || 0);
+    const actualGI = player.goals_scored + player.assists;
+    const giDiff = (actualGI - xGI).toFixed(2);
+    const giDiffClass = actualGI >= xGI ? "text-good" : "text-bad";
+
     main.innerHTML = `
       <div class="player-profile">
         <div class="profile-header">
@@ -544,7 +553,7 @@ async function renderPlayerProfile(main, playerId) {
           </div>
         </div>
 
-        <div class="profile-stats-grid">
+        <div class="profile-stats-grid profile-stats-grid--wide">
           <div class="stat-card">
             <div class="stat-value">£${(player.now_cost / 10).toFixed(1)}m</div>
             <div class="stat-label">Price</div>
@@ -554,7 +563,7 @@ async function renderPlayerProfile(main, playerId) {
             <div class="stat-label">Total Points</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${player.form}</div>
+            <div class="stat-value" data-tooltip="Average points over last 5 GWs">${player.form}</div>
             <div class="stat-label">Form</div>
           </div>
           <div class="stat-card">
@@ -562,43 +571,76 @@ async function renderPlayerProfile(main, playerId) {
             <div class="stat-label">Ownership</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${player.points_per_game}</div>
+            <div class="stat-value" data-tooltip="Points Per Game">${player.points_per_game}</div>
             <div class="stat-label">PPG</div>
           </div>
           <div class="stat-card">
             <div class="stat-value">${player.minutes}</div>
             <div class="stat-label">Minutes</div>
           </div>
-        </div>
-
-        <div class="profile-section">
-          <h3>Season Stats</h3>
-          <div class="stats-table">
-            <div class="stat-row"><span>Goals</span><span>${player.goals_scored}</span></div>
-            <div class="stat-row"><span>Assists</span><span>${player.assists}</span></div>
-            <div class="stat-row"><span>Clean Sheets</span><span>${player.clean_sheets}</span></div>
-            <div class="stat-row"><span>Bonus Points</span><span>${player.bonus}</span></div>
-            <div class="stat-row"><span>BPS</span><span>${player.bps}</span></div>
-            <div class="stat-row"><span>Yellow Cards</span><span>${player.yellow_cards}</span></div>
-            <div class="stat-row"><span>Red Cards</span><span>${player.red_cards}</span></div>
+          <div class="stat-card">
+            <div class="stat-value" data-tooltip="Influence + Creativity + Threat index">${ictIndex}</div>
+            <div class="stat-label">ICT</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" data-tooltip="Points per £1m spent">${valueRatio}</div>
+            <div class="stat-label">Value</div>
           </div>
         </div>
 
-        <div class="profile-section">
-          <h3>Expected Stats</h3>
-          <div class="stats-table">
-            <div class="stat-row"><span>xG</span><span>${parseFloat(player.expected_goals || 0).toFixed(2)}</span></div>
-            <div class="stat-row"><span>xA</span><span>${parseFloat(player.expected_assists || 0).toFixed(2)}</span></div>
-            <div class="stat-row"><span>xGI</span><span>${parseFloat(player.expected_goal_involvements || 0).toFixed(2)}</span></div>
-          </div>
-        </div>
+        <div class="profile-columns">
+          <div class="profile-column">
+            <div class="profile-section">
+              <h3>Season Stats</h3>
+              <div class="stats-table stats-table--compact">
+                <div class="stat-row"><span>Goals</span><span>${player.goals_scored}</span></div>
+                <div class="stat-row"><span>Assists</span><span>${player.assists}</span></div>
+                <div class="stat-row"><span>Clean Sheets</span><span>${player.clean_sheets}</span></div>
+                <div class="stat-row"><span>Bonus Points</span><span>${player.bonus}</span></div>
+                <div class="stat-row"><span>BPS</span><span>${player.bps}</span></div>
+              </div>
+            </div>
 
-        <div class="profile-section">
-          <h3>Transfers This Week</h3>
-          <div class="stats-table">
-            <div class="stat-row"><span>In</span><span class="text-good">+${(player.transfers_in_event || 0).toLocaleString()}</span></div>
-            <div class="stat-row"><span>Out</span><span class="text-bad">-${(player.transfers_out_event || 0).toLocaleString()}</span></div>
-            <div class="stat-row"><span>Net</span><span>${((player.transfers_in_event || 0) - (player.transfers_out_event || 0)).toLocaleString()}</span></div>
+            <div class="profile-section">
+              <h3>Expected Stats</h3>
+              <div class="stats-table stats-table--compact">
+                <div class="stat-row"><span>xG</span><span>${parseFloat(player.expected_goals || 0).toFixed(2)}</span></div>
+                <div class="stat-row"><span>xA</span><span>${parseFloat(player.expected_assists || 0).toFixed(2)}</span></div>
+                <div class="stat-row"><span>xGI</span><span>${xGI.toFixed(2)}</span></div>
+                <div class="stat-row"><span>Actual G+A</span><span>${actualGI}</span></div>
+                <div class="stat-row"><span>vs xGI</span><span class="${giDiffClass}">${giDiff > 0 ? '+' : ''}${giDiff}</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="profile-column">
+            <div class="profile-section">
+              <h3>Transfers This Week</h3>
+              <div class="stats-table stats-table--compact">
+                <div class="stat-row"><span>In</span><span class="text-good">+${(player.transfers_in_event || 0).toLocaleString()}</span></div>
+                <div class="stat-row"><span>Out</span><span class="text-bad">-${(player.transfers_out_event || 0).toLocaleString()}</span></div>
+                <div class="stat-row"><span>Net</span><span>${((player.transfers_in_event || 0) - (player.transfers_out_event || 0)).toLocaleString()}</span></div>
+              </div>
+            </div>
+
+            <div class="profile-section">
+              <h3>Discipline</h3>
+              <div class="stats-table stats-table--compact">
+                <div class="stat-row"><span>Yellow Cards</span><span>${player.yellow_cards}</span></div>
+                <div class="stat-row"><span>Red Cards</span><span>${player.red_cards}</span></div>
+                <div class="stat-row"><span>Own Goals</span><span>${player.own_goals || 0}</span></div>
+                <div class="stat-row"><span>Penalties Missed</span><span>${player.penalties_missed || 0}</span></div>
+              </div>
+            </div>
+
+            <div class="profile-section">
+              <h3>Season Transfers</h3>
+              <div class="stats-table stats-table--compact">
+                <div class="stat-row"><span>Total In</span><span>${(player.transfers_in || 0).toLocaleString()}</span></div>
+                <div class="stat-row"><span>Total Out</span><span>${(player.transfers_out || 0).toLocaleString()}</span></div>
+                <div class="stat-row"><span>Cost Change</span><span class="${player.cost_change_start >= 0 ? 'text-good' : 'text-bad'}">${player.cost_change_start >= 0 ? '+' : ''}£${(player.cost_change_start / 10).toFixed(1)}m</span></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -635,6 +677,22 @@ async function renderTeamProfile(main, teamId) {
         .sort((a, b) => b.total_points - a.total_points);
     });
 
+    // Calculate team stats
+    const totalPoints = players.reduce((sum, p) => sum + p.total_points, 0);
+    const avgForm = players.length ? (players.reduce((sum, p) => sum + parseFloat(p.form || 0), 0) / players.length).toFixed(1) : "0.0";
+    const topScorer = players.reduce((best, p) => p.total_points > (best?.total_points || 0) ? p : best, null);
+
+    // Get strength breakdown with proper fallbacks
+    const strengthAttHome = team.strength_attack_home || team.strengthAttackHome || 0;
+    const strengthAttAway = team.strength_attack_away || team.strengthAttackAway || 0;
+    const strengthDefHome = team.strength_defence_home || team.strengthDefenceHome || 0;
+    const strengthDefAway = team.strength_defence_away || team.strengthDefenceAway || 0;
+    const strengthHome = team.strength_overall_home || team.strengthOverallHome || 0;
+    const strengthAway = team.strength_overall_away || team.strengthOverallAway || 0;
+
+    // Strength tooltip explanation
+    const strengthTooltip = "FPL's 1-1250 scale measuring team quality. Higher = stronger. Used to calculate Fixture Difficulty Rating (FDR).";
+
     main.innerHTML = `
       <div class="team-profile">
         <div class="profile-header">
@@ -645,51 +703,85 @@ async function renderTeamProfile(main, teamId) {
               <h1 class="profile-name">${team.name}</h1>
               <div class="profile-meta">
                 <span class="team-short">${team.short_name}</span>
-                <span>Strength: ${team.strength}</span>
+                <span data-tooltip="${strengthTooltip}">Strength: ${team.strength}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="profile-stats-grid">
+        <div class="profile-stats-grid profile-stats-grid--wide">
           <div class="stat-card">
-            <div class="stat-value">${team.played || 0}</div>
-            <div class="stat-label">Played</div>
+            <div class="stat-value">${players.length}</div>
+            <div class="stat-label">Squad Size</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${team.win || 0}</div>
-            <div class="stat-label">Wins</div>
+            <div class="stat-value">${totalPoints}</div>
+            <div class="stat-label">Total FPL Pts</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${team.draw || 0}</div>
-            <div class="stat-label">Draws</div>
+            <div class="stat-value" data-tooltip="Average form across all players">${avgForm}</div>
+            <div class="stat-label">Avg Form</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${team.loss || 0}</div>
-            <div class="stat-label">Losses</div>
+            <div class="stat-value" data-tooltip="${strengthTooltip}">${team.strength}</div>
+            <div class="stat-label">Strength</div>
           </div>
         </div>
 
-        <div class="profile-section">
-          <h3>Squad (${players.length} players)</h3>
-          ${positions.map(pos => {
-            const posPlayers = byPosition[pos.id] || [];
-            if (posPlayers.length === 0) return '';
-            return `
-              <div class="squad-position">
-                <h4>${pos.plural_name || pos.singular_name}</h4>
-                <div class="squad-grid">
-                  ${posPlayers.map(p => `
-                    <a href="#/player/${p.id}" class="squad-player">
-                      <span class="squad-player-name">${p.web_name}</span>
-                      <span class="squad-player-pts">${p.total_points} pts</span>
-                      <span class="squad-player-price">£${(p.now_cost / 10).toFixed(1)}m</span>
-                    </a>
-                  `).join('')}
-                </div>
+        <div class="profile-columns">
+          <div class="profile-column">
+            <div class="profile-section">
+              <h3 data-tooltip="${strengthTooltip}">Strength Breakdown</h3>
+              <div class="stats-table stats-table--compact">
+                <div class="stat-row"><span>Overall Home</span><span>${strengthHome}</span></div>
+                <div class="stat-row"><span>Overall Away</span><span>${strengthAway}</span></div>
+                <div class="stat-row"><span>Attack Home</span><span>${strengthAttHome}</span></div>
+                <div class="stat-row"><span>Attack Away</span><span>${strengthAttAway}</span></div>
+                <div class="stat-row"><span>Defence Home</span><span>${strengthDefHome}</span></div>
+                <div class="stat-row"><span>Defence Away</span><span>${strengthDefAway}</span></div>
               </div>
-            `;
-          }).join('')}
+            </div>
+
+            ${topScorer ? `
+            <div class="profile-section">
+              <h3>Top FPL Performer</h3>
+              <a href="#/player/${topScorer.id}" class="top-performer-card">
+                <div class="top-performer-info">
+                  <span class="top-performer-name">${topScorer.web_name}</span>
+                  <span class="top-performer-pos">${positions.find(p => p.id === topScorer.element_type)?.singular_name || ''}</span>
+                </div>
+                <div class="top-performer-stats">
+                  <span class="top-performer-pts">${topScorer.total_points} pts</span>
+                  <span class="top-performer-price">£${(topScorer.now_cost / 10).toFixed(1)}m</span>
+                </div>
+              </a>
+            </div>
+            ` : ''}
+          </div>
+
+          <div class="profile-column">
+            <div class="profile-section">
+              <h3>Squad (${players.length} players)</h3>
+              ${positions.map(pos => {
+                const posPlayers = byPosition[pos.id] || [];
+                if (posPlayers.length === 0) return '';
+                return `
+                  <div class="squad-position">
+                    <h4>${pos.plural_name || pos.singular_name}</h4>
+                    <div class="squad-grid">
+                      ${posPlayers.map(p => `
+                        <a href="#/player/${p.id}" class="squad-player">
+                          <span class="squad-player-name">${p.web_name}</span>
+                          <span class="squad-player-pts">${p.total_points} pts</span>
+                          <span class="squad-player-price">£${(p.now_cost / 10).toFixed(1)}m</span>
+                        </a>
+                      `).join('')}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -874,7 +966,7 @@ function bindGlobalSearch() {
   }
 
   function showResults() {
-    const term = input.value.trim().toLowerCase();
+    const term = utils.normalizeText(input.value.trim());
     if (term.length < 2) {
       hideResults();
       return;
@@ -889,14 +981,14 @@ function bindGlobalSearch() {
     results.innerHTML = "";
     searchItems = [];
 
-    // Search players
+    // Search players (accent-insensitive: "odegaard" matches "Ødegaard", "guehi" matches "Guéhi")
     const players = (bs.elements || [])
-      .filter(p => `${p.first_name} ${p.second_name} ${p.web_name}`.toLowerCase().includes(term))
+      .filter(p => utils.normalizeText(`${p.first_name} ${p.second_name} ${p.web_name}`).includes(term))
       .slice(0, 5);
 
-    // Search teams
+    // Search teams (accent-insensitive)
     const teams = (bs.teams || [])
-      .filter(t => t.name.toLowerCase().includes(term) || t.short_name.toLowerCase().includes(term))
+      .filter(t => utils.normalizeText(t.name).includes(term) || utils.normalizeText(t.short_name).includes(term))
       .slice(0, 3);
 
     // Pages
@@ -907,7 +999,7 @@ function bindGlobalSearch() {
       { name: "GW Explorer", route: "#/gw-explorer", icon: "🔍" },
       { name: "Mini-League", route: "#/mini-league", icon: "🏆" },
       { name: "Help", route: "#/help", icon: "❓" },
-    ].filter(p => p.name.toLowerCase().includes(term));
+    ].filter(p => utils.normalizeText(p.name).includes(term));
 
     if (pages.length) {
       const group = document.createElement("div");
@@ -1025,117 +1117,6 @@ function bindGlobalSearch() {
   });
 }
 
-/* ---------- Quick Links / Bookmarks ---------- */
-const QUICK_LINKS_KEY = "fpl.quickLinks";
-const DEFAULT_QUICK_LINKS = [
-  { name: "My Team", route: "my-team" },
-  { name: "Players", route: "all-players" },
-  { name: "Fixtures", route: "fixtures" },
-];
-
-function loadQuickLinks() {
-  try {
-    const saved = localStorage.getItem(QUICK_LINKS_KEY);
-    return saved ? JSON.parse(saved) : DEFAULT_QUICK_LINKS;
-  } catch {
-    return DEFAULT_QUICK_LINKS;
-  }
-}
-
-function saveQuickLinks(links) {
-  try {
-    localStorage.setItem(QUICK_LINKS_KEY, JSON.stringify(links));
-  } catch {}
-}
-
-function renderQuickLinks() {
-  const container = document.getElementById("quickLinksContainer");
-  if (!container) return;
-
-  const links = loadQuickLinks();
-  container.innerHTML = "";
-
-  links.forEach(link => {
-    const a = document.createElement("a");
-    a.href = `#/${link.route}`;
-    a.className = "quick-link";
-    a.dataset.page = link.route;
-    a.textContent = link.name;
-    container.appendChild(a);
-  });
-}
-
-function bindQuickLinks() {
-  renderQuickLinks();
-
-  const editBtn = document.getElementById("editQuickLinks");
-  if (!editBtn) return;
-
-  editBtn.addEventListener("click", () => {
-    const allPages = [
-      { name: "My Team", route: "my-team" },
-      { name: "All Players", route: "all-players" },
-      { name: "Fixtures", route: "fixtures" },
-      { name: "GW Explorer", route: "gw-explorer" },
-      { name: "Mini-League", route: "mini-league" },
-      { name: "Help", route: "help" },
-    ];
-
-    const currentLinks = loadQuickLinks();
-    const currentRoutes = new Set(currentLinks.map(l => l.route));
-
-    const modal = document.createElement("div");
-    modal.className = "modal__backdrop";
-    modal.innerHTML = `
-      <div class="modal" style="max-width:400px">
-        <div class="modal__header">
-          <h3>Edit Quick Links</h3>
-          <button class="modal__close" data-close>&times;</button>
-        </div>
-        <div class="modal__body">
-          <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">Select which pages to show in Quick Links:</p>
-          <div id="quickLinkCheckboxes" style="display:flex;flex-direction:column;gap:8px"></div>
-        </div>
-        <div class="modal__footer" style="display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn-ghost" data-close>Cancel</button>
-          <button class="btn-primary" id="saveQuickLinksBtn">Save</button>
-        </div>
-      </div>
-    `;
-
-    const checkboxContainer = modal.querySelector("#quickLinkCheckboxes");
-    allPages.forEach(page => {
-      const label = document.createElement("label");
-      label.style.cssText = "display:flex;align-items:center;gap:8px;cursor:pointer";
-      label.innerHTML = `
-        <input type="checkbox" ${currentRoutes.has(page.route) ? "checked" : ""} data-route="${page.route}" data-name="${page.name}" />
-        <span>${page.name}</span>
-      `;
-      checkboxContainer.appendChild(label);
-    });
-
-    modal.querySelector("#saveQuickLinksBtn").addEventListener("click", () => {
-      const checked = checkboxContainer.querySelectorAll("input:checked");
-      const newLinks = Array.from(checked).map(cb => ({
-        name: cb.dataset.name,
-        route: cb.dataset.route,
-      }));
-      saveQuickLinks(newLinks);
-      renderQuickLinks();
-      modal.remove();
-    });
-
-    modal.querySelectorAll("[data-close]").forEach(btn => {
-      btn.addEventListener("click", () => modal.remove());
-    });
-
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) modal.remove();
-    });
-
-    document.body.appendChild(modal);
-  });
-}
 
 /* -------------------- INIT -------------------- */
 async function init() {
@@ -1175,7 +1156,6 @@ async function init() {
   bindKeyboardShortcuts();
   bindRefreshButton();
   bindGlobalSearch();
-  bindQuickLinks();
   initSidebar();
   initChartDefaults();
   initTooltips(document.body);
