@@ -2035,11 +2035,23 @@
   .abbr-tip::after{
     content:attr(data-tooltip);
     position:absolute;left:50%;top:-8px;transform:translate(-50%,-100%) scale(.98);
-    white-space:nowrap;background:#0b1220;color:var(--text);border:1px solid var(--border);
-    border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.2;box-shadow:0 8px 20px rgba(0,0,0,.35);
-    opacity:0;pointer-events:none;transition:opacity .12s, transform .12s;z-index:100;
+    white-space:normal;word-wrap:break-word;text-align:left;
+    max-width:280px;min-width:120px;width:max-content;
+    background:#0b1220;color:var(--text);border:1px solid var(--border);
+    border-radius:10px;padding:8px 12px;font-size:12px;line-height:1.4;box-shadow:0 8px 20px rgba(0,0,0,.35);
+    opacity:0;pointer-events:none;transition:opacity .12s, transform .12s;z-index:9999;
   }
   .abbr-tip:hover::after{opacity:1;transform:translate(-50%,-110%) scale(1)}
+  /* Flip tooltip to bottom when near top of viewport */
+  .abbr-tip.tooltip-bottom::after{top:auto;bottom:-8px;transform:translate(-50%,100%) scale(.98)}
+  .abbr-tip.tooltip-bottom:hover::after{transform:translate(-50%,110%) scale(1)}
+  /* Align tooltip left/right when near edges */
+  .abbr-tip.tooltip-left::after{left:0;transform:translate(0,-100%) scale(.98)}
+  .abbr-tip.tooltip-left:hover::after{transform:translate(0,-110%) scale(1)}
+  .abbr-tip.tooltip-right::after{left:auto;right:0;transform:translate(0,-100%) scale(.98)}
+  .abbr-tip.tooltip-right:hover::after{transform:translate(0,-110%) scale(1)}
+  /* Internal scroll for very long tooltips */
+  .abbr-tip.tooltip-scroll::after{max-height:200px;overflow-y:auto}
   
   /* ─── Minutes risk badges ──────────────────────────── */
   .badge-green{
@@ -4315,6 +4327,232 @@
   .portal-error .retry-btn{
     padding:10px 24px;
   }
+
+  /* Portal Modal Content Styles */
+  .portal-modal-content{
+    max-height:70vh;
+    overflow-y:auto;
+  }
+  .modal-footer-link{
+    margin-top:16px;
+    padding-top:12px;
+    border-top:1px solid var(--border);
+    text-align:center;
+  }
+  .modal-footer-link a{
+    color:var(--accent-light);
+    text-decoration:none;
+    font-size:13px;
+    font-weight:500;
+  }
+  .modal-footer-link a:hover{
+    text-decoration:underline;
+  }
+
+  /* Captain Modal */
+  .captain-modal-grid{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  .captain-modal-row{
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    padding:12px;
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:10px;
+  }
+  .captain-rank-lg{
+    width:28px;
+    height:28px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--accent-weak);
+    color:var(--accent-light);
+    border-radius:50%;
+    font-size:13px;
+    font-weight:700;
+  }
+  .captain-photo-lg{
+    width:50px;
+    height:65px;
+    object-fit:cover;
+    border-radius:6px;
+    background:var(--surface-2);
+  }
+  .captain-info{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+  }
+  .captain-name-lg{
+    font-size:15px;
+    font-weight:700;
+  }
+  .captain-meta-lg{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .captain-meta-lg .fdr-easy{color:#6ee7b7;}
+  .captain-meta-lg .fdr-hard{color:#fca5a5;}
+  .captain-why{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:4px;
+  }
+
+  /* Fixtures Modal */
+  .fixtures-modal-grid{
+    display:flex;
+    flex-direction:column;
+  }
+  .fixtures-modal-col h4{
+    margin:0 0 12px;
+    font-size:14px;
+    font-weight:600;
+  }
+  .fixture-modal-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 10px;
+    border-radius:8px;
+    margin-bottom:4px;
+  }
+  .fixture-modal-row.fixture-easy{background:rgba(16, 185, 129, 0.08);}
+  .fixture-modal-row.fixture-hard{background:rgba(244, 63, 94, 0.08);}
+  .fixture-rank{
+    width:24px;
+    font-size:12px;
+    font-weight:600;
+    color:var(--muted);
+  }
+  .fixture-badge-sm{
+    width:20px;
+    height:20px;
+    object-fit:contain;
+  }
+  .fixture-team{
+    flex:1;
+    font-size:13px;
+    font-weight:500;
+  }
+  .fixture-score{
+    font-size:13px;
+    font-weight:700;
+    padding:4px 8px;
+    border-radius:6px;
+    background:var(--surface-2);
+  }
+  .fixture-score.score-good{background:rgba(16, 185, 129, 0.2);color:#6ee7b7;}
+  .fixture-score.score-bad{background:rgba(244, 63, 94, 0.2);color:#fca5a5;}
+
+  /* Transfers Modal */
+  .transfers-modal-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:24px;
+  }
+  @media (max-width:600px){
+    .transfers-modal-grid{grid-template-columns:1fr;}
+  }
+  .transfers-modal-col h4{
+    margin:0 0 12px;
+    font-size:14px;
+    font-weight:600;
+  }
+  .transfer-modal-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 10px;
+    background:var(--surface-1);
+    border-radius:8px;
+    margin-bottom:4px;
+  }
+  .transfer-rank{
+    width:20px;
+    font-size:12px;
+    font-weight:600;
+    color:var(--muted);
+  }
+  .transfer-name{flex:1;font-size:13px;font-weight:500;}
+  .transfer-team{font-size:11px;color:var(--muted);}
+  .transfer-stat{font-size:12px;font-weight:600;color:var(--accent-light);}
+  .transfer-form{font-size:11px;color:var(--muted);}
+
+  /* Injuries Modal */
+  .injuries-modal-list{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    max-height:60vh;
+    overflow-y:auto;
+  }
+  .injury-modal-row{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    padding:10px 12px;
+    background:var(--surface-1);
+    border-radius:8px;
+  }
+  .injury-modal-row .injury-details{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .injury-modal-row .injury-name{font-size:14px;font-weight:600;}
+  .injury-modal-row .injury-team{font-size:11px;color:var(--muted);}
+  .injury-modal-row .injury-status{font-size:12px;color:var(--warning);}
+  .injury-modal-row .injury-news{font-size:11px;color:var(--muted);margin-top:4px;font-style:italic;}
+  .injury-modal-row .injury-ownership{
+    font-size:12px;font-weight:600;
+    padding:4px 8px;
+    background:var(--surface-2);
+    border-radius:4px;
+  }
+  .injury-more{
+    font-size:12px;
+    color:var(--muted);
+    text-align:center;
+    padding:8px;
+  }
+
+  /* Fixture Swings Modal */
+  .swings-modal-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:24px;
+  }
+  @media (max-width:600px){
+    .swings-modal-grid{grid-template-columns:1fr;}
+  }
+  .swings-modal-col h4{margin:0 0 12px;}
+  .swing-modal-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 10px;
+    background:var(--surface-1);
+    border-radius:8px;
+    margin-bottom:4px;
+  }
+  .swing-rank{width:20px;font-size:12px;font-weight:600;color:var(--muted);}
+  .swing-badge-sm{width:18px;height:18px;object-fit:contain;}
+  .swing-team{flex:1;font-size:13px;font-weight:500;}
+  .swing-fdr{font-size:11px;color:var(--muted);}
+  .swing-delta{font-size:12px;font-weight:700;padding:2px 6px;border-radius:4px;}
+  .swing-delta.good{background:rgba(16, 185, 129, 0.2);color:#6ee7b7;}
+  .swing-delta.bad{background:rgba(244, 63, 94, 0.2);color:#fca5a5;}
 
   /* ═══════════════════════════════════════════════════════════════════════════
      STAT PICKER DASHBOARD - Phase 3 (No-scroll, 3-column layout)

@@ -6,6 +6,7 @@ import { ui } from "../components/ui.js";
 import { fplClient } from "../api/fplClient.js";
 import { mapBootstrap, mapFixture } from "../api/fplMapping.js";
 import { fixtureEase, getMetricExplanations } from "../api/fplDerived.js";
+import { openModal } from "../components/modal.js";
 
 /* ───────────────── Constants ───────────────── */
 const TEAM_BADGE_URL = (teamCode) =>
@@ -174,7 +175,35 @@ function buildCaptainTile(players, fixtures, currentGw, teams) {
   `;
 
   tile.addEventListener("click", () => {
-    window.location.hash = "#/all-players";
+    const modalContent = utils.el("div", { class: "portal-modal-content" });
+    modalContent.innerHTML = `
+      <div class="captain-modal-grid">
+        ${candidates.length === 0 ? '<p>No captain picks available</p>' : candidates.map((p, i) => `
+          <div class="captain-modal-row">
+            <div class="captain-rank-lg">${i + 1}</div>
+            <img class="captain-photo-lg" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.style.display='none'">
+            <div class="captain-info">
+              <div class="captain-name-lg">${p.webName || p.web_name || 'Unknown'}</div>
+              <div class="captain-meta-lg">
+                <span>Form: ${p.form.toFixed(1)}</span>
+                <span class="${fdrClass(p.fixture.fdr)}">${p.fixture.isHome ? 'H' : 'A'} ${p.fixture.opponent} (FDR ${p.fixture.fdr})</span>
+                <span>${p.minsReliability}</span>
+                <span>PPG: ${p.ppg.toFixed(2)}</span>
+              </div>
+              <div class="captain-why">
+                <strong>Why:</strong> ${p.form >= 5 ? 'Excellent form. ' : p.form >= 3 ? 'Good form. ' : ''}
+                ${p.fixture.fdr <= 2 ? 'Easy fixture. ' : p.fixture.fdr >= 4 ? 'Tough fixture. ' : ''}
+                ${p.minsReliability === 'Nailed' ? 'Nailed on starter.' : p.minsReliability === 'Regular' ? 'Regular starter.' : 'Rotation risk.'}
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="modal-footer-link">
+        <a href="#/all-players">View all players →</a>
+      </div>
+    `;
+    openModal(`Captain Picks — GW${currentGw}`, modalContent);
   });
 
   return tile;
@@ -266,7 +295,27 @@ function buildFixturesTile(teams, fixtures, currentGw) {
   `;
 
   tile.addEventListener("click", () => {
-    window.location.hash = "#/fixtures";
+    const modalContent = utils.el("div", { class: "portal-modal-content" });
+    const allTeams = [...teamFixtures].sort((a, b) => b.easeScore - a.easeScore);
+    modalContent.innerHTML = `
+      <div class="fixtures-modal-grid">
+        <div class="fixtures-modal-col">
+          <h4>Best Runs (Easiest to Hardest)</h4>
+          ${allTeams.map((t, i) => `
+            <div class="fixture-modal-row ${i < 5 ? 'fixture-easy' : i >= allTeams.length - 5 ? 'fixture-hard' : ''}">
+              <span class="fixture-rank">${i + 1}</span>
+              <img class="fixture-badge-sm" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+              <span class="fixture-team">${t.team.shortName || t.team.short_name || '???'}</span>
+              <span class="fixture-score ${t.easeScore >= 60 ? 'score-good' : t.easeScore <= 40 ? 'score-bad' : ''}">${t.easeScore}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div class="modal-footer-link">
+        <a href="#/fixtures">Full fixtures page →</a>
+      </div>
+    `;
+    openModal(`Fixture Outlook — GW${currentGw} to GW${currentGw + windowSize - 1}`, modalContent);
   });
 
   return tile;
@@ -329,7 +378,53 @@ function buildTransfersTile(players) {
   `;
 
   tile.addEventListener("click", () => {
-    window.location.hash = "#/all-players";
+    // Get more targets for the modal
+    const moreHot = players
+      .filter(p => (p.transfersIn || p.transfers_in || 0) > 20000)
+      .sort((a, b) => (b.transfersIn || b.transfers_in || 0) - (a.transfersIn || a.transfers_in || 0))
+      .slice(0, 10);
+    const moreDiffs = players
+      .filter(p => {
+        const ownership = p.selectedByPercent || parseFloat(p.selected_by_percent) || 0;
+        const form = p.form || 0;
+        return ownership < 15 && form > 3;
+      })
+      .sort((a, b) => (b.form || 0) - (a.form || 0))
+      .slice(0, 10);
+
+    const modalContent = utils.el("div", { class: "portal-modal-content" });
+    modalContent.innerHTML = `
+      <div class="transfers-modal-grid">
+        <div class="transfers-modal-col">
+          <h4>🔥 Trending (Most Transferred In)</h4>
+          ${moreHot.map((p, i) => `
+            <div class="transfer-modal-row">
+              <span class="transfer-rank">${i + 1}</span>
+              <span class="transfer-name">${getName(p)}</span>
+              <span class="transfer-team">${p.teamShortName || ''}</span>
+              <span class="transfer-stat">+${(getTransfersIn(p) / 1000).toFixed(0)}K</span>
+              <span class="transfer-form">Form: ${(p.form || 0).toFixed(1)}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="transfers-modal-col">
+          <h4>💎 Differentials (Low Owned, Good Form)</h4>
+          ${moreDiffs.map((p, i) => `
+            <div class="transfer-modal-row">
+              <span class="transfer-rank">${i + 1}</span>
+              <span class="transfer-name">${getName(p)}</span>
+              <span class="transfer-team">${p.teamShortName || ''}</span>
+              <span class="transfer-stat">${getOwnership(p).toFixed(1)}%</span>
+              <span class="transfer-form">Form: ${(p.form || 0).toFixed(1)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div class="modal-footer-link">
+        <a href="#/all-players">All players →</a>
+      </div>
+    `;
+    openModal("Transfer Targets", modalContent);
   });
 
   return tile;
@@ -537,20 +632,6 @@ function buildMetricsTile() {
 function buildInjuriesTile(players) {
   const tile = utils.el("div", { class: "portal-tile tile-warning tile-clickable" });
 
-  // Find highly-owned injured/doubtful players
-  const unavailable = players
-    .filter(p => {
-      const status = p.status || p._raw?.status || 'a';
-      const ownership = p.selectedByPercent || parseFloat(p.selected_by_percent) || 0;
-      return status !== 'a' && ownership > 5; // At least 5% owned
-    })
-    .sort((a, b) => {
-      const ownershipA = a.selectedByPercent || parseFloat(a.selected_by_percent) || 0;
-      const ownershipB = b.selectedByPercent || parseFloat(b.selected_by_percent) || 0;
-      return ownershipB - ownershipA;
-    })
-    .slice(0, 5);
-
   const statusIcon = (status) => {
     switch(status) {
       case 'i': return '🔴';
@@ -571,17 +652,31 @@ function buildInjuriesTile(players) {
     }
   };
 
+  // Get ALL flagged players (status !== 'a'), sorted by ownership
+  const allFlagged = players
+    .filter(p => {
+      const status = p.status || p._raw?.status || 'a';
+      return status !== 'a';
+    })
+    .sort((a, b) => {
+      const ownershipA = a.selectedByPercent || parseFloat(a.selected_by_percent) || 0;
+      const ownershipB = b.selectedByPercent || parseFloat(b.selected_by_percent) || 0;
+      return ownershipB - ownershipA;
+    });
+
+  // Show top 5 in tile preview
+  const previewList = allFlagged.slice(0, 5);
+
   tile.innerHTML = `
     <div class="tile-header">
       <span class="tile-icon">🏥</span>
       <h3 class="tile-title">Injury Watch</h3>
-      <span class="tile-badge" data-tooltip="Highly-owned players who are injured, doubtful, or unavailable">Check before deadline</span>
+      <span class="tile-badge" data-tooltip="All players who are injured, doubtful, suspended, or unavailable">${allFlagged.length} flagged</span>
     </div>
     <div class="tile-body injuries-list">
-      ${unavailable.length === 0 ? '<p class="tile-desc">No major injuries among popular players</p>' : unavailable.map(p => {
+      ${previewList.length === 0 ? '<p class="tile-desc">No flagged players</p>' : previewList.map(p => {
         const status = p.status || p._raw?.status || '?';
         const ownership = p.selectedByPercent || parseFloat(p.selected_by_percent) || 0;
-        const news = p.news || p._raw?.news || '';
         const chance = p.chanceOfPlayingNextRound ?? p._raw?.chance_of_playing_next_round ?? null;
         return `
           <div class="injury-row">
@@ -592,18 +687,45 @@ function buildInjuriesTile(players) {
             </div>
             <span class="injury-ownership" data-tooltip="${ownership.toFixed(1)}% ownership">${ownership.toFixed(0)}%</span>
           </div>
-          ${news ? `<div class="injury-news">${news}</div>` : ''}
         `;
       }).join('')}
+      ${allFlagged.length > 5 ? `<div class="injury-more">+${allFlagged.length - 5} more...</div>` : ''}
     </div>
     <div class="tile-footer">
       <span class="tile-hint">Check player news before locking your team</span>
-      <span class="tile-link">View all players →</span>
+      <span class="tile-link">View all ${allFlagged.length} →</span>
     </div>
   `;
 
   tile.addEventListener("click", () => {
-    window.location.hash = "#/all-players";
+    const modalContent = utils.el("div", { class: "portal-modal-content" });
+    modalContent.innerHTML = `
+      <div class="injuries-modal-list">
+        ${allFlagged.length === 0 ? '<p>No flagged players</p>' : allFlagged.map(p => {
+          const status = p.status || p._raw?.status || '?';
+          const ownership = p.selectedByPercent || parseFloat(p.selected_by_percent) || 0;
+          const news = p.news || p._raw?.news || '';
+          const chance = p.chanceOfPlayingNextRound ?? p._raw?.chance_of_playing_next_round ?? null;
+          const teamName = p.teamShortName || p._raw?.team_short_name || '';
+          return `
+            <div class="injury-modal-row">
+              <span class="injury-icon">${statusIcon(status)}</span>
+              <div class="injury-details">
+                <span class="injury-name">${p.webName || p.web_name || 'Unknown'}</span>
+                <span class="injury-team">${teamName}</span>
+                <span class="injury-status">${statusLabel(status)}${chance !== null ? ` (${chance}% chance)` : ''}</span>
+                ${news ? `<span class="injury-news">${news}</span>` : ''}
+              </div>
+              <span class="injury-ownership">${ownership.toFixed(1)}%</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div class="modal-footer-link">
+        <a href="#/all-players">All players →</a>
+      </div>
+    `;
+    openModal(`Injury Watch — ${allFlagged.length} Flagged Players`, modalContent);
   });
 
   return tile;
@@ -695,7 +817,42 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
   `;
 
   tile.addEventListener("click", () => {
-    window.location.hash = "#/fixtures";
+    const allEasier = [...teamSwings].filter(t => t.swing > 0).sort((a, b) => b.swing - a.swing);
+    const allHarder = [...teamSwings].filter(t => t.swing < 0).sort((a, b) => a.swing - b.swing);
+
+    const modalContent = utils.el("div", { class: "portal-modal-content" });
+    modalContent.innerHTML = `
+      <div class="swings-modal-grid">
+        <div class="swings-modal-col">
+          <h4 class="swing-label good">Fixtures Getting Easier</h4>
+          ${allEasier.length === 0 ? '<p>No improvements</p>' : allEasier.map((t, i) => `
+            <div class="swing-modal-row">
+              <span class="swing-rank">${i + 1}</span>
+              <img class="swing-badge-sm" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+              <span class="swing-team">${t.team.shortName || t.team.short_name || '???'}</span>
+              <span class="swing-fdr">FDR: ${t.recentAvg.toFixed(1)} → ${t.upcomingAvg.toFixed(1)}</span>
+              <span class="swing-delta good">↓${t.swing.toFixed(1)}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="swings-modal-col">
+          <h4 class="swing-label bad">Fixtures Getting Harder</h4>
+          ${allHarder.length === 0 ? '<p>No worsening</p>' : allHarder.map((t, i) => `
+            <div class="swing-modal-row">
+              <span class="swing-rank">${i + 1}</span>
+              <img class="swing-badge-sm" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+              <span class="swing-team">${t.team.shortName || t.team.short_name || '???'}</span>
+              <span class="swing-fdr">FDR: ${t.recentAvg.toFixed(1)} → ${t.upcomingAvg.toFixed(1)}</span>
+              <span class="swing-delta bad">↑${Math.abs(t.swing).toFixed(1)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div class="modal-footer-link">
+        <a href="#/fixtures">Full fixtures page →</a>
+      </div>
+    `;
+    openModal(`Fixture Swings — Last ${recentWindow} vs Next ${upcomingWindow} GWs`, modalContent);
   });
 
   return tile;
@@ -745,9 +902,8 @@ export async function renderPortal(main) {
     grid.append(buildInjuriesTile(bootstrap.players));
     grid.append(buildFixtureSwingsTile(bootstrap.teams, fixtures, currentGw));
 
-    // Row 4: Transfers + Metrics
+    // Row 4: Transfers
     grid.append(buildTransfersTile(bootstrap.players));
-    grid.append(buildMetricsTile());
 
     page.append(grid);
     ui.mount(main, page);
