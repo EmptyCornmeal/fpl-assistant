@@ -12,8 +12,12 @@ const LS_AP_SORT    = "fpl.ap.sort";
 const LS_AP_CHART   = "fpl.ap.chartmode"; // "points" | "xp"
 
 /* ========= Player Photo URL ========= */
-const PLAYER_PHOTO_URL = (photoId) =>
-  `https://resources.premierleague.com/premierleague/photos/players/110x140/p${photoId?.replace('.png', '')}.png`;
+const PLAYER_PHOTO_URL = (photoId) => {
+  if (!photoId) return null;
+  // FPL API may supply .jpg or .png - strip either extension
+  const cleanId = String(photoId).replace(/\.(png|jpg)$/i, '').replace(/^p/, '');
+  return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
+};
 
 /* ========= Compare Selection State ========= */
 let compareSelection = []; // Array of player IDs (max 2)
