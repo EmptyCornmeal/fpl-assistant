@@ -90,12 +90,19 @@ async function buildCurrentState() {
   const teamValue = currentHistory?.value ?? entry.last_deadline_value ?? 1000;
   const freeTransfers = calculateFreeTransfers(history, currentGw);
 
-  const chipsUsed = (history?.chips || []).map(c => ({ chip: c.name, gw: c.event }));
-  const allChips = ["wildcard", "freehit", "bboost", "3xc"];
-  const chipsAvailable = allChips.filter(chip => {
-    if (chip === "wildcard") return chipsUsed.filter(c => c.chip === "wildcard").length < 2;
-    return !chipsUsed.some(c => c.chip === chip);
-  });
+  // CHIPS: Strictly derive from entry history - no defaults, no guessing
+  const rawChipsUsed = history?.chips || [];
+  const chipsUsed = rawChipsUsed.map(c => ({ chip: c.name, gw: c.event }));
+
+  // Count wildcards used (max 2 per season)
+  const wildcardsUsed = chipsUsed.filter(c => c.chip === "wildcard").length;
+
+  // Build available chips list - only if NOT in used list
+  const chipsAvailable = [];
+  if (wildcardsUsed < 2) chipsAvailable.push("wildcard");
+  if (!chipsUsed.some(c => c.chip === "freehit")) chipsAvailable.push("freehit");
+  if (!chipsUsed.some(c => c.chip === "bboost")) chipsAvailable.push("bboost");
+  if (!chipsUsed.some(c => c.chip === "3xc")) chipsAvailable.push("3xc");
 
   let squad = [], captain = null, viceCaptain = null, bench = [];
 
@@ -387,7 +394,11 @@ function optimiseXI(squadWithXp) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   PHASE 3: TRANSFER ADVISOR
+   PHASE 3: TRANSFER ADVISOR (Fixed heuristics per user requirements)
+   - -4 hit requires > +6 xP net gain (not +4)
+   - -8 hit requires > +12 xP net gain (not +8)
+   - Penalize destabilizing transfers (nailed→fringe, GK swaps, injury→injury)
+   - Always compare against "Do Nothing" baseline
    ═══════════════════════════════════════════════════════════════════════════ */
 
 async function getTransferRecommendations(currentState, horizon, bs) {
@@ -402,60 +413,121 @@ async function getTransferRecommendations(currentState, horizon, bs) {
     squadWithXp.push({ ...p, xp: xp.total, xpData: xp });
   }
 
-  // Find worst performers
+  // Find worst performers (exclude GKs unless severe issue)
   const sortedByXp = [...squadWithXp].sort((a, b) => a.xp - b.xp);
-  const worstPlayers = sortedByXp.slice(0, 3);
 
   // Get potential targets
   const elements = bs.elements || [];
   const teams = bs.teams || [];
   const squadIds = new Set(squad.map(p => p.id));
+  const squadTeams = squad.map(p => p.team);
 
   const recommendations = [];
 
-  for (const worst of worstPlayers) {
-    // Find better alternatives at same position within budget
-    const budget = (worst.now_cost || 0) + bank;
-    const samePos = elements.filter(p =>
-      p.element_type === worst.element_type &&
+  // Only consider bottom performers with actual issues
+  const candidates = sortedByXp.filter(p => {
+    // Skip GKs unless injured or suspended
+    if (p.element_type === 1 && p.status === "a") return false;
+    // Skip players with decent xP (>3 per GW average)
+    if (p.xp > horizon * 3) return false;
+    return true;
+  }).slice(0, 4);
+
+  for (const outPlayer of candidates) {
+    const budget = (outPlayer.now_cost || 0) + bank;
+    const outMinsReliability = outPlayer.xpData?.minutesReliability?.score || 100;
+
+    // Find alternatives at same position
+    const alternatives = elements.filter(p =>
+      p.element_type === outPlayer.element_type &&
       !squadIds.has(p.id) &&
       p.status === "a" &&
       p.now_cost <= budget &&
-      p.minutes > 90
+      p.minutes > 180 // At least 2 full games
     );
 
-    // Calculate xP for alternatives
+    // Calculate xP for alternatives with sanity checks
     const altsWithXp = [];
-    for (const alt of samePos.slice(0, 20)) {
+    for (const alt of alternatives.slice(0, 15)) {
       const xp = await calculateExpectedPoints(alt, horizon, bs);
+      const inMinsReliability = xp.minutesReliability?.score || 0;
+      let xpGain = xp.total - outPlayer.xp;
+
+      // SANITY PENALTIES:
+      // 1. Penalize downgrading from nailed starter to fringe player
+      if (outMinsReliability > 80 && inMinsReliability < 60) {
+        xpGain -= 2; // Heavy penalty for destabilizing
+      }
+
+      // 2. Penalize GK transfers (usually not worth it)
+      if (outPlayer.element_type === 1) {
+        xpGain -= 1.5;
+      }
+
+      // 3. Penalize bringing in another injury risk
+      if (alt.chance_of_playing_next_round != null && alt.chance_of_playing_next_round < 75) {
+        xpGain -= 2;
+      }
+
+      // 4. Penalize having 3+ from same team
+      const sameTeamCount = squadTeams.filter(t => t === alt.team).length;
+      if (sameTeamCount >= 2) {
+        xpGain -= 0.5; // Slight penalty for concentration risk
+      }
+
+      const teamName = teams.find(t => t.id === alt.team)?.short_name || "???";
+
+      // Build why-out and why-in explanations
+      const whyOut = [];
+      if (outPlayer.status !== "a") whyOut.push(getFlagReason(outPlayer));
+      if (outMinsReliability < 70) whyOut.push("rotation risk");
+      if (outPlayer.xp < horizon * 2) whyOut.push(`low xP (${outPlayer.xp.toFixed(1)})`);
+
+      const whyIn = [];
+      if (xp.total > outPlayer.xp) whyIn.push(`+${(xp.total - outPlayer.xp).toFixed(1)} xP`);
+      if (inMinsReliability > 80) whyIn.push("nailed");
+      if (alt.form > 5) whyIn.push(`form: ${alt.form}`);
+
       altsWithXp.push({
         ...alt,
         xp: xp.total,
-        teamName: teams.find(t => t.id === alt.team)?.short_name || "???",
-        xpGain: xp.total - worst.xp
+        xpData: xp,
+        teamName,
+        xpGain,
+        rawXpGain: xp.total - outPlayer.xp,
+        whyOut: whyOut.join(", ") || "underperforming",
+        whyIn: whyIn.join(", ") || "better option",
+        breakEvenGw: xpGain > 0 ? Math.ceil(4 / xpGain) : "N/A"
       });
     }
 
-    // Best alternative
+    // Best alternative (after penalties)
     altsWithXp.sort((a, b) => b.xpGain - a.xpGain);
     const best = altsWithXp[0];
 
-    if (best && best.xpGain > 0) {
+    // Only recommend if gain is meaningful (>1.5 xP after penalties)
+    if (best && best.xpGain > 1.5) {
       recommendations.push({
-        out: worst,
+        out: outPlayer,
         in: best,
         xpGain: best.xpGain,
-        costChange: best.now_cost - worst.now_cost
+        rawXpGain: best.rawXpGain,
+        costChange: best.now_cost - outPlayer.now_cost,
+        whyOut: best.whyOut,
+        whyIn: best.whyIn,
+        breakEvenGw: best.breakEvenGw
       });
     }
   }
 
-  // Sort by xP gain
+  // Sort by xP gain (after penalties)
   recommendations.sort((a, b) => b.xpGain - a.xpGain);
 
-  // Determine action
+  // CONSERVATIVE HIT LOGIC:
+  // -4 hit: requires > +6 xP total gain (margin of 2 pts for uncertainty)
+  // -8 hit: requires > +12 xP total gain (margin of 4 pts for uncertainty)
   let action = "Hold";
-  let actionDetail = "Current squad looks optimal for the horizon.";
+  let actionDetail = "Do nothing. Current squad is optimal or no transfers clear the threshold.";
   let transfers = [];
   let netGain = 0;
   let hitCost = 0;
@@ -463,38 +535,43 @@ async function getTransferRecommendations(currentState, horizon, bs) {
   if (recommendations.length > 0) {
     const best = recommendations[0];
 
+    // Use free transfer if meaningful gain
     if (freeTransfers >= 1 && best.xpGain > 2) {
-      action = "Make 1 Transfer";
-      actionDetail = `Transfer out ${best.out.web_name} for ${best.in.web_name} (+${best.xpGain.toFixed(1)} xP)`;
+      action = "Make 1 Free Transfer";
+      actionDetail = `${best.out.web_name} → ${best.in.web_name} (+${best.xpGain.toFixed(1)} xP). Why: ${best.whyOut} → ${best.whyIn}`;
       transfers = [best];
       netGain = best.xpGain;
     }
 
-    // Check if second transfer is worth a hit
-    if (recommendations.length > 1 && freeTransfers < 2) {
+    // -4 hit: only if combined gain > 6 (so net after hit > 2)
+    if (freeTransfers === 1 && recommendations.length > 1) {
       const second = recommendations[1];
-      if (second.xpGain > 4) {
-        action = "Take -4 Hit";
-        actionDetail = `Two transfers gain ${(best.xpGain + second.xpGain).toFixed(1)} xP, -4 cost = +${(best.xpGain + second.xpGain - 4).toFixed(1)} net`;
+      const totalGain = best.xpGain + second.xpGain;
+      if (totalGain > 6) {
+        action = "Consider -4 Hit";
+        actionDetail = `2 transfers: ${best.out.web_name}→${best.in.web_name}, ${second.out.web_name}→${second.in.web_name}. Gain: ${totalGain.toFixed(1)} xP − 4 = +${(totalGain - 4).toFixed(1)} net`;
         transfers = [best, second];
-        netGain = best.xpGain + second.xpGain - 4;
+        netGain = totalGain - 4;
         hitCost = 4;
       }
     }
 
-    // Check for -8 scenario
-    if (recommendations.length > 2 && freeTransfers === 1) {
-      const third = recommendations[2];
+    // -8 hit: only if combined gain > 12 (so net after hit > 4)
+    if (freeTransfers === 1 && recommendations.length > 2) {
       const totalGain = recommendations.slice(0, 3).reduce((s, r) => s + r.xpGain, 0);
-      if (totalGain > 8) {
-        action = "Take -8 Hit";
-        actionDetail = `Three transfers gain ${totalGain.toFixed(1)} xP, -8 cost = +${(totalGain - 8).toFixed(1)} net`;
+      if (totalGain > 12) {
+        action = "Consider -8 Hit";
+        const names = recommendations.slice(0, 3).map(r => `${r.out.web_name}→${r.in.web_name}`).join(", ");
+        actionDetail = `3 transfers: ${names}. Gain: ${totalGain.toFixed(1)} xP − 8 = +${(totalGain - 8).toFixed(1)} net`;
         transfers = recommendations.slice(0, 3);
         netGain = totalGain - 8;
         hitCost = 8;
       }
     }
   }
+
+  // Always include "Do Nothing" baseline
+  const doNothingXp = squadWithXp.filter(p => !p.isBench).reduce((s, p) => s + p.xp, 0);
 
   return {
     action,
@@ -503,6 +580,7 @@ async function getTransferRecommendations(currentState, horizon, bs) {
     netGain,
     hitCost,
     freeTransfers,
+    doNothingXp,
     allRecommendations: recommendations.slice(0, 5)
   };
 }
@@ -803,17 +881,57 @@ function renderChipPanel(rec, s) {
 }
 
 function renderSquadPanel(opt, horizon) {
+  // Build xP breakdown for each player (explainability)
+  const buildBreakdown = (p) => {
+    if (!p?.xpData?.components) return '';
+    const c = p.xpData.components;
+    const parts = [];
+    if (c.appearance > 0) parts.push(`App:${c.appearance.toFixed(1)}`);
+    if (c.attack > 0) parts.push(`Atk:${c.attack.toFixed(1)}`);
+    if (c.cleanSheet > 0) parts.push(`CS:${c.cleanSheet.toFixed(1)}`);
+    if (c.bonus > 0) parts.push(`Bns:${c.bonus.toFixed(1)}`);
+    return parts.join(' ');
+  };
+
+  // Why picked explanation based on FPL scoring rules
+  const whyPicked = (p) => {
+    if (!p) return '';
+    const reasons = [];
+    const mins = p.xpData?.minutesReliability?.score || 0;
+    const posType = p.element_type;
+
+    // Minutes likelihood
+    if (mins >= 90) reasons.push('nailed');
+    else if (mins >= 70) reasons.push('likely starter');
+    else if (mins >= 50) reasons.push('rotation risk');
+
+    // Position-specific value
+    if (posType === 1 || posType === 2) {
+      if (p.xpData?.components?.cleanSheet > 1) reasons.push('CS potential');
+    }
+    if (posType === 3 || posType === 4) {
+      if (p.xpData?.components?.attack > 2) reasons.push('attacking returns');
+    }
+
+    // Bonus potential
+    if (p.xpData?.components?.bonus > 0.5) reasons.push('BPS');
+
+    return reasons.slice(0, 2).join(', ');
+  };
+
   const xiRows = opt.xi.map(p => `
-    <div class="sp-xi-row ${p?.status !== 'a' ? 'sp-xi-flagged' : ''}">
+    <div class="sp-xi-row ${p?.status !== 'a' ? 'sp-xi-flagged' : ''}" data-tooltip="${buildBreakdown(p)}">
       <span class="sp-xi-pos">${({ 1: 'G', 2: 'D', 3: 'M', 4: 'F' })[p?.element_type] || '?'}</span>
       <span class="sp-xi-name">${p?.web_name || '?'}</span>
       <span class="sp-xi-team">${p?.teamName || ''}</span>
       <span class="sp-xi-xp">${p?.xp?.toFixed(1) || '0'}</span>
+      <span class="sp-xi-why">${whyPicked(p)}</span>
     </div>
   `).join("");
 
-  const benchRows = opt.bench.slice(0, 4).map(p => `
-    <div class="sp-bench-row">
+  const benchRows = opt.bench.slice(0, 4).map((p, i) => `
+    <div class="sp-bench-row" data-tooltip="${buildBreakdown(p)}">
+      <span class="sp-bench-order">${i + 1}</span>
       <span class="sp-xi-pos">${({ 1: 'G', 2: 'D', 3: 'M', 4: 'F' })[p?.element_type] || '?'}</span>
       <span class="sp-xi-name">${p?.web_name || '?'}</span>
       <span class="sp-xi-xp">${p?.xp?.toFixed(1) || '0'}</span>
@@ -824,8 +942,9 @@ function renderSquadPanel(opt, horizon) {
     <div class="sp-card sp-card-squad">
       <div class="sp-card-header">Optimal XI <span class="sp-xp-total">${opt.totalXp.toFixed(1)} xP (${horizon}GW)</span></div>
       <div class="sp-xi-list">${xiRows}</div>
-      <div class="sp-bench-header">Bench</div>
+      <div class="sp-bench-header">Bench (ordered by xP)</div>
       <div class="sp-bench-list">${benchRows}</div>
+      <div class="sp-scoring-note">xP = Appearance + Attack + CS + Bonus. Hover for breakdown.</div>
     </div>
   `;
 }
@@ -855,10 +974,16 @@ function renderTransferPanel(t) {
   if (t.transfers.length > 0) {
     transferRows = t.transfers.map(tr => `
       <div class="sp-transfer-row">
-        <span class="sp-tr-out">${tr.out.web_name}</span>
-        <span class="sp-tr-arrow">→</span>
-        <span class="sp-tr-in">${tr.in.web_name}</span>
-        <span class="sp-tr-gain">+${tr.xpGain.toFixed(1)}</span>
+        <div class="sp-tr-players">
+          <span class="sp-tr-out">${tr.out.web_name}</span>
+          <span class="sp-tr-arrow">→</span>
+          <span class="sp-tr-in">${tr.in.web_name}</span>
+          <span class="sp-tr-gain">+${tr.xpGain.toFixed(1)}</span>
+        </div>
+        <div class="sp-tr-why">
+          <span class="sp-tr-why-out">OUT: ${tr.whyOut || 'underperforming'}</span>
+          <span class="sp-tr-why-in">IN: ${tr.whyIn || 'better option'}</span>
+        </div>
       </div>
     `).join("");
   }
@@ -868,9 +993,10 @@ function renderTransferPanel(t) {
       <div class="sp-card-header">Transfer Advisor</div>
       <div class="sp-action ${actionClass}">${t.action}</div>
       <div class="sp-action-detail">${t.actionDetail}</div>
-      ${t.hitCost > 0 ? `<div class="sp-hit-cost">Hit cost: -${t.hitCost} pts</div>` : ''}
-      ${t.netGain > 0 ? `<div class="sp-net-gain">Net gain: +${t.netGain.toFixed(1)} xP</div>` : ''}
+      ${t.hitCost > 0 ? `<div class="sp-hit-cost">Hit: -${t.hitCost} pts | Net: +${t.netGain.toFixed(1)} xP</div>` : ''}
+      ${t.netGain > 0 && t.hitCost === 0 ? `<div class="sp-net-gain">Net gain: +${t.netGain.toFixed(1)} xP</div>` : ''}
       ${transferRows}
+      <div class="sp-baseline">Do Nothing baseline: ${t.doNothingXp?.toFixed(1) || '?'} xP</div>
     </div>
   `;
 }
@@ -906,13 +1032,14 @@ function renderFixturesPanel(s, horizon) {
 function renderAssumptionsPanel() {
   return `
     <div class="sp-card sp-card-small">
-      <div class="sp-card-header">Assumptions</div>
+      <div class="sp-card-header">Model & Assumptions</div>
       <ul class="sp-assumptions">
-        <li>xP uses FPL's xGI + FDR</li>
-        <li>Cannot predict rotation</li>
-        <li>Public data only</li>
-        <li>-4 hit = needs >4 xP gain</li>
+        <li><strong>xP Components:</strong> Appearance (2pts 60+min, 1pt &lt;60min) + Attack (xGI × pos multiplier) + Clean Sheet (FDR-adjusted) + Bonus (BPS/30)</li>
+        <li><strong>FDR Weights:</strong> FDR1: +15%, FDR2: +10%, FDR3: baseline, FDR4: -10%, FDR5: -20%</li>
+        <li><strong>Hit Thresholds:</strong> -4 needs &gt;+6 xP, -8 needs &gt;+12 xP (with uncertainty buffer)</li>
+        <li><strong>Caveats:</strong> Cannot predict rotation, manager decisions, or late injuries. Public xGI only.</li>
       </ul>
+      <div class="sp-scoring-link"><a href="https://www.premierleague.com/news/2174909" target="_blank">FPL Scoring Rules →</a></div>
     </div>
   `;
 }

@@ -610,8 +610,7 @@ export async function renderMyTeam(main){
       }
     }
 
-    // Start async enrichment but don't await it
-    enrichRowsAsync();
+    // Async enrichment is started later with .then() to update xP tile
 
     // Player click handler for modal
     const handlePlayerClick = (player) => {
@@ -988,26 +987,37 @@ export async function renderMyTeam(main){
     rightCol.append(fixturesTile);
 
     // Quick stats tiles row
-    const sortedByPrev = [...rows].sort((a,b) => (b.prevPoints||0) - (a.prevPoints||0));
-    const topPerformer = sortedByPrev[0];
+    // Top Performer: Use currPoints if live GW, otherwise prevPoints
+    const pointsKey = liveGw ? 'currPoints' : 'prevPoints';
+    const displayGw = liveGw || prevGw || roster.gw;
+    const sortedByPoints = [...rows].sort((a,b) => ((b[pointsKey]||0) - (a[pointsKey]||0)));
+    const topPerformer = sortedByPoints[0];
+    const topPerformerPts = topPerformer?.[pointsKey] || 0;
+
     const quickStatsTile1 = utils.el("div", { class: "tile tile-compact tile-clickable" });
     quickStatsTile1.innerHTML = `
       <div class="tile-header">
         <span class="tile-title">Top Performer</span>
-        <span class="tile-gw-badge" data-tooltip="Your highest scorer from last completed gameweek">GW${prevGw || roster.gw}</span>
+        <span class="tile-gw-badge" data-tooltip="Your highest scorer from ${liveGw ? 'current live' : 'last completed'} gameweek">GW${displayGw}${liveGw ? ' (live)' : ''}</span>
       </div>
       <div class="tile-body">
         <div style="text-align:center">
           <div style="font-size:1.5rem;font-weight:700;color:var(--brand-light)">${topPerformer?.name || '—'}</div>
-          <div style="font-size:0.85rem;color:var(--muted)">${topPerformer?.prevPoints || 0} pts</div>
+          <div style="font-size:0.85rem;color:var(--muted)">${topPerformerPts} pts</div>
         </div>
       </div>
     `;
 
+    // Team xP: Calculate sync estimate using form data (already in bootstrap)
+    // Simple sync estimate: sum of (form * 1.1) for starters as proxy for xP
+    const syncXpEstimate = rows.reduce((sum, r) => {
+      // Use form (last 5 avg) as base, add small fixture adjustment
+      const formVal = r.form || 0;
+      return sum + (formVal * 1.1);
+    }, 0);
+
     const quickStatsTile2 = utils.el("div", { class: "tile tile-compact tile-clickable" });
-    const xpRows = rows.filter(r => r.xpNext != null && r.xpNext > 0);
-    const totalXp = rows.reduce((sum, r) => sum + (r.xpNext || 0), 0);
-    const hasXpData = xpRows.length > 0;
+    quickStatsTile2.id = "team-xp-tile";
     quickStatsTile2.innerHTML = `
       <div class="tile-header">
         <span class="tile-title" data-tooltip="Expected Points projection for next GW based on form, fixtures, and minutes reliability">Team xP</span>
@@ -1015,17 +1025,25 @@ export async function renderMyTeam(main){
       </div>
       <div class="tile-body">
         <div style="text-align:center">
-          ${hasXpData ? `
-            <div style="font-size:1.5rem;font-weight:700;color:var(--accent-light)">${totalXp.toFixed(1)}</div>
-            <div style="font-size:0.85rem;color:var(--muted)">projected pts</div>
-          ` : `
-            <div style="font-size:1rem;color:var(--muted)">Calculating...</div>
-            <div style="font-size:0.75rem;color:var(--muted-2)">xP data loading</div>
-          `}
+          <div style="font-size:1.5rem;font-weight:700;color:var(--accent-light)" id="team-xp-value">${syncXpEstimate.toFixed(1)}</div>
+          <div style="font-size:0.85rem;color:var(--muted)" id="team-xp-label">estimated pts</div>
         </div>
       </div>
     `;
     rightCol.append(quickStatsTile1, quickStatsTile2);
+
+    // Update xP tile when async enrichment completes
+    enrichRowsAsync().then(() => {
+      const xpValue = document.getElementById("team-xp-value");
+      const xpLabel = document.getElementById("team-xp-label");
+      if (xpValue && xpLabel) {
+        const totalXp = rows.reduce((sum, r) => sum + (r.xpNext || 0), 0);
+        if (totalXp > 0) {
+          xpValue.textContent = totalXp.toFixed(1);
+          xpLabel.textContent = "projected pts";
+        }
+      }
+    });
 
     mainContent.append(leftCol, rightCol);
     page.append(mainContent);
