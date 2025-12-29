@@ -6301,3 +6301,884 @@
   border-radius: 2px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   COMPREHENSIVE UI/UX SPACING PASS - Dec 2025
+   Density, hierarchy, and clipping fixes for Power BI-style dashboards
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ─── GLOBAL BOTTOM PADDING FIX ─────────────────────────────────────────────── */
+/* Consistent breathing room at bottom of viewport across all pages */
+.app {
+  padding-bottom: var(--gap-lg);
+}
+
+.page-wrapper,
+.portal-page,
+.my-team-page,
+.players-dashboard,
+.fixtures-dashboard,
+.gw-dashboard,
+.league-page,
+.sp-dashboard,
+.help-dashboard {
+  padding-bottom: var(--gap-md);
+}
+
+/* ─── HEADER HEIGHT CAP ─────────────────────────────────────────────────────── */
+/* Reduce excessive Next Deadline / topbar area */
+.topbar {
+  max-height: 56px;
+  padding: var(--gap-xs) var(--gap-md);
+}
+
+.topbar-deadline {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.topbar-timer {
+  font-size: 13px;
+}
+
+/* ─── TOOLTIP AUTO-FLIP WITHIN CARD BOUNDS ──────────────────────────────────── */
+.abbr-tip {
+  position: relative;
+}
+
+.abbr-tip::after {
+  z-index: 10001;
+  max-width: min(280px, 90vw);
+  word-wrap: break-word;
+}
+
+/* Auto-flip when near viewport edges */
+.abbr-tip[data-pos="bottom"]::after,
+.abbr-tip.flip-bottom::after {
+  top: auto;
+  bottom: -8px;
+  transform: translate(-50%, 100%) scale(0.98);
+}
+
+.abbr-tip[data-pos="bottom"]:hover::after,
+.abbr-tip.flip-bottom:hover::after {
+  transform: translate(-50%, 110%) scale(1);
+}
+
+/* Cards allow tooltip overflow */
+.card,
+.tile,
+.portal-tile,
+.sp-card,
+.league-card,
+.league-detail-card {
+  overflow: visible;
+}
+
+/* But scrollable containers still scroll internally */
+.tile-body,
+.card-scroll,
+.table-scroll-wrapper,
+.table-scroll-container {
+  overflow: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PORTAL PAGE - Better vertical utilization
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.portal-page {
+  height: calc(100% - var(--gap-md));
+  grid-template-rows: 1fr;
+}
+
+/* Columns fill height and allow internal scroll */
+.portal-column,
+.portal-column-center {
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.portal-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+}
+
+/* Left/right column tiles fill available space */
+.portal-column > .portal-tile {
+  flex: 1;
+  min-height: 120px;
+}
+
+/* Deadline tile is fixed height, not flex */
+.portal-column > .portal-tile.tile-deadline {
+  flex: 0 0 auto;
+  min-height: auto;
+}
+
+/* Header is also fixed */
+.portal-column > .portal-header {
+  flex: 0 0 auto;
+}
+
+/* Center column tiles - Fixture Outlook and Captain Picks taller */
+.portal-column-center > .portal-tile {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-column-center > .portal-tile .tile-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+/* Sibling cards terminate at similar heights */
+@media (min-width: 1200px) {
+  .portal-page {
+    grid-template-columns: 280px 1fr 280px;
+  }
+
+  .portal-column-center {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+  }
+}
+
+@media (min-width: 1600px) {
+  .portal-page {
+    grid-template-columns: 300px 1fr 300px;
+  }
+}
+
+@media (min-width: 2200px) {
+  .portal-page {
+    grid-template-columns: 340px 1fr 340px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MY TEAM PAGE - Pitch at ~50%, Insights restructured
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.my-team-page,
+.dashboard {
+  display: grid;
+  height: calc(100% - var(--gap-md));
+  gap: var(--gap-md);
+  overflow: hidden;
+}
+
+/* 2-column layout: Pitch dominant left, insights right */
+@media (min-width: 1100px) {
+  .my-team-page,
+  .dashboard {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .my-team-page .team-header-card,
+  .dashboard .team-header-card {
+    grid-column: 1 / -1;
+  }
+
+  .my-team-page .dashboard-main,
+  .dashboard .dashboard-main {
+    display: contents;
+  }
+
+  .dashboard-left {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dashboard-right {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr auto auto;
+    gap: var(--gap-sm);
+    overflow-y: auto;
+  }
+
+  /* Insights card spans full width top */
+  .dashboard-right .tile.tile-wide:first-child {
+    grid-column: 1 / -1;
+  }
+
+  /* Fixtures preview spans full width */
+  .dashboard-right .tile.tile-wide:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+
+  /* Top Performer and Team XP side by side in upper area */
+  .dashboard-right .tile.tile-compact {
+    grid-column: auto;
+  }
+}
+
+/* Make pitch fill its container */
+.tile-flush,
+.pitch-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pitch-card .tile-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pitch-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.pitch-grass {
+  flex: 1;
+  min-height: 280px;
+}
+
+/* Insights tile scrollable */
+.tile.tile-wide {
+  max-height: none;
+}
+
+.insights-card .insights-list {
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+/* Fixtures preview compact */
+.fixtures-preview-grid {
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PLAYERS PAGE - Remove dead space below chart, fix card padding
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.players-dashboard {
+  display: grid;
+  height: calc(100% - var(--gap-md));
+  gap: var(--gap-md);
+  overflow: hidden;
+}
+
+@media (min-width: 1200px) {
+  .players-dashboard {
+    grid-template-columns: minmax(350px, 1fr) minmax(500px, 2fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .players-dashboard .players-filters {
+    grid-column: 1 / -1;
+  }
+
+  .players-dashboard .players-chart {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .players-dashboard .players-chart .tile-header {
+    flex-shrink: 0;
+  }
+
+  .players-dashboard .players-chart #ap-chart-slot {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .players-dashboard .players-table {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+}
+
+/* Card padding fix for beveled edges */
+.card,
+.tile,
+.portal-tile {
+  padding: var(--gap-md);
+}
+
+.card h3,
+.tile-header,
+.tile-title {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+/* Ensure table headers don't clip */
+.table th {
+  padding: 8px 10px;
+}
+
+.table-compact th {
+  padding: 6px 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIXTURES PAGE - Expand matrix to full width, reduce chart height
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.fixtures-dashboard {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - var(--gap-md));
+  gap: var(--gap-md);
+  overflow: hidden;
+}
+
+.fixtures-content {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  gap: var(--gap-md);
+  overflow: hidden;
+}
+
+@media (min-width: 1200px) {
+  .fixtures-content {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+@media (min-width: 1600px) {
+  .fixtures-content {
+    grid-template-columns: 3fr 1fr;
+  }
+}
+
+/* Matrix card scrolls horizontally but expands to fill */
+.fixtures-content .card:first-child {
+  min-width: 0;
+  overflow: auto;
+}
+
+.matrix-wrap {
+  min-width: max-content;
+  overflow-x: auto;
+}
+
+.matrix-wrap .table {
+  min-width: 100%;
+  width: max-content;
+}
+
+/* Chart card - reduced height */
+.fixtures-content .card:last-child {
+  max-height: 500px;
+  overflow: hidden;
+}
+
+@media (max-width: 1199px) {
+  .fixtures-content {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+  }
+
+  .fixtures-content .card:last-child {
+    max-height: 300px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EXPLORER PAGE - Clear grid layout, styled filters
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.gw-dashboard {
+  display: grid;
+  height: calc(100% - var(--gap-md));
+  gap: var(--gap-md);
+  overflow: hidden;
+  grid-template-rows: auto auto 1fr;
+}
+
+/* Toolbar matches Players page style */
+.gw-dashboard .toolbar-compact {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--gap-sm) var(--gap-md);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.gw-dashboard .toolbar-compact input,
+.gw-dashboard .toolbar-compact select {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.gw-dashboard .toolbar-compact input:focus,
+.gw-dashboard .toolbar-compact select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Top row: GW Summary left, Team of Week right */
+.gw-top-row {
+  display: grid;
+  gap: var(--gap-md);
+  min-height: 200px;
+  max-height: 280px;
+  overflow: hidden;
+}
+
+@media (min-width: 1100px) {
+  .gw-top-row {
+    grid-template-columns: 1fr 2fr;
+  }
+}
+
+.gw-top-row > div {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--gap-md);
+  overflow: auto;
+}
+
+.gw-top-row h3 {
+  font-size: 0.9rem;
+  margin: 0 0 var(--gap-sm);
+  padding-bottom: var(--gap-xs);
+  border-bottom: 1px solid var(--border);
+}
+
+.gw-top-row h4 {
+  font-size: 0.8rem;
+  margin: var(--gap-sm) 0 var(--gap-xs);
+  color: var(--muted);
+}
+
+.gw-top-row ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Player table full width, scrollable */
+.gw-table-container {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gw-table-container h3 {
+  padding: var(--gap-sm) var(--gap-md);
+  margin: 0;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.gw-table-container .table {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   LEAGUE PAGES - Reduce padding, widen standings, restructure detail
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.league-page {
+  height: calc(100% - var(--gap-md));
+  padding: var(--gap-sm) var(--gap-md);
+  overflow: hidden;
+}
+
+/* Selector cards - reduce padding, fix clipping */
+.league-card {
+  padding: var(--gap-sm) var(--gap-md);
+  max-height: none;
+  min-height: 160px;
+}
+
+.league-card-stats {
+  gap: var(--gap-xs);
+  margin-bottom: var(--gap-xs);
+}
+
+.league-stat-val {
+  font-size: 0.95rem;
+}
+
+.league-stat-lbl {
+  font-size: 8px;
+}
+
+.league-card-leader {
+  padding-top: var(--gap-xs);
+  font-size: 9px;
+}
+
+/* Detail view - restructured layout */
+.league-detail-grid {
+  display: grid;
+  gap: var(--gap-md);
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Left: Standings + Top XI stacked vertically */
+/* Right: Charts side by side or stacked */
+@media (min-width: 1200px) {
+  .league-detail-grid {
+    grid-template-columns: minmax(300px, 400px) 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .league-detail-left {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Standings fills most of left column */
+  .league-detail-left .league-detail-card:first-child {
+    flex: 2;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Top XI below standings */
+  .league-detail-left .league-detail-card:last-child,
+  .league-detail-right {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* Charts column */
+  .league-detail-center {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .league-detail-center .league-chart-card {
+    flex: 1;
+    min-height: 150px;
+    max-height: 280px;
+  }
+}
+
+/* Widen standings table */
+.league-standings {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.league-standings .table {
+  width: 100%;
+}
+
+.league-standings .table th,
+.league-standings .table td {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+/* Top XI more compact */
+.league-xi-row {
+  padding: 4px 6px;
+  font-size: 11px;
+  grid-template-columns: 28px 1fr 40px 70px;
+  gap: 4px;
+}
+
+/* Reduce chart height */
+.league-chart-wrap {
+  min-height: 120px;
+  max-height: 200px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   STAT PICKER PAGE - Dashboard grid, tighter padding
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.sp-dashboard {
+  height: calc(100% - var(--gap-md));
+  padding: var(--gap-sm) var(--gap-md);
+  overflow: hidden;
+}
+
+.sp-header {
+  padding: var(--gap-xs) 0;
+  margin-bottom: var(--gap-sm);
+}
+
+.sp-header h1 {
+  font-size: 1.1rem;
+}
+
+.sp-tagline {
+  font-size: 11px;
+}
+
+/* 3-column dashboard grid */
+.sp-grid {
+  display: grid;
+  gap: var(--gap-sm);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (min-width: 1100px) {
+  .sp-grid {
+    grid-template-columns: 240px 1fr 280px;
+  }
+}
+
+@media (min-width: 1400px) {
+  .sp-grid {
+    grid-template-columns: 260px 1fr 300px;
+  }
+}
+
+@media (min-width: 1800px) {
+  .sp-grid {
+    grid-template-columns: 280px 1fr 340px;
+  }
+}
+
+.sp-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Cards - tighter padding */
+.sp-card {
+  padding: var(--gap-xs) var(--gap-sm);
+  flex-shrink: 0;
+}
+
+.sp-card-header {
+  font-size: 8px;
+  margin-bottom: var(--gap-xs);
+}
+
+/* Current state compact stats */
+.sp-state-compact {
+  gap: 4px;
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-stat {
+  padding: 4px 3px;
+}
+
+.sp-stat-val {
+  font-size: 12px;
+}
+
+.sp-stat-lbl {
+  font-size: 8px;
+}
+
+.sp-state-row {
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+/* Flags panel compact */
+.sp-flag-row {
+  padding: 3px 0;
+  font-size: 10px;
+}
+
+/* Squad panel - XI list */
+.sp-card-squad {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-xi-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sp-xi-row {
+  padding: 4px 4px;
+  font-size: 11px;
+  grid-template-columns: 16px 1fr 32px 32px 70px;
+  gap: 3px;
+}
+
+.sp-xi-why {
+  font-size: 8px;
+}
+
+.sp-bench-row {
+  padding: 3px 4px;
+  font-size: 10px;
+  grid-template-columns: 14px 16px 1fr 32px;
+  gap: 3px;
+}
+
+/* Captain panel */
+.sp-cap-row {
+  padding: 4px 4px;
+  font-size: 11px;
+  grid-template-columns: 20px 1fr 36px 36px;
+  gap: 4px;
+}
+
+/* Transfer panel - tighter spacing */
+.sp-action {
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.sp-action-detail {
+  font-size: 10px;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.sp-transfer-row {
+  padding: 4px 0;
+  font-size: 10px;
+}
+
+.sp-tr-why {
+  padding: 3px 0 4px;
+  margin-left: 4px;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+/* Fixtures panel */
+.sp-fx-row {
+  font-size: 10px;
+}
+
+.sp-fx-team {
+  font-size: 9px;
+}
+
+.sp-fdr {
+  padding: 1px 3px;
+  font-size: 8px;
+}
+
+/* Assumptions panel */
+.sp-assumptions {
+  font-size: 9px;
+  padding-left: 14px;
+  line-height: 1.4;
+}
+
+.sp-assumptions li {
+  margin-bottom: 1px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE SCALING - 1080p, 1440p, 4K
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* 1080p - tight spacing */
+@media (max-width: 1920px) {
+  :root {
+    --gap-xs: 4px;
+    --gap-sm: 6px;
+    --gap-md: 10px;
+    --gap-lg: 14px;
+    --card-padding: 10px;
+  }
+}
+
+/* 1440p - balanced */
+@media (min-width: 1921px) and (max-width: 2559px) {
+  :root {
+    --gap-xs: 5px;
+    --gap-sm: 8px;
+    --gap-md: 12px;
+    --gap-lg: 16px;
+    --card-padding: 12px;
+  }
+}
+
+/* 4K - slightly more room but still dense */
+@media (min-width: 2560px) {
+  :root {
+    --gap-xs: 6px;
+    --gap-sm: 10px;
+    --gap-md: 14px;
+    --gap-lg: 18px;
+    --card-padding: 14px;
+  }
+
+  .portal-page {
+    grid-template-columns: 320px 1fr 320px;
+  }
+
+  .sp-grid {
+    grid-template-columns: 300px 1fr 360px;
+  }
+}
+
+/* No page scrolling - everything fits in viewport */
+.app > * {
+  max-height: 100%;
+}
+
+/* Scrollbars only on internal containers */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
