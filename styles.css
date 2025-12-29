@@ -8073,3 +8073,469 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   UX REVIEW REFINEMENTS - Dec 2025
+   Visual hierarchy, component sizing, and data honesty fixes
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ─── TOPBAR: Deadline as lightweight state info ──────────────────────────── */
+/* Deadline box should match nav button weight, not be a hero card */
+.deadline-box {
+  flex-direction: row;
+  align-items: center;
+  padding: 4px 10px;
+  min-width: auto;
+  gap: 8px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+}
+
+.deadline-label {
+  display: none; /* Hide "Next Deadline" label - timer is self-explanatory */
+}
+
+.deadline-timer {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.deadline-gw {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+/* Compact urgency states */
+.deadline-box.deadline-urgent,
+.deadline-box.deadline-critical {
+  padding: 4px 10px;
+}
+
+/* Match nav button styling */
+.topbar .deadline-box {
+  height: 32px;
+  max-height: 32px;
+}
+
+/* ─── MY TEAM: Broadcast-style player cards ───────────────────────────────── */
+/* Player cards need visual weight like broadcast graphics */
+.player-card-pitch {
+  padding: 6px 8px;
+  min-width: 72px;
+  max-width: 90px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.player-card-pitch:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.player-card-pitch .player-photo-wrapper {
+  height: 52px;
+  margin-bottom: 4px;
+}
+
+.player-card-pitch .player-photo {
+  height: 52px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.player-card-pitch .player-team-badge {
+  width: 18px;
+  height: 18px;
+  bottom: -4px;
+  right: -4px;
+}
+
+.player-card-pitch .player-name {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 3px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.player-card-pitch .player-pts {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+}
+
+.player-card-pitch .player-pts.pts-high {
+  background: rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+}
+
+.player-card-pitch .player-xp {
+  font-size: 9px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.player-card-pitch .player-mins-badge {
+  font-size: 8px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  margin-top: 3px;
+}
+
+/* Captain/VC badges more prominent */
+.player-card-pitch .player-captain-badge,
+.player-card-pitch .player-vc-badge {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  top: -6px;
+  left: -6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* Haul celebration more visible */
+.player-card-pitch.player-haul {
+  border-color: rgba(250, 204, 21, 0.5);
+  box-shadow: 0 0 16px rgba(250, 204, 21, 0.3), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.player-card-pitch .haul-badge {
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+/* Pitch grass with more breathing room */
+.pitch-grass {
+  min-height: 260px;
+  padding: var(--gap-sm);
+  gap: var(--gap-sm);
+}
+
+.pitch-row {
+  gap: 8px;
+  justify-content: center;
+}
+
+/* Bench cards slightly smaller but still visible */
+.bench-card {
+  min-width: 60px;
+  max-width: 70px;
+  opacity: 0.9;
+}
+
+/* ─── PLAYERS: Chart aspect ratio preservation ────────────────────────────── */
+/* Chart must scale proportionally, not stretch */
+.players-dashboard .players-chart {
+  display: flex;
+  flex-direction: column;
+}
+
+.players-dashboard .players-chart .tile-body,
+.players-dashboard .players-chart #ap-chart-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Force chart to maintain aspect ratio */
+.players-dashboard .players-chart canvas {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto !important;
+  height: auto !important;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+}
+
+/* Chart container respects natural sizing */
+.players-dashboard .players-chart .chart-container,
+.players-dashboard .players-chart [class*="chart"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* ─── FIXTURES: Slim control strip ────────────────────────────────────────── */
+/* Toolbar should be deferential, not dominant */
+.fixtures-dashboard .toolbar,
+.fixtures-dashboard .toolbar-compact,
+.fixtures-dashboard .card > .toolbar {
+  padding: 6px 10px;
+  gap: 8px;
+  background: var(--surface-1);
+  border-radius: 8px;
+  margin-bottom: var(--gap-sm);
+}
+
+.fixtures-dashboard .toolbar select,
+.fixtures-dashboard .toolbar input,
+.fixtures-dashboard .toolbar button {
+  padding: 5px 10px;
+  font-size: 11px;
+  height: 28px;
+}
+
+.fixtures-dashboard .toolbar label {
+  font-size: 10px;
+}
+
+.fixtures-dashboard .toolbar .chip,
+.fixtures-dashboard .toolbar .badge {
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+/* Matrix remains focal point */
+.fixtures-content {
+  flex: 1;
+}
+
+/* ─── EXPLORER: Storytelling panels expanded ──────────────────────────────── */
+/* GW Summary and Team of Week as narrative elements */
+.gw-top-row {
+  min-height: 220px;
+  max-height: 320px;
+}
+
+@media (min-width: 1100px) {
+  .gw-top-row {
+    grid-template-columns: minmax(320px, 1fr) minmax(480px, 2fr);
+  }
+}
+
+@media (min-width: 1400px) {
+  .gw-top-row {
+    grid-template-columns: minmax(360px, 1fr) minmax(560px, 2fr);
+    min-height: 260px;
+    max-height: 360px;
+  }
+}
+
+/* GW Summary card styling - narrative feel */
+.gw-top-row > div:first-child {
+  padding: var(--gap-md);
+}
+
+.gw-top-row > div:first-child h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: var(--gap-sm);
+  padding-bottom: var(--gap-xs);
+  border-bottom: 2px solid var(--accent);
+}
+
+.gw-top-row > div:first-child h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: var(--gap-sm) 0 var(--gap-xs);
+}
+
+.gw-top-row > div:first-child ul {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.gw-top-row > div:first-child .chip {
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+/* Team of Week card - featured table */
+.gw-top-row > div:last-child {
+  padding: var(--gap-md);
+}
+
+.gw-top-row > div:last-child h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: var(--gap-sm);
+}
+
+.gw-top-row > div:last-child .chips {
+  margin-bottom: var(--gap-sm);
+}
+
+.gw-top-row > div:last-child .table td,
+.gw-top-row > div:last-child .table th {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+/* Player table below - dense but readable */
+.gw-table-container {
+  flex: 1;
+  min-height: 200px;
+}
+
+.gw-table-container h3 {
+  padding: var(--gap-sm) var(--gap-md);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* ─── STAT PICKER: Transfer advisor error states ──────────────────────────── */
+/* When recommendations can't be produced, explain why */
+.sp-card-transfers .sp-empty-state,
+.sp-card-transfers .sp-error-state {
+  padding: var(--gap-md);
+  text-align: center;
+  color: var(--muted);
+}
+
+.sp-transfer-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-sm);
+  padding: var(--gap-md);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  margin: var(--gap-sm) 0;
+}
+
+.sp-transfer-error-icon {
+  font-size: 1.5rem;
+}
+
+.sp-transfer-error-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sp-transfer-error-reason {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.sp-transfer-error-reasons {
+  list-style: none;
+  padding: 0;
+  margin: var(--gap-xs) 0 0;
+  font-size: 9px;
+  text-align: left;
+}
+
+.sp-transfer-error-reasons li {
+  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sp-transfer-error-reasons li::before {
+  content: "•";
+  color: var(--red);
+}
+
+/* Budget conflict styling */
+.sp-transfer-constraint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 4px;
+  font-size: 9px;
+  color: var(--yellow);
+}
+
+/* Hit penalty warning */
+.sp-hit-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--gap-xs) var(--gap-sm);
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 3px solid var(--red);
+  font-size: 10px;
+  margin: var(--gap-xs) 0;
+}
+
+.sp-hit-warning-value {
+  font-weight: 700;
+  color: var(--red);
+}
+
+/* No valid transfers state */
+.sp-no-transfers {
+  text-align: center;
+  padding: var(--gap-md);
+  color: var(--muted);
+}
+
+.sp-no-transfers-icon {
+  font-size: 2rem;
+  margin-bottom: var(--gap-sm);
+  opacity: 0.5;
+}
+
+.sp-no-transfers-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-no-transfers-reason {
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+/* ─── RESPONSIVE ADJUSTMENTS ──────────────────────────────────────────────── */
+@media (max-height: 900px) {
+  .player-card-pitch {
+    min-width: 65px;
+    max-width: 80px;
+  }
+
+  .player-card-pitch .player-photo-wrapper,
+  .player-card-pitch .player-photo {
+    height: 46px;
+  }
+
+  .pitch-grass {
+    min-height: 230px;
+  }
+
+  .gw-top-row {
+    min-height: 180px;
+    max-height: 260px;
+  }
+}
+
+@media (min-height: 1201px) {
+  .player-card-pitch {
+    min-width: 80px;
+    max-width: 100px;
+  }
+
+  .player-card-pitch .player-photo-wrapper,
+  .player-card-pitch .player-photo {
+    height: 60px;
+  }
+
+  .pitch-grass {
+    min-height: 300px;
+  }
+
+  .gw-top-row {
+    min-height: 300px;
+    max-height: 400px;
+  }
+}
+

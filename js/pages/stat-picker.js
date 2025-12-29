@@ -971,6 +971,8 @@ function renderTransferPanel(t) {
   const actionClass = t.action === "Hold" ? "" : t.hitCost > 0 ? "sp-action-hit" : "sp-action-go";
 
   let transferRows = "";
+  let noTransferExplanation = "";
+
   if (t.transfers.length > 0) {
     transferRows = t.transfers.map(tr => `
       <div class="sp-transfer-row">
@@ -986,16 +988,70 @@ function renderTransferPanel(t) {
         </div>
       </div>
     `).join("");
+  } else if (t.action === "Hold") {
+    // Explain why no transfers are recommended
+    const reasons = [];
+
+    // Check if all players are performing well
+    if (t.allRecommendations && t.allRecommendations.length === 0) {
+      reasons.push("All squad players have adequate expected returns");
+    }
+
+    // Check if recommendations exist but don't clear thresholds
+    if (t.allRecommendations && t.allRecommendations.length > 0) {
+      const bestGain = t.allRecommendations[0]?.xpGain || 0;
+      if (bestGain < 2) {
+        reasons.push(`Best available gain (+${bestGain.toFixed(1)} xP) doesn't clear the +2.0 threshold`);
+      }
+      if (t.hitCost > 0 && bestGain < 6) {
+        reasons.push(`Hit penalty (-${t.hitCost}) outweighs potential gains`);
+      }
+    }
+
+    // Free transfers context
+    if (t.freeTransfers === 0) {
+      reasons.push("No free transfers available — any move costs -4 points");
+    } else if (t.freeTransfers > 1) {
+      reasons.push(`${t.freeTransfers} FTs rolling — consider saving for a future double move`);
+    }
+
+    // Default reason if none identified
+    if (reasons.length === 0) {
+      reasons.push("Current squad is optimal for the projected period");
+    }
+
+    noTransferExplanation = `
+      <div class="sp-no-transfers">
+        <div class="sp-no-transfers-icon">✓</div>
+        <div class="sp-no-transfers-title">No transfers recommended</div>
+        <div class="sp-no-transfers-reason">
+          ${reasons.map(r => `<div>• ${r}</div>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  // Hit warning for risky moves
+  let hitWarning = "";
+  if (t.hitCost > 0) {
+    hitWarning = `
+      <div class="sp-hit-warning">
+        <span>⚠️ Taking a</span>
+        <span class="sp-hit-warning-value">-${t.hitCost}</span>
+        <span>hit | Net expected: +${t.netGain.toFixed(1)} xP</span>
+      </div>
+    `;
   }
 
   return `
-    <div class="sp-card">
+    <div class="sp-card sp-card-transfers">
       <div class="sp-card-header">Transfer Advisor</div>
       <div class="sp-action ${actionClass}">${t.action}</div>
       <div class="sp-action-detail">${t.actionDetail}</div>
-      ${t.hitCost > 0 ? `<div class="sp-hit-cost">Hit: -${t.hitCost} pts | Net: +${t.netGain.toFixed(1)} xP</div>` : ''}
+      ${hitWarning}
       ${t.netGain > 0 && t.hitCost === 0 ? `<div class="sp-net-gain">Net gain: +${t.netGain.toFixed(1)} xP</div>` : ''}
       ${transferRows}
+      ${noTransferExplanation}
       <div class="sp-baseline">Do Nothing baseline: ${t.doNothingXp?.toFixed(1) || '?'} xP</div>
     </div>
   `;
