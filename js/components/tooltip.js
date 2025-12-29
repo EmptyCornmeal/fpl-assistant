@@ -8,6 +8,37 @@ function regex(){
   return new RegExp(`\\b(?:${terms.map(esc).join("|")})\\b`, "g");
 }
 
+/**
+ * Auto-position tooltip based on available viewport space
+ * Adds appropriate CSS classes for flipping/alignment
+ */
+function positionTooltip(el){
+  const rect = el.getBoundingClientRect();
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+
+  // Remove existing position classes
+  el.classList.remove("tooltip-bottom", "tooltip-left", "tooltip-right", "tooltip-flip-down");
+
+  // Check vertical space - if near top, flip to bottom
+  const topSpace = rect.top;
+  const bottomSpace = vh - rect.bottom;
+
+  if (topSpace < 120 && bottomSpace > topSpace) {
+    el.classList.add("tooltip-bottom");
+  }
+
+  // Check horizontal space for alignment
+  const leftSpace = rect.left;
+  const rightSpace = vw - rect.right;
+
+  if (leftSpace < 100) {
+    el.classList.add("tooltip-left");
+  } else if (rightSpace < 100) {
+    el.classList.add("tooltip-right");
+  }
+}
+
 function process(container){
   const re = regex();
   if (!re) return;
@@ -41,6 +72,10 @@ function process(container){
       span.dataset.tooltip = GLOSSARY[m] || m;
       // IMPORTANT: no span.title => avoids native browser tooltip duplication
       span.textContent = m;
+
+      // Add mouseenter handler for auto-positioning
+      span.addEventListener("mouseenter", () => positionTooltip(span));
+
       frag.append(span);
       last = idx + m.length;
       return m;

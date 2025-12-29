@@ -5593,3 +5593,711 @@
   :root[data-theme="light"] .league-card{ background:#fff; }
   :root[data-theme="light"] .league-detail-card{ background:#fff; }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   UI LAYOUT & SPACING FIXES - 4K-first, responsive design
+   Target resolutions: 3840×2160 (4K), 2560×1440 (1440p), 1920×1080 (1080p)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ─── GLOBAL FIXES ───────────────────────────────────────────────────────────── */
+
+/* 1. Fix topbar/header so deadline never overlaps page content */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  min-height: var(--topbar-height);
+  height: auto; /* Allow height to expand on wrap */
+}
+
+/* Ensure the app container accounts for wrapped topbar */
+.app {
+  margin-top: 0;
+  padding-top: var(--gap-md);
+}
+
+/* When topbar wraps (nav moves to new line), add extra space */
+@media (max-width: 1100px) {
+  :root {
+    --topbar-height-wrapped: 100px;
+  }
+  .app {
+    height: calc(100vh - var(--topbar-height-wrapped));
+    max-height: calc(100vh - var(--topbar-height-wrapped));
+  }
+}
+
+/* 2. Consistent internal padding for cards and tiles to prevent clipping */
+.card,
+.tile,
+.portal-tile,
+.sp-card,
+.league-card,
+.league-detail-card,
+.help-tile {
+  padding: var(--gap-md);
+}
+
+.card h3,
+.tile-header,
+.portal-tile .tile-header,
+.sp-card-header {
+  padding-bottom: var(--gap-xs);
+  margin-bottom: var(--gap-sm);
+}
+
+/* Ensure tile-title and card headers have breathing room from borders */
+.tile-title,
+.portal-tile .tile-title,
+.card h3 {
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+/* 3. Tooltip auto-flip improvements - render above cards with higher z-index */
+.abbr-tip {
+  position: relative;
+  z-index: 1;
+}
+
+.abbr-tip::after {
+  z-index: 10000;
+  pointer-events: none;
+}
+
+/* Tooltip positioning variants for auto-flip */
+.abbr-tip.tooltip-flip-down::after {
+  top: auto;
+  bottom: calc(-100% - 16px);
+  transform: translate(-50%, 0) scale(0.98);
+}
+.abbr-tip.tooltip-flip-down:hover::after {
+  transform: translate(-50%, 0) scale(1);
+}
+
+/* Tooltip container for cards - ensure tooltips aren't clipped */
+.tile,
+.card,
+.portal-tile,
+.sp-card,
+.table-scroll-wrapper,
+.table-scroll-container {
+  overflow: visible;
+}
+
+/* But inner bodies can scroll */
+.tile-body,
+.card-scroll,
+.table-scroll-wrapper .table,
+.table-scroll-container .table {
+  overflow: auto;
+}
+
+/* ─── 4K BREAKPOINTS & MULTI-COLUMN LAYOUTS ──────────────────────────────────── */
+
+/* 4K displays (3840px and up) - maximize screen real estate */
+@media (min-width: 2560px) {
+  :root {
+    --gap-xs: 6px;
+    --gap-sm: 8px;
+    --gap-md: 12px;
+    --gap-lg: 16px;
+    --gap-xl: 20px;
+    --card-padding: clamp(12px, 10px + 0.3vw, 18px);
+    --font-scale: clamp(0.85rem, 0.8rem + 0.15vw, 0.95rem);
+  }
+
+  .sidebar {
+    width: 320px;
+  }
+  :root {
+    --sidebar-width: 320px;
+  }
+
+  .app {
+    padding: var(--gap-lg) var(--gap-xl);
+  }
+}
+
+@media (min-width: 3200px) {
+  :root {
+    --gap-md: 14px;
+    --gap-lg: 18px;
+    --gap-xl: 24px;
+  }
+
+  .sidebar {
+    width: 360px;
+  }
+  :root {
+    --sidebar-width: 360px;
+  }
+}
+
+/* ─── PORTAL PAGE FIXES ──────────────────────────────────────────────────────── */
+
+/* Multi-column grid that uses space better on large screens */
+.portal-page {
+  height: 100%;
+  display: grid;
+  gap: var(--gap-md);
+  overflow: hidden;
+}
+
+/* 4K: 4-column layout */
+@media (min-width: 2560px) {
+  .portal-page {
+    grid-template-columns: 300px 1fr 1fr 300px;
+  }
+  .portal-column:first-child {
+    grid-column: 1;
+  }
+  .portal-column-center {
+    grid-column: 2 / 4;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--gap-md);
+    align-content: start;
+  }
+  .portal-column:last-child {
+    grid-column: 4;
+  }
+}
+
+/* 1440p: Balanced 3-column */
+@media (min-width: 1440px) and (max-width: 2559px) {
+  .portal-page {
+    grid-template-columns: 280px 1fr 280px;
+  }
+}
+
+/* 1080p and below: Stack layout */
+@media (max-width: 1439px) {
+  .portal-page {
+    grid-template-columns: 240px 1fr 240px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .portal-page {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .portal-column-center {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .portal-page {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Make Fixture Outlook and Captain Picks cards taller */
+.portal-tile.tile-fixtures,
+.portal-tile.tile-captain {
+  min-height: 280px;
+  flex: 1;
+}
+
+.portal-tile .tile-body {
+  max-height: none;
+  flex: 1;
+}
+
+/* Balance injuries, swings, transfers tiles with better height */
+.portal-column .portal-tile {
+  flex: 1;
+  min-height: 160px;
+}
+
+/* ─── MY TEAM PAGE FIXES ─────────────────────────────────────────────────────── */
+
+.my-team-page {
+  display: grid;
+  height: 100%;
+  gap: var(--gap-md);
+  overflow: hidden;
+}
+
+/* 4K and 1440p: Starting XI dominant (60%) with Insights (40%) */
+@media (min-width: 1440px) {
+  .my-team-page {
+    grid-template-columns: 1fr 400px;
+    grid-template-rows: auto 1fr;
+  }
+
+  .my-team-page .team-header-card {
+    grid-column: 1 / -1;
+  }
+
+  .my-team-page .pitch-card {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .my-team-page .insights-card {
+    grid-column: 2;
+    grid-row: 2;
+    overflow: auto;
+  }
+}
+
+/* 4K: Give insights more room */
+@media (min-width: 2560px) {
+  .my-team-page {
+    grid-template-columns: 1fr 480px;
+  }
+}
+
+@media (min-width: 3200px) {
+  .my-team-page {
+    grid-template-columns: 1fr 560px;
+  }
+}
+
+/* 1080p: Stack vertically */
+@media (max-width: 1439px) {
+  .my-team-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    overflow: auto;
+  }
+}
+
+/* Make pitch visualization fill its container better */
+.pitch-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.pitch-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.pitch-grass {
+  flex: 1;
+  min-height: 350px;
+}
+
+/* Insights card improvements */
+.insights-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.insights-list {
+  flex: 1;
+  overflow: auto;
+}
+
+/* ─── PLAYERS PAGE FIXES ─────────────────────────────────────────────────────── */
+
+/* Fix padding and clipping on table headers */
+.players-dashboard .table th,
+.players-dashboard .table td {
+  padding: 8px 12px;
+}
+
+/* Ensure table headers don't clip */
+.table th {
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.table-compact th {
+  padding: 6px 10px;
+}
+
+/* 4K: Better use of horizontal space */
+@media (min-width: 2560px) {
+  .players-dashboard {
+    grid-template-columns: minmax(400px, 1fr) minmax(600px, 2fr);
+  }
+}
+
+/* ─── FIXTURES PAGE FIXES ────────────────────────────────────────────────────── */
+
+.fixtures-dashboard {
+  gap: var(--gap-md);
+}
+
+/* Reduce dead space */
+.fixtures-dashboard .card {
+  margin: 0;
+}
+
+/* Better fixture grid on large screens */
+@media (min-width: 2560px) {
+  .fixtures-content {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+/* ─── EXPLORER PAGE REDESIGN ─────────────────────────────────────────────────── */
+
+.gw-dashboard {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: var(--gap-md);
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Styled toolbar that matches the app design */
+.gw-dashboard .toolbar-compact {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--gap-md) var(--gap-lg);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+/* Summary and TOTW as proper cards */
+.gw-top-row {
+  display: grid;
+  gap: var(--gap-md);
+}
+
+@media (min-width: 1440px) {
+  .gw-top-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 2560px) {
+  .gw-top-row {
+    grid-template-columns: 1fr 2fr;
+  }
+}
+
+.gw-top-row > div {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--gap-lg);
+}
+
+.gw-top-row h3 {
+  margin-bottom: var(--gap-md);
+  padding-bottom: var(--gap-sm);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+
+.gw-top-row h4 {
+  margin-top: var(--gap-md);
+  margin-bottom: var(--gap-sm);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.gw-top-row ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.gw-top-row .chips {
+  margin-bottom: var(--gap-md);
+}
+
+/* GW Player table as full-width card */
+.gw-table-container {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.gw-table-container h3 {
+  padding: var(--gap-md) var(--gap-lg);
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.gw-table-container .table {
+  flex: 1;
+  overflow: auto;
+}
+
+/* ─── LEAGUE PAGE FIXES ──────────────────────────────────────────────────────── */
+
+/* Wider standings column */
+.league-detail-grid {
+  display: grid;
+  gap: var(--gap-md);
+}
+
+@media (min-width: 1440px) {
+  .league-detail-grid {
+    grid-template-columns: 340px 1fr 280px;
+  }
+}
+
+@media (min-width: 2560px) {
+  .league-detail-grid {
+    grid-template-columns: 400px 1fr 360px;
+  }
+}
+
+@media (min-width: 3200px) {
+  .league-detail-grid {
+    grid-template-columns: 480px 1fr 420px;
+  }
+}
+
+/* Readable player names in Top XI */
+.league-xi-row {
+  grid-template-columns: 32px 1fr 48px 80px;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.league-xi-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Show more context in league cards without truncation */
+.league-card {
+  min-height: 200px;
+  max-height: none;
+}
+
+.league-card-header h3 {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  line-height: 1.3;
+}
+
+/* Clear back button styling */
+.league-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.league-back-btn:hover {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+  color: var(--accent-light);
+}
+
+.league-back-btn::before {
+  content: "←";
+  font-size: 14px;
+}
+
+/* Responsive: Stack Top XI under standings on smaller screens */
+@media (max-width: 1439px) {
+  .league-detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .league-detail-right {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .league-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── STAT PICKER FIXES ──────────────────────────────────────────────────────── */
+
+/* Three-zone layout with better proportions */
+.sp-grid {
+  display: grid;
+  gap: var(--gap-md);
+}
+
+@media (min-width: 1440px) {
+  .sp-grid {
+    grid-template-columns: 280px 1fr 300px;
+  }
+}
+
+@media (min-width: 2560px) {
+  .sp-grid {
+    grid-template-columns: 340px 1fr 380px;
+  }
+}
+
+@media (min-width: 3200px) {
+  .sp-grid {
+    grid-template-columns: 400px 1fr 450px;
+  }
+}
+
+/* Give transfer explanations more breathing room */
+.sp-tr-why {
+  padding: 8px 0 10px;
+  margin-left: 6px;
+  line-height: 1.5;
+  font-size: 11px;
+}
+
+.sp-transfer-row {
+  padding: 8px 0;
+  margin-bottom: 4px;
+}
+
+/* Reduce cramping in cards */
+.sp-card {
+  padding: var(--gap-md) var(--gap-lg);
+}
+
+.sp-card-header {
+  margin-bottom: var(--gap-md);
+}
+
+/* Current state panel - better stat grid */
+.sp-state-compact {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sp-stat {
+  padding: 8px 6px;
+}
+
+/* ─── HELP PAGE FIXES ────────────────────────────────────────────────────────── */
+
+.help-dashboard {
+  display: grid;
+  gap: var(--gap-md);
+  height: 100%;
+  overflow: auto;
+}
+
+/* Multi-column on large screens */
+@media (min-width: 1440px) {
+  .help-dashboard {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, auto);
+    align-content: start;
+  }
+}
+
+@media (min-width: 2560px) {
+  .help-dashboard {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 3200px) {
+  .help-dashboard {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Ensure tooltips in help never clip */
+.help-tile {
+  overflow: visible;
+}
+
+.help-tile .help-body {
+  overflow: visible;
+}
+
+.help-tile .help-scroll {
+  overflow: auto;
+  max-height: 300px;
+}
+
+@media (min-width: 2560px) {
+  .help-tile .help-scroll {
+    max-height: 400px;
+  }
+}
+
+/* ─── ADDITIONAL POLISH ──────────────────────────────────────────────────────── */
+
+/* Prevent narrow centered columns on large screens */
+.page-wrapper,
+.dashboard {
+  max-width: none;
+  width: 100%;
+}
+
+/* Ensure tables are readable at all sizes */
+.table {
+  width: 100%;
+  table-layout: auto;
+}
+
+/* Better grid column utilities for 4K */
+@media (min-width: 2560px) {
+  .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
+  .grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
+}
+
+/* Responsive grid utilities */
+@media (min-width: 1440px) {
+  .grid-4k-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4k-4 { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (min-width: 2560px) {
+  .grid-4k-3 { grid-template-columns: repeat(4, 1fr); }
+  .grid-4k-4 { grid-template-columns: repeat(6, 1fr); }
+}
+
+/* Ensure scrollable containers work properly */
+.tile-body,
+.card-scroll,
+.league-standings,
+.sp-xi-list,
+.insights-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.tile-body::-webkit-scrollbar,
+.card-scroll::-webkit-scrollbar,
+.league-standings::-webkit-scrollbar,
+.sp-xi-list::-webkit-scrollbar,
+.insights-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tile-body::-webkit-scrollbar-thumb,
+.card-scroll::-webkit-scrollbar-thumb,
+.league-standings::-webkit-scrollbar-thumb,
+.sp-xi-list::-webkit-scrollbar-thumb,
+.insights-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
