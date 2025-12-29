@@ -7182,3 +7182,894 @@
   background: var(--border-strong);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   UI/UX REFINEMENT PASS #2 - Dec 2025
+   Density optimization, clipping fixes, and viewport-fit for all pages
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ─── PORTAL PAGE REFINEMENTS ──────────────────────────────────────────────── */
+/* Tighter spacing between cards */
+.portal-page {
+  gap: var(--gap-sm);
+}
+
+.portal-column {
+  gap: var(--gap-xs);
+}
+
+.portal-column-center {
+  gap: var(--gap-xs);
+}
+
+/* Reduce secondary label font sizes */
+.portal-tile .tile-badge,
+.portal-tile .tile-desc,
+.portal-tile .tile-hint,
+.portal-tile .chip {
+  font-size: 10px;
+}
+
+.portal-tile .tile-title {
+  font-size: 0.85rem;
+}
+
+.portal-tile .tile-footer {
+  padding: var(--gap-xs) 0 0;
+  font-size: 9px;
+}
+
+/* Deadline tile compact */
+.tile-deadline .countdown-num {
+  font-size: 1.1rem;
+}
+
+.tile-deadline .countdown-label {
+  font-size: 9px;
+}
+
+/* Captain picks rows tighter */
+.captain-option-row {
+  padding: 4px 0;
+  gap: 6px;
+}
+
+.captain-photo {
+  width: 28px;
+  height: 35px;
+}
+
+.captain-name {
+  font-size: 11px;
+}
+
+.captain-chip {
+  font-size: 8px;
+  padding: 2px 4px;
+}
+
+/* Fixture outlook compact */
+.fixtures-overview {
+  gap: var(--gap-xs);
+}
+
+.fixture-team-row {
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+.fixtures-label {
+  font-size: 9px;
+  margin-bottom: var(--gap-xs);
+}
+
+/* Transfer targets compact */
+.transfers-preview {
+  gap: var(--gap-xs);
+}
+
+.transfers-label {
+  font-size: 9px;
+}
+
+.transfer-row {
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+/* Injuries list compact */
+.injuries-list {
+  gap: 2px;
+}
+
+.injury-row {
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+.injury-icon {
+  font-size: 12px;
+}
+
+/* Team status compact */
+.team-status-grid {
+  gap: var(--gap-xs);
+}
+
+.status-item .status-value {
+  font-size: 1rem;
+}
+
+.status-item .status-label {
+  font-size: 8px;
+}
+
+/* ─── MY TEAM PAGE REFINEMENTS ─────────────────────────────────────────────── */
+/* Smaller pitch player cards */
+.player-card-pitch {
+  padding: 4px;
+  min-width: 60px;
+  max-width: 75px;
+}
+
+.player-card-pitch .player-photo-wrapper {
+  height: 45px;
+}
+
+.player-card-pitch .player-photo {
+  height: 45px;
+}
+
+.player-card-pitch .player-name {
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.player-card-pitch .player-pts {
+  font-size: 11px;
+}
+
+.player-card-pitch .player-xp {
+  font-size: 8px;
+}
+
+.player-card-pitch .player-mins-badge {
+  font-size: 7px;
+  padding: 1px 3px;
+}
+
+/* Reduce pitch row heights */
+.pitch-row {
+  gap: 4px;
+}
+
+.pitch-grass {
+  min-height: 220px;
+  padding: var(--gap-xs) var(--gap-sm);
+  gap: var(--gap-xs);
+}
+
+/* Bench compact */
+.bench-section {
+  padding: var(--gap-xs) var(--gap-sm);
+}
+
+.bench-label {
+  font-size: 9px;
+  margin-bottom: var(--gap-xs);
+}
+
+.bench-row {
+  gap: 6px;
+}
+
+.bench-card {
+  min-width: 55px;
+  max-width: 65px;
+}
+
+/* Restructure right column: Top Performer and Team XP appear first */
+@media (min-width: 1100px) {
+  .dashboard-right {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto 1fr 1fr;
+  }
+
+  /* Quick stats (Top Performer, Team XP) come first in grid order */
+  .dashboard-right .tile.tile-compact:nth-of-type(1) {
+    order: -2;
+    grid-row: 1;
+  }
+
+  .dashboard-right .tile.tile-compact:nth-of-type(2) {
+    order: -1;
+    grid-row: 1;
+  }
+
+  /* Insights and Fixtures fill remaining space */
+  .dashboard-right .tile.tile-wide:first-of-type {
+    order: 0;
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-right .tile.tile-wide:nth-of-type(2) {
+    order: 1;
+    grid-row: 3;
+    grid-column: 1 / -1;
+  }
+}
+
+/* Insights tile more compact */
+.insights-card .insights-list {
+  max-height: 120px;
+}
+
+.insight-item {
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+/* Fixtures preview more compact */
+.fixtures-preview-grid {
+  max-height: 100px;
+}
+
+.fixtures-preview-grid .fixture-team-row {
+  padding: 2px 0;
+  font-size: 10px;
+}
+
+/* Team header compact */
+.team-header-card {
+  padding: var(--gap-sm) var(--gap-md);
+}
+
+.team-stats-grid {
+  gap: var(--gap-sm);
+}
+
+.stat-item .stat-value {
+  font-size: 1rem;
+}
+
+.stat-item .stat-label {
+  font-size: 8px;
+}
+
+/* ─── PLAYERS PAGE REFINEMENTS ─────────────────────────────────────────────── */
+/* Chart fills available space with no dead space below */
+.players-dashboard .players-chart {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.players-dashboard .players-chart .tile-body,
+.players-dashboard .players-chart #ap-chart-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.players-dashboard .players-chart canvas {
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+}
+
+/* Table rows more compact */
+.players-dashboard .table td,
+.players-dashboard .table th {
+  padding: 5px 6px;
+  font-size: 11px;
+}
+
+.players-dashboard .table .name-cell {
+  font-size: 11px;
+}
+
+/* Table container fills height */
+.players-dashboard .players-table {
+  overflow: hidden;
+}
+
+.players-dashboard .players-table .table-scroll-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ─── FIXTURES PAGE REFINEMENTS ────────────────────────────────────────────── */
+/* Control bar condensed */
+.fixtures-dashboard .toolbar,
+.fixtures-dashboard .toolbar-compact {
+  padding: var(--gap-xs) var(--gap-sm);
+  gap: var(--gap-xs);
+}
+
+.fixtures-dashboard .toolbar select,
+.fixtures-dashboard .toolbar input,
+.fixtures-dashboard .toolbar-compact select,
+.fixtures-dashboard .toolbar-compact input {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* Matrix takes full available width */
+.fixtures-content {
+  grid-template-columns: 1fr auto;
+}
+
+@media (min-width: 1400px) {
+  .fixtures-content {
+    grid-template-columns: 1fr 320px;
+  }
+}
+
+/* Matrix card expands */
+.fixtures-content > .card:first-child {
+  overflow: auto;
+  max-width: none;
+}
+
+.matrix-wrap {
+  width: 100%;
+}
+
+.matrix-wrap .table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.matrix-wrap .table td,
+.matrix-wrap .table th {
+  padding: 4px 6px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Chart aligns with matrix height */
+.fixtures-content > .card:last-child {
+  max-height: none;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.fixtures-content > .card:last-child canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ─── EXPLORER PAGE REFINEMENTS ────────────────────────────────────────────── */
+/* Clear dashboard grid */
+.gw-dashboard {
+  grid-template-rows: auto auto 1fr;
+  gap: var(--gap-sm);
+}
+
+/* Toolbar condensed */
+.gw-dashboard .toolbar-compact {
+  padding: var(--gap-xs) var(--gap-sm);
+  gap: var(--gap-xs);
+}
+
+.gw-dashboard .toolbar-compact select,
+.gw-dashboard .toolbar-compact input {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.gw-dashboard .seg-btn {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.gw-dashboard .row-check {
+  font-size: 10px;
+}
+
+/* Top row: balanced grid with GW summary left, Team of Week right */
+.gw-top-row {
+  min-height: 180px;
+  max-height: 240px;
+}
+
+@media (min-width: 1100px) {
+  .gw-top-row {
+    grid-template-columns: minmax(280px, 1fr) minmax(400px, 2fr);
+  }
+}
+
+.gw-top-row > div {
+  padding: var(--gap-sm);
+  overflow: auto;
+}
+
+.gw-top-row h3 {
+  font-size: 0.8rem;
+  margin-bottom: var(--gap-xs);
+  padding-bottom: 4px;
+}
+
+.gw-top-row h4 {
+  font-size: 0.75rem;
+  margin: var(--gap-xs) 0 2px;
+}
+
+.gw-top-row ul {
+  font-size: 10px;
+  line-height: 1.4;
+  padding-left: 14px;
+}
+
+.gw-top-row .chips {
+  gap: 4px;
+}
+
+.gw-top-row .chip {
+  font-size: 9px;
+  padding: 2px 5px;
+}
+
+/* Team of Week table compact */
+.gw-top-row .table td,
+.gw-top-row .table th {
+  padding: 3px 5px;
+  font-size: 10px;
+}
+
+/* Player table - full width, scrollable internally */
+.gw-table-container {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gw-table-container h3 {
+  padding: var(--gap-xs) var(--gap-sm);
+  font-size: 0.8rem;
+}
+
+.gw-table-container .table {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.gw-table-container .table td,
+.gw-table-container .table th {
+  padding: 4px 6px;
+  font-size: 10px;
+}
+
+/* ─── LEAGUE PAGE REFINEMENTS ──────────────────────────────────────────────── */
+/* Page container no overflow */
+.league-page {
+  overflow: hidden;
+}
+
+/* Selector view grid */
+.league-grid {
+  gap: var(--gap-sm);
+}
+
+/* League cards compact */
+.league-card {
+  padding: var(--gap-sm);
+  min-height: 140px;
+}
+
+.league-card-header h3 {
+  font-size: 0.85rem;
+}
+
+.league-card-count {
+  font-size: 9px;
+}
+
+.league-stat-val {
+  font-size: 0.9rem;
+}
+
+.league-stat-lbl {
+  font-size: 7px;
+}
+
+.league-card-leader {
+  font-size: 8px;
+  padding-top: 4px;
+}
+
+/* Detail view - fix bottom clipping */
+.league-detail-grid {
+  height: calc(100% - 50px);
+  overflow: hidden;
+}
+
+.league-detail-header {
+  padding: var(--gap-xs) 0;
+  margin-bottom: var(--gap-xs);
+}
+
+.league-detail-header h2 {
+  font-size: 1rem;
+}
+
+/* Standings + Top XI stacked left, charts right */
+@media (min-width: 1200px) {
+  .league-detail-grid {
+    grid-template-columns: minmax(280px, 380px) 1fr;
+  }
+
+  .league-detail-left {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    overflow: hidden;
+  }
+
+  /* Standings takes 60% */
+  .league-detail-left > .league-detail-card:first-child {
+    flex: 3;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Top XI takes 40% */
+  .league-detail-left > .league-detail-card:last-child {
+    flex: 2;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .league-detail-center {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    overflow: hidden;
+  }
+
+  .league-detail-center .league-chart-card {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+/* Standings table compact */
+.league-standings {
+  overflow: auto;
+}
+
+.league-standings .table td,
+.league-standings .table th {
+  padding: 4px 6px;
+  font-size: 10px;
+}
+
+/* Top XI compact */
+.league-xi-row {
+  padding: 3px 4px;
+  font-size: 10px;
+  grid-template-columns: 24px 1fr 36px 60px;
+  gap: 3px;
+}
+
+/* Chart cards don't overflow */
+.league-chart-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.league-chart-card h3 {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  padding: var(--gap-xs) var(--gap-sm);
+  margin: 0;
+}
+
+.league-chart-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+
+.league-chart-wrap canvas {
+  max-height: 100%;
+}
+
+/* ─── STAT PICKER PAGE REFINEMENTS ─────────────────────────────────────────── */
+/* Power BI-style dashboard grid */
+.sp-dashboard {
+  overflow: hidden;
+}
+
+.sp-grid {
+  height: calc(100% - 40px);
+}
+
+/* Header compact */
+.sp-header {
+  padding: 2px 0;
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-header h1 {
+  font-size: 1rem;
+}
+
+.sp-tagline {
+  font-size: 10px;
+}
+
+/* 3-column grid with proper proportions */
+@media (min-width: 1100px) {
+  .sp-grid {
+    grid-template-columns: 220px 1fr 260px;
+  }
+}
+
+@media (min-width: 1400px) {
+  .sp-grid {
+    grid-template-columns: 240px 1fr 280px;
+  }
+}
+
+@media (min-width: 1800px) {
+  .sp-grid {
+    grid-template-columns: 260px 1fr 320px;
+  }
+}
+
+/* Columns scroll internally */
+.sp-col {
+  overflow-y: auto;
+  gap: 4px;
+}
+
+/* Cards compact padding */
+.sp-card {
+  padding: var(--gap-xs);
+  flex-shrink: 0;
+}
+
+.sp-card-header {
+  font-size: 7px;
+  margin-bottom: 3px;
+  padding-bottom: 2px;
+}
+
+/* Current state stats ultra-compact */
+.sp-state-compact {
+  gap: 2px;
+}
+
+.sp-stat {
+  padding: 3px 2px;
+}
+
+.sp-stat-val {
+  font-size: 11px;
+}
+
+.sp-stat-lbl {
+  font-size: 7px;
+}
+
+.sp-state-row {
+  padding: 2px 0;
+  font-size: 10px;
+}
+
+/* Flags panel */
+.sp-flag-row {
+  padding: 2px 0;
+  font-size: 9px;
+}
+
+/* Squad panel - XI list compact */
+.sp-xi-row {
+  padding: 3px 2px;
+  font-size: 10px;
+  grid-template-columns: 14px 1fr 28px 28px 60px;
+  gap: 2px;
+}
+
+.sp-xi-why {
+  font-size: 7px;
+  line-height: 1.3;
+}
+
+.sp-bench-row {
+  padding: 2px 3px;
+  font-size: 9px;
+  grid-template-columns: 12px 14px 1fr 28px;
+  gap: 2px;
+}
+
+/* Captain picks integrated - not at bottom */
+.sp-card-captain {
+  order: 0;
+}
+
+.sp-cap-row {
+  padding: 3px 2px;
+  font-size: 10px;
+  grid-template-columns: 18px 1fr 32px 32px;
+  gap: 3px;
+}
+
+/* Transfer panel compact */
+.sp-action {
+  font-size: 11px;
+  margin-bottom: 1px;
+}
+
+.sp-action-detail {
+  font-size: 9px;
+  line-height: 1.3;
+  margin-bottom: 3px;
+}
+
+.sp-transfer-row {
+  padding: 3px 0;
+  font-size: 9px;
+}
+
+.sp-tr-why {
+  padding: 2px 0 3px;
+  font-size: 8px;
+  line-height: 1.3;
+}
+
+/* Fixtures panel compact */
+.sp-fx-row {
+  font-size: 9px;
+}
+
+.sp-fx-team {
+  font-size: 8px;
+}
+
+.sp-fdr {
+  padding: 1px 2px;
+  font-size: 7px;
+}
+
+/* Assumptions panel ultra-compact */
+.sp-assumptions {
+  font-size: 8px;
+  padding-left: 12px;
+  line-height: 1.3;
+}
+
+/* ─── GLOBAL REFINEMENTS ───────────────────────────────────────────────────── */
+/* Tighter card internal spacing */
+.card,
+.tile {
+  padding: var(--gap-sm);
+}
+
+.tile-header {
+  padding-bottom: var(--gap-xs);
+  margin-bottom: var(--gap-xs);
+}
+
+.tile-title {
+  font-size: 0.8rem;
+}
+
+.tile-body {
+  padding: 0;
+}
+
+/* Table global compact */
+.table td,
+.table th {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.table-compact td,
+.table-compact th {
+  padding: 4px 6px;
+  font-size: 10px;
+}
+
+/* Chips and badges smaller */
+.chip {
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+.badge {
+  font-size: 9px;
+  padding: 2px 5px;
+}
+
+/* Bottom padding consistent - no content cut off */
+.portal-page,
+.dashboard,
+.players-dashboard,
+.fixtures-dashboard,
+.gw-dashboard,
+.league-page,
+.sp-dashboard {
+  padding-bottom: var(--gap-sm);
+  box-sizing: border-box;
+}
+
+/* Height calculations account for header */
+.portal-page,
+.dashboard,
+.players-dashboard,
+.fixtures-dashboard,
+.gw-dashboard,
+.league-page,
+.sp-dashboard {
+  height: calc(100vh - 60px - var(--gap-md));
+  max-height: calc(100vh - 60px - var(--gap-md));
+}
+
+/* ─── RESPONSIVE DENSITY ADJUSTMENTS ───────────────────────────────────────── */
+/* 1080p - ultra tight */
+@media (max-height: 900px) {
+  :root {
+    --gap-xs: 3px;
+    --gap-sm: 5px;
+    --gap-md: 8px;
+  }
+
+  .portal-page,
+  .dashboard,
+  .players-dashboard,
+  .fixtures-dashboard,
+  .gw-dashboard,
+  .league-page,
+  .sp-dashboard {
+    height: calc(100vh - 50px - var(--gap-sm));
+    max-height: calc(100vh - 50px - var(--gap-sm));
+  }
+
+  .topbar {
+    max-height: 48px;
+  }
+
+  .player-card-pitch {
+    min-width: 55px;
+    max-width: 65px;
+  }
+
+  .pitch-grass {
+    min-height: 200px;
+  }
+}
+
+/* 1440p - balanced */
+@media (min-height: 901px) and (max-height: 1200px) {
+  :root {
+    --gap-xs: 4px;
+    --gap-sm: 6px;
+    --gap-md: 10px;
+  }
+}
+
+/* 4K / large screens */
+@media (min-height: 1201px) {
+  :root {
+    --gap-xs: 5px;
+    --gap-sm: 8px;
+    --gap-md: 12px;
+  }
+
+  .player-card-pitch {
+    min-width: 70px;
+    max-width: 85px;
+  }
+}
+
