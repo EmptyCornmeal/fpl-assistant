@@ -5594,692 +5594,677 @@
   :root[data-theme="light"] .league-detail-card{ background:#fff; }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   UI LAYOUT & SPACING FIXES - 4K-first, responsive design
-   Target resolutions: 3840×2160 (4K), 2560×1440 (1440p), 1920×1080 (1080p)
+   UI LAYOUT & SPACING FIXES - 4K-first, Power BI-style dense dashboards
+   Target: 3840×2160 (4K), 2560×1440 (1440p), 1920×1080 (1080p) - NO SCROLLING
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* ─── GLOBAL FIXES ───────────────────────────────────────────────────────────── */
+/* ─── GLOBAL: HEADER & APP CONTAINER ─────────────────────────────────────────── */
 
-/* 1. Fix topbar/header so deadline never overlaps page content */
+/* Compact topbar - capped height, never wraps onto page content */
 .topbar {
   position: sticky;
   top: 0;
   z-index: 100;
-  min-height: var(--topbar-height);
-  height: auto; /* Allow height to expand on wrap */
+  max-height: 56px;
+  min-height: 48px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 12px;
 }
 
-/* Ensure the app container accounts for wrapped topbar */
+.topbar .logo { flex-shrink: 0; }
+.topbar .deadline { font-size: 11px; white-space: nowrap; }
+.topbar nav { margin-left: auto; flex-shrink: 0; }
+.topbar nav a { padding: 6px 10px; font-size: 12px; }
+
+/* App container fills viewport with consistent padding */
 .app {
-  margin-top: 0;
-  padding-top: var(--gap-md);
+  height: calc(100vh - 56px);
+  max-height: calc(100vh - 56px);
+  padding: 12px 16px 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-/* When topbar wraps (nav moves to new line), add extra space */
-@media (max-width: 1100px) {
-  :root {
-    --topbar-height-wrapped: 100px;
-  }
-  .app {
-    height: calc(100vh - var(--topbar-height-wrapped));
-    max-height: calc(100vh - var(--topbar-height-wrapped));
-  }
-}
-
-/* 2. Consistent internal padding for cards and tiles to prevent clipping */
-.card,
-.tile,
-.portal-tile,
-.sp-card,
-.league-card,
-.league-detail-card,
-.help-tile {
-  padding: var(--gap-md);
-}
-
-.card h3,
-.tile-header,
-.portal-tile .tile-header,
-.sp-card-header {
-  padding-bottom: var(--gap-xs);
-  margin-bottom: var(--gap-sm);
-}
-
-/* Ensure tile-title and card headers have breathing room from borders */
-.tile-title,
-.portal-tile .tile-title,
-.card h3 {
-  padding: 2px 4px;
-  margin: -2px -4px;
-}
-
-/* 3. Tooltip auto-flip improvements - render above cards with higher z-index */
-.abbr-tip {
-  position: relative;
-  z-index: 1;
-}
-
-.abbr-tip::after {
-  z-index: 10000;
-  pointer-events: none;
-}
-
-/* Tooltip positioning variants for auto-flip */
-.abbr-tip.tooltip-flip-down::after {
-  top: auto;
-  bottom: calc(-100% - 16px);
-  transform: translate(-50%, 0) scale(0.98);
-}
-.abbr-tip.tooltip-flip-down:hover::after {
-  transform: translate(-50%, 0) scale(1);
-}
-
-/* Tooltip container for cards - ensure tooltips aren't clipped */
-.tile,
-.card,
-.portal-tile,
-.sp-card,
-.table-scroll-wrapper,
-.table-scroll-container {
-  overflow: visible;
-}
-
-/* But inner bodies can scroll */
-.tile-body,
-.card-scroll,
-.table-scroll-wrapper .table,
-.table-scroll-container .table {
-  overflow: auto;
-}
-
-/* ─── 4K BREAKPOINTS & MULTI-COLUMN LAYOUTS ──────────────────────────────────── */
-
-/* 4K displays (3840px and up) - maximize screen real estate */
-@media (min-width: 2560px) {
-  :root {
-    --gap-xs: 6px;
-    --gap-sm: 8px;
-    --gap-md: 12px;
-    --gap-lg: 16px;
-    --gap-xl: 20px;
-    --card-padding: clamp(12px, 10px + 0.3vw, 18px);
-    --font-scale: clamp(0.85rem, 0.8rem + 0.15vw, 0.95rem);
-  }
-
-  .sidebar {
-    width: 320px;
-  }
-  :root {
-    --sidebar-width: 320px;
-  }
-
-  .app {
-    padding: var(--gap-lg) var(--gap-xl);
-  }
-}
-
-@media (min-width: 3200px) {
-  :root {
-    --gap-md: 14px;
-    --gap-lg: 18px;
-    --gap-xl: 24px;
-  }
-
-  .sidebar {
-    width: 360px;
-  }
-  :root {
-    --sidebar-width: 360px;
-  }
-}
-
-/* ─── PORTAL PAGE FIXES ──────────────────────────────────────────────────────── */
-
-/* Multi-column grid that uses space better on large screens */
-.portal-page {
-  height: 100%;
-  display: grid;
-  gap: var(--gap-md);
+/* All pages fill available height, no scrolling at page level */
+.portal-page,
+.my-team-page,
+.players-dashboard,
+.fixtures-dashboard,
+.gw-dashboard,
+.league-page,
+.sp-grid,
+.help-dashboard {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
-/* 4K: 4-column layout */
-@media (min-width: 2560px) {
-  .portal-page {
-    grid-template-columns: 300px 1fr 1fr 300px;
-  }
-  .portal-column:first-child {
-    grid-column: 1;
-  }
-  .portal-column-center {
-    grid-column: 2 / 4;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--gap-md);
-    align-content: start;
-  }
-  .portal-column:last-child {
-    grid-column: 4;
-  }
+/* ─── GLOBAL: CARD PADDING & CLIPPING PREVENTION ─────────────────────────────── */
+
+/* Consistent internal padding - prevent text clipping into beveled borders */
+.card, .tile, .portal-tile, .sp-card, .league-card, .league-detail-card, .help-tile {
+  padding: 12px 14px;
+  border-radius: 8px;
 }
 
-/* 1440p: Balanced 3-column */
-@media (min-width: 1440px) and (max-width: 2559px) {
-  .portal-page {
-    grid-template-columns: 280px 1fr 280px;
-  }
+.card h3, .tile-header, .portal-tile .tile-header, .sp-card-header {
+  padding-bottom: 6px;
+  margin-bottom: 8px;
 }
 
-/* 1080p and below: Stack layout */
-@media (max-width: 1439px) {
-  .portal-page {
-    grid-template-columns: 240px 1fr 240px;
-  }
+/* Tile/card body scrolls, container does not clip tooltips */
+.tile, .card, .portal-tile, .sp-card { overflow: visible; }
+.tile-body, .card-scroll { overflow: auto; }
+
+/* ─── GLOBAL: TOOLTIP AUTO-FLIP ──────────────────────────────────────────────── */
+
+.abbr-tip { position: relative; z-index: 1; }
+.abbr-tip::after { z-index: 10000; pointer-events: none; }
+
+.abbr-tip.tooltip-bottom::after {
+  top: auto; bottom: calc(-100% - 12px);
+  transform: translateX(-50%);
+}
+.abbr-tip.tooltip-left::after { left: 0; transform: translateX(0); }
+.abbr-tip.tooltip-right::after { left: auto; right: 0; transform: translateX(0); }
+
+/* ─── PORTAL PAGE: BALANCED COLUMN HEIGHTS ───────────────────────────────────── */
+
+.portal-page {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 260px 1fr 260px;
+  height: 100%;
 }
 
-@media (max-width: 1100px) {
-  .portal-page {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto 1fr;
-  }
-  .portal-column-center {
-    grid-column: 1 / -1;
-    order: -1;
-  }
+.portal-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
 }
 
-@media (max-width: 768px) {
-  .portal-page {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Make Fixture Outlook and Captain Picks cards taller */
-.portal-tile.tile-fixtures,
-.portal-tile.tile-captain {
-  min-height: 280px;
+/* Tiles stretch to fill column equally */
+.portal-column .portal-tile {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
 }
 
 .portal-tile .tile-body {
+  flex: 1;
+  overflow: auto;
   max-height: none;
-  flex: 1;
 }
 
-/* Balance injuries, swings, transfers tiles with better height */
-.portal-column .portal-tile {
-  flex: 1;
-  min-height: 160px;
+/* Center column: Fixture Outlook & Captain Picks are taller */
+.portal-column-center {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+  gap: 10px;
 }
 
-/* ─── MY TEAM PAGE FIXES ─────────────────────────────────────────────────────── */
+.portal-column-center .portal-tile {
+  min-height: 280px;
+}
+
+/* 4K: wider side columns */
+@media (min-width: 2560px) {
+  .portal-page { grid-template-columns: 320px 1fr 320px; gap: 12px; }
+}
+@media (min-width: 3200px) {
+  .portal-page { grid-template-columns: 380px 1fr 380px; gap: 14px; }
+}
+
+/* 1080p: narrower columns */
+@media (max-width: 1920px) {
+  .portal-page { grid-template-columns: 220px 1fr 220px; }
+}
+
+/* ─── MY TEAM PAGE: PITCH ~50%, INSIGHTS SPLIT ───────────────────────────────── */
 
 .my-team-page {
   display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 380px;
+  grid-template-rows: auto 1fr;
   height: 100%;
-  gap: var(--gap-md);
-  overflow: hidden;
 }
 
-/* 4K and 1440p: Starting XI dominant (60%) with Insights (40%) */
-@media (min-width: 1440px) {
-  .my-team-page {
-    grid-template-columns: 1fr 400px;
-    grid-template-rows: auto 1fr;
-  }
-
-  .my-team-page .team-header-card {
-    grid-column: 1 / -1;
-  }
-
-  .my-team-page .pitch-card {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .my-team-page .insights-card {
-    grid-column: 2;
-    grid-row: 2;
-    overflow: auto;
-  }
+.my-team-page .team-header-card {
+  grid-column: 1 / -1;
+  padding: 10px 14px;
 }
 
-/* 4K: Give insights more room */
-@media (min-width: 2560px) {
-  .my-team-page {
-    grid-template-columns: 1fr 480px;
-  }
-}
-
-@media (min-width: 3200px) {
-  .my-team-page {
-    grid-template-columns: 1fr 560px;
-  }
-}
-
-/* 1080p: Stack vertically */
-@media (max-width: 1439px) {
-  .my-team-page {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
-    overflow: auto;
-  }
-}
-
-/* Make pitch visualization fill its container better */
-.pitch-card {
-  display: flex;
-  flex-direction: column;
-}
-
-.pitch-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.pitch-grass {
-  flex: 1;
-  min-height: 350px;
-}
-
-/* Insights card improvements */
-.insights-card {
-  display: flex;
-  flex-direction: column;
-}
-
-.insights-list {
-  flex: 1;
-  overflow: auto;
-}
-
-/* ─── PLAYERS PAGE FIXES ─────────────────────────────────────────────────────── */
-
-/* Fix padding and clipping on table headers */
-.players-dashboard .table th,
-.players-dashboard .table td {
-  padding: 8px 12px;
-}
-
-/* Ensure table headers don't clip */
-.table th {
-  padding: 8px 12px;
-  white-space: nowrap;
-}
-
-.table-compact th {
-  padding: 6px 10px;
-}
-
-/* 4K: Better use of horizontal space */
-@media (min-width: 2560px) {
-  .players-dashboard {
-    grid-template-columns: minmax(400px, 1fr) minmax(600px, 2fr);
-  }
-}
-
-/* ─── FIXTURES PAGE FIXES ────────────────────────────────────────────────────── */
-
-.fixtures-dashboard {
-  gap: var(--gap-md);
-}
-
-/* Reduce dead space */
-.fixtures-dashboard .card {
-  margin: 0;
-}
-
-/* Better fixture grid on large screens */
-@media (min-width: 2560px) {
-  .fixtures-content {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-}
-
-/* ─── EXPLORER PAGE REDESIGN ─────────────────────────────────────────────────── */
-
-.gw-dashboard {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
-  gap: var(--gap-md);
-  height: 100%;
-  overflow: hidden;
-}
-
-/* Styled toolbar that matches the app design */
-.gw-dashboard .toolbar-compact {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: var(--gap-md) var(--gap-lg);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-sm);
-}
-
-/* Summary and TOTW as proper cards */
-.gw-top-row {
-  display: grid;
-  gap: var(--gap-md);
-}
-
-@media (min-width: 1440px) {
-  .gw-top-row {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (min-width: 2560px) {
-  .gw-top-row {
-    grid-template-columns: 1fr 2fr;
-  }
-}
-
-.gw-top-row > div {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: var(--gap-lg);
-}
-
-.gw-top-row h3 {
-  margin-bottom: var(--gap-md);
-  padding-bottom: var(--gap-sm);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.95rem;
-}
-
-.gw-top-row h4 {
-  margin-top: var(--gap-md);
-  margin-bottom: var(--gap-sm);
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.gw-top-row ul {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.gw-top-row .chips {
-  margin-bottom: var(--gap-md);
-}
-
-/* GW Player table as full-width card */
-.gw-table-container {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
+.my-team-page .pitch-card {
+  grid-column: 1;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
-.gw-table-container h3 {
-  padding: var(--gap-md) var(--gap-lg);
-  margin: 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.95rem;
-  flex-shrink: 0;
+.my-team-page .pitch-card .pitch-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
-.gw-table-container .table {
+.my-team-page .pitch-card .pitch-grass {
+  flex: 1;
+  min-height: 300px;
+}
+
+/* Insights column: split into two stacked cards */
+.my-team-page .insights-column {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.my-team-page .insights-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.my-team-page .insights-card .insights-list {
   flex: 1;
   overflow: auto;
 }
 
-/* ─── LEAGUE PAGE FIXES ──────────────────────────────────────────────────────── */
-
-/* Wider standings column */
-.league-detail-grid {
-  display: grid;
-  gap: var(--gap-md);
-}
-
-@media (min-width: 1440px) {
-  .league-detail-grid {
-    grid-template-columns: 340px 1fr 280px;
-  }
-}
-
+/* 4K: wider insights */
 @media (min-width: 2560px) {
-  .league-detail-grid {
-    grid-template-columns: 400px 1fr 360px;
-  }
+  .my-team-page { grid-template-columns: 1fr 460px; }
 }
-
 @media (min-width: 3200px) {
-  .league-detail-grid {
-    grid-template-columns: 480px 1fr 420px;
-  }
+  .my-team-page { grid-template-columns: 1fr 540px; }
 }
 
-/* Readable player names in Top XI */
-.league-xi-row {
-  grid-template-columns: 32px 1fr 48px 80px;
-  gap: 8px;
-  padding: 6px 8px;
+/* 1080p: stack vertically */
+@media (max-width: 1600px) {
+  .my-team-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+    overflow: auto;
+  }
+  .my-team-page .insights-column { grid-column: 1; grid-row: 3; flex-direction: row; }
+}
+
+/* ─── PLAYERS PAGE: CHART STRETCHES, NO DEAD SPACE ───────────────────────────── */
+
+.players-dashboard {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 340px 1fr;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+
+.players-dashboard .filters-card {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  overflow: auto;
+}
+
+.players-dashboard .chart-card {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.players-dashboard .chart-card .chart-container {
+  flex: 1;
+  min-height: 0;
+}
+
+.players-dashboard .table-card {
+  grid-column: 2;
+  grid-row: 2;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.players-dashboard .table-card .table-scroll-container {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Table padding fix */
+.players-dashboard .table th,
+.players-dashboard .table td {
+  padding: 6px 10px;
   font-size: 12px;
 }
 
+/* 4K */
+@media (min-width: 2560px) {
+  .players-dashboard { grid-template-columns: 400px 1fr; }
+}
+
+/* ─── FIXTURES PAGE: FULL-WIDTH MATRIX, TIGHTER CHARTS ───────────────────────── */
+
+.fixtures-dashboard {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+
+.fixtures-dashboard .fixtures-header {
+  grid-column: 1 / -1;
+}
+
+/* Matrix takes full width of left column, no horizontal scroll */
+.fixtures-dashboard .fdr-matrix-card {
+  grid-column: 1;
+  grid-row: 2;
+  overflow: auto;
+}
+
+.fdr-matrix-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.fdr-matrix {
+  width: max-content;
+  min-width: 100%;
+}
+
+.fdr-matrix th, .fdr-matrix td {
+  padding: 4px 6px;
+  font-size: 11px;
+  min-width: 32px;
+}
+
+/* Charts column: stacked, reduced height */
+.fixtures-dashboard .charts-column {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.fixtures-dashboard .chart-card {
+  flex: 1;
+  min-height: 120px;
+  max-height: 180px;
+}
+
+/* 4K: wider chart column */
+@media (min-width: 2560px) {
+  .fixtures-dashboard { grid-template-columns: 1fr 400px; }
+}
+
+/* ─── EXPLORER PAGE: CLEAR CARD GRID ─────────────────────────────────────────── */
+
+.gw-dashboard {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1.5fr;
+  grid-template-rows: auto auto 1fr;
+  height: 100%;
+}
+
+/* Toolbar spans top */
+.gw-dashboard .gw-toolbar {
+  grid-column: 1 / -1;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.gw-dashboard .gw-toolbar select,
+.gw-dashboard .gw-toolbar input {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+}
+
+/* Summary card: top-left */
+.gw-dashboard .gw-summary-card {
+  grid-column: 1;
+  grid-row: 2;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+/* TOTW card: top-right */
+.gw-dashboard .gw-totw-card {
+  grid-column: 2;
+  grid-row: 2;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+/* Table: spans bottom */
+.gw-dashboard .gw-table-card {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.gw-dashboard .gw-table-card h3 {
+  padding: 10px 14px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.gw-dashboard .gw-table-card .table-scroll-container {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Card headers consistent styling */
+.gw-dashboard h3, .gw-dashboard h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.gw-dashboard ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* 4K: summary narrower, TOTW wider */
+@media (min-width: 2560px) {
+  .gw-dashboard { grid-template-columns: 1fr 2fr; }
+}
+
+/* ─── LEAGUE PAGE: STANDINGS + TOP XI LEFT, CHARTS RIGHT ────────────────────── */
+
+.league-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.league-page .league-header {
+  flex-shrink: 0;
+}
+
+.league-detail-grid {
+  flex: 1;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 400px 1fr 300px;
+  min-height: 0;
+}
+
+/* Left column: Standings + Top XI stacked */
+.league-detail-left {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.league-detail-left .league-standings-card {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.league-detail-left .league-standings-card .league-standings {
+  flex: 1;
+  overflow: auto;
+}
+
+.league-detail-left .league-xi-card {
+  flex-shrink: 0;
+  max-height: 280px;
+  overflow: auto;
+}
+
+/* Center: Manager comparison / detail */
+.league-detail-center {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Right: Charts stacked */
+.league-detail-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.league-detail-right .chart-card {
+  flex: 1;
+  min-height: 100px;
+}
+
+/* Standings table: show team + manager, reduce clipping */
+.league-standings th,
+.league-standings td {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.league-standings .team-col {
+  min-width: 140px;
+  max-width: 200px;
+}
+
+.league-standings .manager-col {
+  min-width: 80px;
+  max-width: 120px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* Top XI compact rows */
+.league-xi-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 40px 60px;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  align-items: center;
+}
+
 .league-xi-name {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Show more context in league cards without truncation */
-.league-card {
-  min-height: 200px;
-  max-height: none;
+/* 4K: wider columns */
+@media (min-width: 2560px) {
+  .league-detail-grid { grid-template-columns: 480px 1fr 360px; }
+}
+@media (min-width: 3200px) {
+  .league-detail-grid { grid-template-columns: 560px 1fr 420px; }
 }
 
-.league-card-header h3 {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: unset;
-  line-height: 1.3;
+/* 1440p and below: 2-column, Top XI beneath standings */
+@media (max-width: 1800px) {
+  .league-detail-grid { grid-template-columns: 1fr 1fr; }
+  .league-detail-right { grid-column: 2; grid-row: 1; }
 }
 
-/* Clear back button styling */
-.league-back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  cursor: pointer;
-  transition: all 0.2s;
+/* 1080p: stack all */
+@media (max-width: 1280px) {
+  .league-detail-grid { grid-template-columns: 1fr; }
 }
 
-.league-back-btn:hover {
-  background: var(--accent-weak);
-  border-color: var(--accent);
-  color: var(--accent-light);
-}
+/* ─── STAT PICKER: TRUE 3-ZONE DASHBOARD GRID ────────────────────────────────── */
 
-.league-back-btn::before {
-  content: "←";
-  font-size: 14px;
-}
-
-/* Responsive: Stack Top XI under standings on smaller screens */
-@media (max-width: 1439px) {
-  .league-detail-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .league-detail-right {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (max-width: 900px) {
-  .league-detail-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ─── STAT PICKER FIXES ──────────────────────────────────────────────────────── */
-
-/* Three-zone layout with better proportions */
 .sp-grid {
   display: grid;
-  gap: var(--gap-md);
+  gap: 10px;
+  grid-template-columns: 240px 1fr 280px;
+  height: 100%;
 }
 
-@media (min-width: 1440px) {
-  .sp-grid {
-    grid-template-columns: 280px 1fr 300px;
-  }
+/* Left zone: Current state */
+.sp-grid .sp-left {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
 }
 
-@media (min-width: 2560px) {
-  .sp-grid {
-    grid-template-columns: 340px 1fr 380px;
-  }
+/* Center zone: Recommendations table */
+.sp-grid .sp-center {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
-@media (min-width: 3200px) {
-  .sp-grid {
-    grid-template-columns: 400px 1fr 450px;
-  }
+.sp-grid .sp-center .sp-table-container {
+  flex: 1;
+  overflow: auto;
 }
 
-/* Give transfer explanations more breathing room */
+/* Right zone: Transfer explanations */
+.sp-grid .sp-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+
+/* Tighter line-height in explanations */
 .sp-tr-why {
-  padding: 8px 0 10px;
-  margin-left: 6px;
-  line-height: 1.5;
+  padding: 6px 0 8px;
+  margin-left: 4px;
+  line-height: 1.4;
   font-size: 11px;
 }
 
 .sp-transfer-row {
-  padding: 8px 0;
-  margin-bottom: 4px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
 }
 
-/* Reduce cramping in cards */
-.sp-card {
-  padding: var(--gap-md) var(--gap-lg);
-}
-
-.sp-card-header {
-  margin-bottom: var(--gap-md);
-}
-
-/* Current state panel - better stat grid */
+/* Compact stat tiles */
 .sp-state-compact {
-  gap: 8px;
-  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
 }
 
 .sp-stat {
-  padding: 8px 6px;
+  padding: 6px;
+  font-size: 11px;
+  text-align: center;
+  background: var(--bg1);
+  border-radius: 6px;
 }
 
-/* ─── HELP PAGE FIXES ────────────────────────────────────────────────────────── */
+.sp-stat-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Card styling */
+.sp-card {
+  padding: 10px 12px;
+}
+
+.sp-card-header {
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 4K: wider zones */
+@media (min-width: 2560px) {
+  .sp-grid { grid-template-columns: 300px 1fr 340px; }
+}
+@media (min-width: 3200px) {
+  .sp-grid { grid-template-columns: 360px 1fr 400px; }
+}
+
+/* 1080p */
+@media (max-width: 1600px) {
+  .sp-grid { grid-template-columns: 200px 1fr 240px; }
+}
+
+/* ─── HELP PAGE ──────────────────────────────────────────────────────────────── */
 
 .help-dashboard {
   display: grid;
-  gap: var(--gap-md);
+  gap: 10px;
+  grid-template-columns: repeat(2, 1fr);
+  align-content: start;
   height: 100%;
   overflow: auto;
 }
 
-/* Multi-column on large screens */
-@media (min-width: 1440px) {
-  .help-dashboard {
-    grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: repeat(2, auto);
-    align-content: start;
-  }
-}
-
-@media (min-width: 2560px) {
-  .help-dashboard {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (min-width: 3200px) {
-  .help-dashboard {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-/* Ensure tooltips in help never clip */
 .help-tile {
-  overflow: visible;
-}
-
-.help-tile .help-body {
   overflow: visible;
 }
 
 .help-tile .help-scroll {
   overflow: auto;
-  max-height: 300px;
+  max-height: 260px;
 }
 
 @media (min-width: 2560px) {
-  .help-tile .help-scroll {
-    max-height: 400px;
-  }
+  .help-dashboard { grid-template-columns: repeat(3, 1fr); }
+  .help-tile .help-scroll { max-height: 320px; }
 }
 
-/* ─── ADDITIONAL POLISH ──────────────────────────────────────────────────────── */
-
-/* Prevent narrow centered columns on large screens */
-.page-wrapper,
-.dashboard {
-  max-width: none;
-  width: 100%;
+@media (min-width: 3200px) {
+  .help-dashboard { grid-template-columns: repeat(4, 1fr); }
 }
 
-/* Ensure tables are readable at all sizes */
-.table {
-  width: 100%;
-  table-layout: auto;
-}
+/* ─── SCROLLBAR STYLING ──────────────────────────────────────────────────────── */
 
-/* Better grid column utilities for 4K */
-@media (min-width: 2560px) {
-  .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
-  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
-  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
-  .grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
-  .grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
-}
-
-/* Responsive grid utilities */
-@media (min-width: 1440px) {
-  .grid-4k-3 { grid-template-columns: repeat(3, 1fr); }
-  .grid-4k-4 { grid-template-columns: repeat(4, 1fr); }
-}
-
-@media (min-width: 2560px) {
-  .grid-4k-3 { grid-template-columns: repeat(4, 1fr); }
-  .grid-4k-4 { grid-template-columns: repeat(6, 1fr); }
-}
-
-/* Ensure scrollable containers work properly */
-.tile-body,
-.card-scroll,
-.league-standings,
-.sp-xi-list,
-.insights-list {
+.tile-body, .card-scroll, .league-standings, .sp-xi-list, .insights-list,
+.table-scroll-container, .help-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -6287,17 +6272,21 @@
 .tile-body::-webkit-scrollbar,
 .card-scroll::-webkit-scrollbar,
 .league-standings::-webkit-scrollbar,
-.sp-xi-list::-webkit-scrollbar,
-.insights-list::-webkit-scrollbar {
+.table-scroll-container::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 
 .tile-body::-webkit-scrollbar-thumb,
 .card-scroll::-webkit-scrollbar-thumb,
 .league-standings::-webkit-scrollbar-thumb,
-.sp-xi-list::-webkit-scrollbar-thumb,
-.insights-list::-webkit-scrollbar-thumb {
+.table-scroll-container::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 2px;
 }
+
+/* ─── UTILITY: PREVENT MAX-WIDTH RESTRICTIONS ────────────────────────────────── */
+
+.page-wrapper, .dashboard { max-width: none; width: 100%; }
+.table { width: 100%; table-layout: auto; }
 
