@@ -554,20 +554,34 @@ export async function renderAllPlayers(main){
 
     toolbar.append(utils.el("h3",{},"All Players — Filters, Sort & Tools"), row1, row2);
 
-    /* ---- Card to hold chart & table ---- */
-    const card = utils.el("div",{class:"card"});
-    const progress = utils.el("div",{class:"progress", style:"display:none"},[
-      utils.el("div",{class:"bar", style:"width:0%"})
-    ]);
-    card.prepend(progress);
+    /* ---- Dashboard layout: 2-column (chart left, table right) ---- */
+    const page = utils.el("div", { class: "players-dashboard" });
 
-    // Taller chart slot (double height)
-    const chartSlot = utils.el("div",{id:"ap-chart-slot", style:"min-height:720px"});
-    const tableSlot = utils.el("div",{id:"ap-table-slot"});
-    card.append(chartSlot, tableSlot);
+    // Toolbar spans full width
+    toolbar.classList.add("players-filters", "card-compact");
+    page.append(toolbar);
+
+    // Left: Chart card
+    const chartCard = utils.el("div", { class: "card card-flush players-chart" });
+    const chartHeader = utils.el("div", { class: "tile-header" });
+    chartHeader.innerHTML = `<span class="tile-title">Player Distribution</span>`;
+    const chartSlot = utils.el("div", { id: "ap-chart-slot", style: "height:100%;min-height:0" });
+    chartCard.append(chartHeader, chartSlot);
+
+    // Right: Table card
+    const tableCard = utils.el("div", { class: "card card-flush players-table" });
+    const tableHeader = utils.el("div", { class: "tile-header", style: "display:flex;justify-content:space-between;align-items:center" });
+    tableHeader.innerHTML = `<span class="tile-title">All Players</span>`;
+    const progress = utils.el("div", { class: "progress", style: "display:none" }, [
+      utils.el("div", { class: "bar", style: "width:0%" })
+    ]);
+    const tableSlot = utils.el("div", { id: "ap-table-slot", class: "table-scroll-container", style: "flex:1;overflow:auto" });
+    tableCard.append(tableHeader, progress, tableSlot);
+
+    page.append(chartCard, tableCard);
 
     /* ---- Mount ---- */
-    ui.mount(main, utils.el("div",{}, [toolbar, card]));
+    ui.mount(main, page);
 
     /* ---- Apply ---- */
     applyBtn.addEventListener("click", ()=>{

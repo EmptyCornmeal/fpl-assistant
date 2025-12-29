@@ -188,27 +188,34 @@ export async function renderFixtures(main){
       utils.el("input",{type:"checkbox"}), utils.el("span",{style:"margin-left:6px"},"Show swings")
     ]);
 
-    const toolbar = utils.el("div",{class:"controls fx-toolbar"},[
+    // Compact toolbar
+    const toolbar = utils.el("div",{class:"toolbar-compact"},[
       utils.el("span",{class:"chip chip-dim"},"Window:"), windowSel.el,
       utils.el("span",{class:"chip chip-dim"},"View:"),   viewSel.el,
-      utils.el("span",{class:"chip chip-dim"},"Position:"), seg,
-      pinMine, onlyDoubles, showSwings,
-      utils.el("span",{style:"flex:1"},"")
+      utils.el("span",{class:"chip chip-dim"},"Pos:"), seg,
+      pinMine, onlyDoubles, showSwings
     ]);
 
+    /* Dashboard layout: toolbar + 2-column content */
+    const page = utils.el("div",{class:"fixtures-dashboard"});
+
+    // Header with compact toolbar
+    const header = utils.el("div",{class:"tile tile-flush", style:"padding:var(--gap-md)"});
+    const headerTop = utils.el("div",{style:"display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--gap-sm)"});
+    headerTop.innerHTML = `<span class="tile-title" style="font-size:11px">FIXTURES & DIFFICULTY</span><span style="font-size:9px;color:var(--muted)">FDR 1=easy → 5=hard</span>`;
+    header.append(headerTop, toolbar);
+
     /* Cards */
-    const matrixCard = utils.el("div",{class:"card"});
-    const chartCard  = utils.el("div",{class:"card"});
+    const matrixCard = utils.el("div",{class:"card card-flush", style:"flex:1;min-height:0;overflow:auto"});
+    const chartCard  = utils.el("div",{class:"card card-flush", style:"flex:1;min-height:0;overflow:hidden"});
+
+    // Content area: matrix left, chart right
+    const content = utils.el("div",{class:"fixtures-content"});
+    content.append(matrixCard, chartCard);
 
     shell.innerHTML = "";
-    shell.append(
-      utils.el("div",{class:"card"},[
-        utils.el("h3",{},"Fixtures & Difficulty"),
-        utils.el("div",{class:"tag"},"Legend: FDR 1 easiest → 5 hardest. Switch to xFDR for model-based difficulty. Position view adjusts xFDR logic."),
-        toolbar
-      ]),
-      utils.el("div",{class:"grid cols-2"}, [matrixCard, chartCard])
-    );
+    page.append(header, content);
+    shell.append(page);
 
     const { bucket } = buildXFDRScaler(teams);
 
