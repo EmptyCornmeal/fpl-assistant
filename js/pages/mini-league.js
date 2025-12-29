@@ -335,6 +335,10 @@ export async function renderMiniLeague(main) {
               <h3>Standings</h3>
               <div class="league-standings" id="standingsTable"></div>
             </div>
+            <div class="league-detail-card">
+              <h3>League Top XI (GW${gwRef})</h3>
+              <div class="league-xi" id="topXI"></div>
+            </div>
           </div>
           <div class="league-detail-col league-detail-center">
             <div class="league-detail-card league-chart-card">
@@ -344,12 +348,6 @@ export async function renderMiniLeague(main) {
             <div class="league-detail-card league-chart-card">
               <h3>GW Points</h3>
               <div class="league-chart-wrap"><canvas id="chartGW"></canvas></div>
-            </div>
-          </div>
-          <div class="league-detail-col league-detail-right">
-            <div class="league-detail-card">
-              <h3>League Top XI (GW${gwRef})</h3>
-              <div class="league-xi" id="topXI"></div>
             </div>
           </div>
         </div>
@@ -369,6 +367,7 @@ export async function renderMiniLeague(main) {
             return wrap;
           }, sortBy: r => r.team
         },
+        { header: "Manager", accessor: r => r.manager, sortBy: r => r.manager },
         { header: `GW${gwRef}`, accessor: r => r.gw, sortBy: r => r.gw, tdClass: r => r.gw >= 60 ? "points-high" : r.gw < 30 ? "points-low" : "" },
         { header: "Total", accessor: r => r.total, sortBy: r => r.total }
       ], rows);
