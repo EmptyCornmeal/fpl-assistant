@@ -116,25 +116,28 @@ export async function renderGwExplorer(main){
 
     const liveChip = utils.el("span",{class:"chip chip-accent", style:"display:none"}, "LIVE — provisional");
 
-    const toolbar = utils.el("div",{class:"card"},[
-      utils.el("h3",{},"GW Explorer — Filters & Tools"),
-      // Row 1
-      utils.el("div",{class:"ap-toolbar-row"},[
-        utils.el("span",{class:"chip chip-dim"},"Gameweek:"), gwSel.el, liveChip,
-        utils.el("span",{class:"chip chip-dim"},"Team:"),     teamSel.el,
-        utils.el("span",{class:"chip chip-dim"},"Position:"), posChipsWrap
-      ]),
-      // Row 2 (no spacer; CSS pushes Apply to right)
-      utils.el("div",{class:"ap-toolbar-row"},[
-        q, startersOnly, myOnly, haulsOnly, cardsOnly, applyBtn
-      ])
+    // Compact single-line toolbar
+    const toolbar = utils.el("div",{class:"toolbar-compact"},[
+      utils.el("span",{class:"chip chip-dim"},"GW:"), gwSel.el, liveChip,
+      utils.el("span",{class:"chip chip-dim"},"Team:"), teamSel.el,
+      posChipsWrap,
+      q,
+      startersOnly, myOnly, haulsOnly, cardsOnly, applyBtn
     ]);
 
-    /* ===== Cards ===== */
-    const topGridCard = utils.el("div",{class:"card"});   // GW Summary (L) + Team of the Week (R)
-    const tableCard   = utils.el("div",{class:"card"});   // Player table
+    /* ===== Dashboard Layout ===== */
+    const page = utils.el("div",{class:"gw-dashboard"});
 
-    const page = utils.el("div",{},[toolbar, topGridCard, tableCard]);
+    // Top row: Toolbar
+    page.append(toolbar);
+
+    // Middle row: GW Summary (left) + Team of the Week (right)
+    const topGridCard = utils.el("div",{class:"gw-top-row"});
+
+    // Bottom row: Player table (full width)
+    const tableCard = utils.el("div",{class:"card card-flush gw-table-container"});
+
+    page.append(topGridCard, tableCard);
     ui.mount(main, page);
 
     /* ===== Data state ===== */

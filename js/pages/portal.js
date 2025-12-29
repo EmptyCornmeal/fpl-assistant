@@ -875,37 +875,30 @@ export async function renderPortal(main) {
     const rawFixtures = await fplClient.fixtures();
     const fixtures = rawFixtures.map(f => mapFixture(f, bootstrap.teams));
 
-    // Build the portal
+    // Build the portal - 3-column dashboard layout
     const page = utils.el("div", { class: "portal-page" });
 
-    // Welcome header
-    const header = utils.el("div", { class: "portal-header" });
-    header.innerHTML = `
-      <h1 class="portal-title">FPL Command Center</h1>
-      <p class="portal-subtitle">Quick decisions, smart moves</p>
-    `;
-    page.append(header);
+    // LEFT COLUMN: Deadline + My Team + Leagues
+    const leftCol = utils.el("div", { class: "portal-column" });
+    const leftHeader = utils.el("div", { class: "portal-header" });
+    leftHeader.innerHTML = `<h1 class="portal-title">FPL Command Center</h1>`;
+    leftCol.append(leftHeader);
+    leftCol.append(buildDeadlineTile(bootstrap.events));
+    leftCol.append(buildTeamStatusTile(state.entryId));
+    leftCol.append(buildLeagueTile(state.leagueIds));
 
-    // Main grid of tiles
-    const grid = utils.el("div", { class: "portal-grid" });
+    // CENTER COLUMN: Fixture Outlook + Captain Picks
+    const centerCol = utils.el("div", { class: "portal-column-center" });
+    centerCol.append(buildFixturesTile(bootstrap.teams, fixtures, currentGw));
+    centerCol.append(buildCaptainTile(bootstrap.players, fixtures, currentGw, bootstrap.teams));
 
-    // Row 1: Deadline + Team Status + League
-    grid.append(buildDeadlineTile(bootstrap.events));
-    grid.append(buildTeamStatusTile(state.entryId));
-    grid.append(buildLeagueTile(state.leagueIds));
+    // RIGHT COLUMN: Injuries + Fixture Swings + Transfers
+    const rightCol = utils.el("div", { class: "portal-column" });
+    rightCol.append(buildInjuriesTile(bootstrap.players));
+    rightCol.append(buildFixtureSwingsTile(bootstrap.teams, fixtures, currentGw));
+    rightCol.append(buildTransfersTile(bootstrap.players));
 
-    // Row 2: Fixtures (wide) + Captain Picks
-    grid.append(buildFixturesTile(bootstrap.teams, fixtures, currentGw));
-    grid.append(buildCaptainTile(bootstrap.players, fixtures, currentGw, bootstrap.teams));
-
-    // Row 3: Injuries + Fixture Swings
-    grid.append(buildInjuriesTile(bootstrap.players));
-    grid.append(buildFixtureSwingsTile(bootstrap.teams, fixtures, currentGw));
-
-    // Row 4: Transfers
-    grid.append(buildTransfersTile(bootstrap.players));
-
-    page.append(grid);
+    page.append(leftCol, centerCol, rightCol);
     ui.mount(main, page);
 
   } catch (e) {
