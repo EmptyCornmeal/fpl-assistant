@@ -1,10 +1,11 @@
 // js/pages/my-team.js
 import { api } from "../api.js";
-import { state, isInWatchlist, toggleWatchlist } from "../state.js";
+import { state, isInWatchlist, toggleWatchlist, validateState, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
+import { log } from "../logger.js";
 
 /* ───────────────── constants ───────────────── */
 const STATUS_MAP = {
@@ -364,15 +365,26 @@ const EMPTY_TEAM_SVG = `
 
 /* ───────────────── page ───────────────── */
 export async function renderMyTeam(main){
-  if (!state.entryId) {
-    const emptyState = utils.el("div", { class: "card empty-state empty-state-enhanced empty-team" });
-    emptyState.innerHTML = `
-      <div class="empty-illustration">${EMPTY_TEAM_SVG}</div>
-      <h3>Welcome to FPL Dashboard</h3>
-      <p>Enter your FPL Entry ID in the sidebar to view your team.</p>
-      <p class="small">You can find it in your FPL team URL: fantasy.premierleague.com/entry/<strong>1234567</strong>/history</p>
-    `;
-    ui.mount(main, emptyState);
+  // Validate state - require entryId
+  const validation = validateState({ requireEntryId: true });
+  if (!validation.ok) {
+    log.info("My Team: Setup required - missing entryId");
+    const setupPrompt = ui.setupPrompt({
+      missing: validation.missing,
+      context: "to view your team",
+      onSave: ({ entryId, leagueIds }) => {
+        state.entryId = entryId;
+        if (leagueIds.length > 0) {
+          state.leagueIds = leagueIds;
+        }
+        log.info("Setup complete - reloading page");
+        renderMyTeam(main);
+      },
+      onSkip: () => {
+        location.hash = "#/";
+      }
+    });
+    ui.mount(main, setupPrompt);
     return;
   }
 
@@ -1051,6 +1063,15 @@ export async function renderMyTeam(main){
     ui.mount(main, page);
 
   } catch (e) {
-    ui.mount(main, ui.error("Failed to load My Team", e));
+    log.error("My Team: Failed to load", e);
+    const errorCard = ui.errorCard({
+      title: "Failed to load My Team",
+      message: "There was a problem fetching your team data. This could be a network issue or the FPL API may be temporarily unavailable.",
+      error: e,
+      onRetry: async () => {
+        await renderMyTeam(main);
+      }
+    });
+    ui.mount(main, errorCard);
   }
 }

@@ -1,9 +1,10 @@
 // js/pages/fixtures.js
 import { api } from "../api.js";
-import { state } from "../state.js";
+import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { makeSelect } from "../components/select.js";
+import { log } from "../logger.js";
 
 /* ───────── helpers ───────── */
 
@@ -536,6 +537,15 @@ segAtt.onclick = ()=> _setSeg("ATT");
 render();
 
   }catch(err){
-    ui.mount(main, ui.error("Failed to load Fixtures", err));
+    log.error("Fixtures: Failed to load", err);
+    const errorCard = ui.errorCard({
+      title: "Failed to load Fixtures",
+      message: "There was a problem loading fixture data. Please try again.",
+      error: err,
+      onRetry: async () => {
+        await renderFixtures(main);
+      }
+    });
+    ui.mount(main, errorCard);
   }
 }

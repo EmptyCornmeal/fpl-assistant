@@ -1,12 +1,13 @@
 // js/pages/portal.js
 // Portal Hub - FM26-style landing page with decision-making tiles
-import { state } from "../state.js";
+import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { fplClient } from "../api/fplClient.js";
 import { mapBootstrap, mapFixture } from "../api/fplMapping.js";
 import { fixtureEase, getMetricExplanations } from "../api/fplDerived.js";
 import { openModal } from "../components/modal.js";
+import { log } from "../logger.js";
 
 /* ───────────────── Constants ───────────────── */
 const TEAM_BADGE_URL = (teamCode) =>
@@ -902,19 +903,16 @@ export async function renderPortal(main) {
     ui.mount(main, page);
 
   } catch (e) {
-    console.error("Portal render error:", e);
-    // Render error with retry button
-    const errorPage = utils.el("div", { class: "portal-page" });
-    errorPage.innerHTML = `
-      <div class="portal-error">
-        <div class="error-icon">⚠️</div>
-        <h2>Failed to load Portal</h2>
-        <p class="error-message">${e.message || 'Unknown error'}</p>
-        <button class="btn-primary retry-btn">Retry</button>
-      </div>
-    `;
-    errorPage.querySelector('.retry-btn')?.addEventListener('click', () => renderPortal(main));
-    ui.mount(main, errorPage);
+    log.error("Portal: Failed to load", e);
+    const errorCard = ui.errorCard({
+      title: "Failed to load Portal",
+      message: "There was a problem loading the dashboard. Please try again.",
+      error: e,
+      onRetry: async () => {
+        await renderPortal(main);
+      }
+    });
+    ui.mount(main, errorCard);
   }
 }
 
