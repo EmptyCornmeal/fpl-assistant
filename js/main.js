@@ -1133,12 +1133,19 @@ function bindGlobalSearch() {
     }
   });
 
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".global-search")) {
-      hideResults();
-    }
-  });
-}
+document.addEventListener("click", (e) => {
+  const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+  const firstEl =
+    path.find(n => n instanceof Element) ||
+    (e.target instanceof Element ? e.target : e.target?.parentElement);
+
+  if (!firstEl) return;
+
+  if (!firstEl.closest(".global-search")) {
+    hideResults();
+  }
+});
+
 
 
 /* -------------------- INIT -------------------- */
