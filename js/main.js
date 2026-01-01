@@ -256,9 +256,12 @@ const routes = {
   "portal": renderPortal,
   "my-team": renderMyTeam,
   "all-players": renderAllPlayers,
+  "players": renderAllPlayers, // Alias for consistency
   "fixtures": renderFixtures,
   "gw-explorer": renderGwExplorer,
+  "explorer": renderGwExplorer, // Alias for consistency
   "mini-league": renderMiniLeague,
+  "league": renderMiniLeague, // Alias for consistency
   "stat-picker": renderStatPicker,
   "help": renderHelp,
 };
@@ -485,28 +488,40 @@ function render404(main, attemptedRoute) {
   const wrap = document.createElement("div");
   wrap.className = "card error-404";
   wrap.innerHTML = `
+    <div class="error-404-icon">🔍</div>
     <h2>Page Not Found</h2>
     <p>The route <code>#/${attemptedRoute}</code> does not exist.</p>
     <p class="sub">Available pages:</p>
-    <ul class="route-list">
-      <li><a href="#/">Portal (Home)</a></li>
-      <li><a href="#/my-team">My Team</a></li>
-      <li><a href="#/all-players">All Players</a></li>
-      <li><a href="#/fixtures">Fixtures</a></li>
-      <li><a href="#/gw-explorer">GW Explorer</a></li>
-      <li><a href="#/mini-league">Mini-League</a></li>
-      <li><a href="#/help">Help</a></li>
-    </ul>
+    <div class="route-buttons">
+      <a href="#/" class="route-btn"><span class="route-icon">🏠</span> Portal</a>
+      <a href="#/my-team" class="route-btn"><span class="route-icon">⚽</span> My Team</a>
+      <a href="#/all-players" class="route-btn"><span class="route-icon">👥</span> Players</a>
+      <a href="#/fixtures" class="route-btn"><span class="route-icon">📅</span> Fixtures</a>
+      <a href="#/gw-explorer" class="route-btn"><span class="route-icon">🔍</span> Explorer</a>
+      <a href="#/mini-league" class="route-btn"><span class="route-icon">🏆</span> League</a>
+      <a href="#/stat-picker" class="route-btn"><span class="route-icon">📊</span> Stat Picker</a>
+      <a href="#/help" class="route-btn"><span class="route-icon">❓</span> Help</a>
+    </div>
     <button class="btn-primary" onclick="location.hash='#/'">Go to Portal</button>
   `;
   main.appendChild(wrap);
 }
 
+// Route aliases for nav highlighting (alias -> canonical route in nav)
+const routeAliases = {
+  "players": "all-players",
+  "explorer": "gw-explorer",
+  "league": "mini-league",
+};
+
 function highlightActiveNav(tab) {
+  // Resolve alias to canonical nav route
+  const canonicalTab = routeAliases[tab] || tab;
+
   const links = document.querySelectorAll(".nav a");
   links.forEach((a) => {
     const target = (a.getAttribute("href") || "").replace(/^#\//, "");
-    const isActive = target === tab;
+    const isActive = target === canonicalTab;
     a.classList.toggle("active", isActive);
     if (isActive) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -1198,10 +1213,40 @@ async function init() {
   initChartDefaults();
   initTooltips(document.body);
   initTooltipPositioning();
+  initNavScrollAffordance();
 
   if (!location.hash) location.hash = "#/";
   navigate(location.hash);
   window.addEventListener("hashchange", () => navigate(location.hash));
+}
+
+/* ---------- Navigation Scroll Affordance ---------- */
+function initNavScrollAffordance() {
+  const container = document.getElementById("navContainer");
+  const nav = document.getElementById("mainNav");
+
+  if (!container || !nav) return;
+
+  function updateScrollAffordance() {
+    const scrollLeft = nav.scrollLeft;
+    const scrollWidth = nav.scrollWidth;
+    const clientWidth = nav.clientWidth;
+    const maxScroll = scrollWidth - clientWidth;
+
+    // Show left gradient if scrolled right
+    container.classList.toggle("scroll-left", scrollLeft > 5);
+    // Show right gradient if more content to right
+    container.classList.toggle("scroll-right", scrollLeft < maxScroll - 5);
+  }
+
+  // Update on scroll
+  nav.addEventListener("scroll", updateScrollAffordance, { passive: true });
+
+  // Update on resize
+  window.addEventListener("resize", updateScrollAffordance, { passive: true });
+
+  // Initial check
+  updateScrollAffordance();
 }
 
 // Tooltip positioning - adds classes for edge detection
