@@ -1,9 +1,10 @@
 // js/pages/mini-league.js
 // PHASE 3: League page with Selector Grid + Detail View (no scrolling)
 import { api } from "../api.js";
-import { state } from "../state.js";
+import { state, validateState, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
+import { log } from "../logger.js";
 
 /**
  * Mini-League - Two-view model:
@@ -41,12 +42,23 @@ export async function renderMiniLeague(main) {
 
     const leagues = Array.isArray(state.leagueIds) && state.leagueIds.length ? state.leagueIds : [];
     if (!leagues.length) {
-      page.innerHTML = `
-        <div class="league-empty">
-          <h3>No Leagues Configured</h3>
-          <p>Add Classic League IDs in the sidebar (comma-separated).</p>
-        </div>
-      `;
+      log.info("Mini-League: Setup required - missing leagueIds");
+      const setupPrompt = ui.setupPrompt({
+        missing: ['leagueIds'],
+        context: "to view your mini-leagues",
+        onSave: ({ entryId, leagueIds }) => {
+          if (entryId) state.entryId = entryId;
+          if (leagueIds.length > 0) {
+            state.leagueIds = leagueIds;
+            log.info("League IDs configured - reloading page");
+            renderMiniLeague(main);
+          }
+        },
+        onSkip: () => {
+          location.hash = "#/";
+        }
+      });
+      ui.mount(main, setupPrompt);
       return;
     }
 
@@ -419,11 +431,15 @@ export async function renderMiniLeague(main) {
     await renderSelectorView();
 
   } catch (err) {
-    page.innerHTML = `
-      <div class="league-error">
-        <h3>Failed to load leagues</h3>
-        <p>${err.message}</p>
-      </div>
-    `;
+    log.error("Mini-League: Failed to load", err);
+    const errorCard = ui.errorCard({
+      title: "Failed to load leagues",
+      message: "There was a problem fetching league data. Please check your league IDs and try again.",
+      error: err,
+      onRetry: async () => {
+        await renderMiniLeague(main);
+      }
+    });
+    ui.mount(main, errorCard);
   }
 }

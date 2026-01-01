@@ -9,10 +9,12 @@ import { renderHelp } from "./pages/help.js";
 import { renderStatPicker } from "./pages/stat-picker.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
-import { state } from "./state.js";
+import { state, setPageUpdated } from "./state.js";
 import { utils } from "./utils.js";
+import { log } from "./logger.js";
 
 const APP_VERSION = "1.2.0";
+const COMMIT_HASH = "b0868d2"; // Auto-updated during build/deploy
 
 /* ---------- Confetti System ---------- */
 function createConfetti(count = 50) {
@@ -152,6 +154,13 @@ function bindKeyboardShortcuts() {
       toggleSidebar();
       return;
     }
+
+    // "d" to toggle dev panel
+    if (key === "d") {
+      e.preventDefault();
+      log.toggleDevPanel();
+      return;
+    }
   });
 }
 
@@ -187,6 +196,7 @@ function showKeyboardShortcutsHelp() {
           <h4>Actions</h4>
           <div class="shortcut-row"><kbd>/</kbd> Focus search</div>
           <div class="shortcut-row"><kbd>S</kbd> Toggle sidebar</div>
+          <div class="shortcut-row"><kbd>D</kbd> Toggle dev console</div>
           <div class="shortcut-row"><kbd>?</kbd> Show shortcuts</div>
           <div class="shortcut-row"><kbd>Esc</kbd> Close modal</div>
         </div>
@@ -414,6 +424,8 @@ async function refreshData() {
     refreshBtn.style.animation = 'spin 0.8s linear infinite';
   }
 
+  log.info("Refreshing data...");
+
   try {
     // Clear cache and refetch
     api.clearCache();
@@ -429,8 +441,9 @@ async function refreshData() {
     // Refresh current page
     navigate(location.hash);
 
+    log.info("Data refresh complete");
   } catch (e) {
-    console.error("Refresh failed:", e);
+    log.error("Refresh failed:", e);
   } finally {
     if (refreshBtn) {
       refreshBtn.disabled = false;
@@ -806,17 +819,24 @@ function navigate(hash) {
 
   main.innerHTML = "";
 
+  // Track page navigation
+  const pageName = result.tab || "portal";
+  log.info(`Navigating to: ${pageName}`);
+
   // Handle dynamic routes
   if (result.tab === "player" && result.params.playerId) {
     renderPlayerProfile(main, result.params.playerId);
     highlightActiveNav("all-players");
+    setPageUpdated("player");
   } else if (result.tab === "team" && result.params.teamId) {
     renderTeamProfile(main, result.params.teamId);
     highlightActiveNav("fixtures");
+    setPageUpdated("team");
   } else {
     const render = routes[result.tab];
     render(main);
     highlightActiveNav(result.tab);
+    setPageUpdated(pageName);
   }
 
   initTooltips(main);
@@ -1129,9 +1149,13 @@ async function init() {
 
   // Prefetch bootstrap (non-fatal if it fails)
   try {
+    log.info("Fetching bootstrap data...");
     state.bootstrap = await api.bootstrap();
     updateLastFetchTime();
-  } catch {}
+    log.info("Bootstrap data loaded successfully");
+  } catch (e) {
+    log.warn("Bootstrap fetch failed - some features may be limited:", e);
+  }
 
   // Sidebar stats + header status
   if (state.bootstrap) {
@@ -1151,8 +1175,13 @@ async function init() {
     startDeadlineCountdown();
   }
 
-  // Top bar version
-  setText("appVersion", APP_VERSION);
+  // Top bar version with commit hash
+  const versionEl = document.getElementById("appVersion");
+  if (versionEl) {
+    versionEl.innerHTML = `${APP_VERSION}<span class="commit-hash">${COMMIT_HASH ? ` (${COMMIT_HASH})` : ''}</span>`;
+  }
+
+  log.info(`FPL Dashboard initialized - v${APP_VERSION} (${COMMIT_HASH || 'dev'})`);
 
   bindSidebar();
   bindCopyEntryId();

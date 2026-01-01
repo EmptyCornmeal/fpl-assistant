@@ -1,9 +1,10 @@
 // js/pages/gw-explorer.js
 import { api } from "../api.js";
-import { state } from "../state.js";
+import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { makeSelect } from "../components/select.js";
+import { log } from "../logger.js";
 
 /* ---- one-time styles to prevent control overlap ---- */
 function ensureGwExplorerStyles(){
@@ -370,6 +371,15 @@ export async function renderGwExplorer(main){
     // init
     await loadGw(gwSel.value);
   }catch(e){
-    ui.mount(main, ui.error("Failed to load GW Explorer", e));
+    log.error("GW Explorer: Failed to load", e);
+    const errorCard = ui.errorCard({
+      title: "Failed to load GW Explorer",
+      message: "There was a problem loading gameweek data. Please try again.",
+      error: e,
+      onRetry: async () => {
+        await renderGwExplorer(main);
+      }
+    });
+    ui.mount(main, errorCard);
   }
 }

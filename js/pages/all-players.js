@@ -1,10 +1,11 @@
 // js/pages/all-players.js
 import { api } from "../api.js";
-import { state } from "../state.js";
+import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
+import { log } from "../logger.js";
 
 /* ========= LocalStorage keys ========= */
 const LS_AP_FILTERS = "fpl.ap.filters";
@@ -942,6 +943,15 @@ export async function renderAllPlayers(main){
       renderTable(rows);
     }
   }catch(e){
-    ui.mount(main, ui.error("Failed to load All Players", e));
+    log.error("All Players: Failed to load", e);
+    const errorCard = ui.errorCard({
+      title: "Failed to load All Players",
+      message: "There was a problem loading player data. Please try again.",
+      error: e,
+      onRetry: async () => {
+        await renderAllPlayers(main);
+      }
+    });
+    ui.mount(main, errorCard);
   }
 }

@@ -2,14 +2,17 @@
 // Phase 2+3: Stat Picker Dashboard with Optimiser, Transfers, and Chips
 
 import { api } from "../api.js";
-import { state } from "../state.js";
+import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
+import { ui } from "../components/ui.js";
+import { log } from "../logger.js";
+import { STORAGE_KEYS } from "../storage.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PASSWORD GATE - localStorage with 24h expiry (Phase 2 - PRESERVED)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const GATE_KEY = "fpl.statPickerUnlocked";
+const GATE_KEY = STORAGE_KEYS.STAT_PICKER_UNLOCKED;
 const GATE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const GATE_PASSWORD = "fpl2025";
 
@@ -809,7 +812,7 @@ async function renderDashboardContent(container, horizon) {
     `;
 
   } catch (err) {
-    console.error("Dashboard error:", err);
+    log.error("Stat Picker: Dashboard error", err);
     container.innerHTML = `<div class="sp-error-full"><h3>Error</h3><p>${err.message}</p></div>`;
   }
 }
