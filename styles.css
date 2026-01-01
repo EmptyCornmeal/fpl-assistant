@@ -426,6 +426,42 @@
     border-bottom:1px solid var(--border);
   }
 
+  /* ─── Navigation Container with Scroll Affordance ───── */
+  .nav-container{
+    position:relative;
+    flex:1;
+    min-width:0;
+    display:flex;
+    align-items:center;
+  }
+  /* Gradient fade indicators for scroll affordance */
+  .nav-container::before,
+  .nav-container::after{
+    content:'';
+    position:absolute;
+    top:0;
+    bottom:0;
+    width:32px;
+    pointer-events:none;
+    z-index:2;
+    opacity:0;
+    transition:opacity 0.2s ease;
+  }
+  .nav-container::before{
+    left:0;
+    background:linear-gradient(to right, var(--bg2) 0%, transparent 100%);
+  }
+  .nav-container::after{
+    right:0;
+    background:linear-gradient(to left, var(--bg2) 0%, transparent 100%);
+  }
+  .nav-container.scroll-left::before{
+    opacity:1;
+  }
+  .nav-container.scroll-right::after{
+    opacity:1;
+  }
+
   .nav{
     display:flex;
     gap:6px;
@@ -434,9 +470,13 @@
     padding:4px;
     border-radius:12px;
     flex:1;
+    min-width:0;
+    scroll-behavior:smooth;
+    -webkit-overflow-scrolling:touch;
   }
   .nav::-webkit-scrollbar{height:6px}
   .nav::-webkit-scrollbar-thumb{background:var(--surface-2);border-radius:99px}
+  .nav::-webkit-scrollbar-thumb:hover{background:var(--surface-3)}
   .nav a{
     margin:0;
     padding:9px 16px;
@@ -447,6 +487,7 @@
     font-weight:500;
     font-size:0.9rem;
     transition:all 0.2s ease;
+    flex-shrink:0;
   }
   .nav a:hover{
     background:var(--accent-weak);
@@ -461,11 +502,31 @@
     font-weight:600;
   }
 
+  /* Responsive: On smaller screens, nav wraps to new line */
   @media (max-width:1100px){
     .topbar{
       flex-wrap:wrap;
     }
-    .nav{
+    .nav-container{
+      order:10;
+      width:100%;
+      flex:none;
+      margin-top:8px;
+    }
+    .nav-container::before{
+      background:linear-gradient(to right, rgba(13, 20, 36, 0.92) 0%, transparent 100%);
+    }
+    .nav-container::after{
+      background:linear-gradient(to left, rgba(13, 20, 36, 0.92) 0%, transparent 100%);
+    }
+  }
+  /* Fallback for browsers without container - keep nav working */
+  .topbar > .nav{
+    flex:1;
+    min-width:0;
+  }
+  @media (max-width:1100px){
+    .topbar > .nav{
       order:10;
       width:100%;
       flex:none;
@@ -3577,15 +3638,20 @@
 
   /* ─── 404 Error Page ────────────────────────────────────── */
   .error-404{
-    max-width:480px;
+    max-width:520px;
     margin:48px auto;
     text-align:center;
     padding:32px;
   }
+  .error-404-icon{
+    font-size:48px;
+    margin-bottom:16px;
+    opacity:0.8;
+  }
   .error-404 h2{
     font-size:24px;
     margin-bottom:12px;
-    color:var(--text-bright);
+    color:var(--text);
   }
   .error-404 p{
     color:var(--muted);
@@ -3602,7 +3668,7 @@
     font-size:14px;
     color:var(--muted);
     margin-top:16px;
-    margin-bottom:8px;
+    margin-bottom:12px;
   }
   .error-404 .route-list{
     list-style:none;
@@ -3627,6 +3693,38 @@
   .error-404 .route-list li a:hover{
     background:var(--accent-weak);
     border-color:var(--accent);
+  }
+  /* New route buttons layout */
+  .error-404 .route-buttons{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));
+    gap:10px;
+    margin:16px 0 24px;
+  }
+  .error-404 .route-btn{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    padding:12px 16px;
+    background:var(--surface-1);
+    border:1px solid var(--border);
+    border-radius:10px;
+    color:var(--text);
+    text-decoration:none;
+    font-size:13px;
+    font-weight:500;
+    transition:all 0.2s ease;
+  }
+  .error-404 .route-btn:hover{
+    background:var(--accent-weak);
+    border-color:var(--accent);
+    color:var(--accent-light);
+    transform:translateY(-2px);
+    box-shadow:var(--shadow-sm);
+  }
+  .error-404 .route-icon{
+    font-size:16px;
   }
 
   /* ═══════════════════════════════════════════════════════════════════
