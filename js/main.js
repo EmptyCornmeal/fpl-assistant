@@ -1252,36 +1252,26 @@ function initNavScrollAffordance() {
 // Tooltip positioning - adds classes for edge detection
 function initTooltipPositioning() {
   document.addEventListener("mouseenter", (e) => {
-    const tip = e.target.closest("[data-tooltip], .abbr-tip");
+    const t = e.target;
+    const el = (t instanceof Element) ? t : t?.parentElement;
+    if (!el) return;
+
+    const tip = el.closest("[data-tooltip], .abbr-tip");
     if (!tip) return;
 
     const rect = tip.getBoundingClientRect();
     const vw = window.innerWidth;
-    const vh = window.innerHeight;
 
-    // Remove old positioning classes
     tip.classList.remove("tooltip-bottom", "tooltip-left", "tooltip-right", "tooltip-scroll");
 
-    // If near top (within 80px), flip to bottom
-    if (rect.top < 80) {
-      tip.classList.add("tooltip-bottom");
-    }
+    if (rect.top < 80) tip.classList.add("tooltip-bottom");
+    if (rect.left < 150) tip.classList.add("tooltip-left");
+    else if (rect.right > vw - 150) tip.classList.add("tooltip-right");
 
-    // If near left edge, align left
-    if (rect.left < 150) {
-      tip.classList.add("tooltip-left");
-    }
-    // If near right edge, align right
-    else if (rect.right > vw - 150) {
-      tip.classList.add("tooltip-right");
-    }
-
-    // If tooltip content is very long (over 200 chars), allow internal scroll
     const content = tip.dataset?.tooltip || tip.getAttribute("data-tooltip") || "";
-    if (content.length > 200) {
-      tip.classList.add("tooltip-scroll");
-    }
+    if (content.length > 200) tip.classList.add("tooltip-scroll");
   }, true);
 }
+
 
 document.addEventListener("DOMContentLoaded", init);
