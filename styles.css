@@ -4995,6 +4995,18 @@
     font-size:13px;
   }
   .sp-gate-error{ color:var(--red); font-size:12px; margin-top:8px; }
+  .sp-gate-caps{ color:var(--amber); font-size:12px; margin-top:8px; margin-bottom:0; }
+  .sp-gate-dev{ margin-top:16px; padding-top:12px; border-top:1px solid var(--border); }
+  .sp-btn-link{
+    background:none;
+    border:none;
+    color:var(--muted);
+    font-size:12px;
+    cursor:pointer;
+    text-decoration:underline;
+    padding:0;
+  }
+  .sp-btn-link:hover{ color:var(--primary); }
 
   /* Header */
   .sp-header{
