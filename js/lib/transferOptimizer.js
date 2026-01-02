@@ -5,7 +5,7 @@
 // - Legal replacement simulation (budget, position, club limit, FT/hit rules)
 
 import { state } from "../state.js";
-import { xPWindow, estimateXMinsForPlayer, statusMultiplier, clamp } from "./xp.js";
+import { xPWindow, xPWindowBatch, estimateXMinsForPlayer, statusMultiplier, clamp } from "./xp.js";
 import { getJSON, setJSON } from "../storage.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -394,6 +394,7 @@ function buildClubCounts(squad) {
 
 /**
  * Build the pool of potential replacement players with xP calculated
+ * Phase 9: Optimized with parallel xP calculation using batch processing
  */
 async function buildPlayerPool(allPlayers, squad, excludedTeamIds, excludedPlayerIds, gwIds, bs) {
   const squadIds = new Set(squad.map(p => p.id));
@@ -430,22 +431,30 @@ async function buildPlayerPool(allPlayers, squad, excludedTeamIds, excludedPlaye
     }
   });
 
-  const poolWithXp = [];
-  const positions = [1, 2, 3, 4];
+  // Flatten all candidates for batch processing
+  const allCandidates = [
+    ...byPosition[1],
+    ...byPosition[2],
+    ...byPosition[3],
+    ...byPosition[4],
+  ];
 
-  for (const pos of positions) {
-    for (const player of byPosition[pos]) {
-      try {
-        const xpResult = await xPWindow(player, gwIds);
-        poolWithXp.push({
-          ...player,
-          xpOverHorizon: xpResult?.total || 0,
-          avgXpPerGw: gwIds.length > 0 ? (xpResult?.total || 0) / gwIds.length : 0,
-          perGwData: xpResult?.perGw || [],
-        });
-      } catch (e) {
-        // Skip players with xP calculation errors
-      }
+  // Use batch xP calculation for parallel processing (major performance improvement)
+  const xpResults = await xPWindowBatch(allCandidates, gwIds, {
+    concurrency: 15, // Higher concurrency for faster results
+  });
+
+  // Build pool with xP data
+  const poolWithXp = [];
+  for (const player of allCandidates) {
+    const xpResult = xpResults.get(player.id);
+    if (xpResult && !xpResult.error) {
+      poolWithXp.push({
+        ...player,
+        xpOverHorizon: xpResult.total || 0,
+        avgXpPerGw: gwIds.length > 0 ? (xpResult.total || 0) / gwIds.length : 0,
+        perGwData: xpResult.perGw || [],
+      });
     }
   }
 

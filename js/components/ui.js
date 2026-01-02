@@ -484,6 +484,189 @@ export const ui = {
     return wrapper;
   },
 
+  /**
+   * Progressive table - renders in chunks for better performance with large datasets
+   * Phase 9: Optimized rendering for 600+ row tables
+   * @param {Array} columns - Column definitions
+   * @param {Array} rows - Data rows
+   * @param {Object} options - Configuration
+   * @param {number} options.initialChunk - Initial rows to render (default: 50)
+   * @param {number} options.chunkSize - Rows to add per chunk (default: 25)
+   * @param {boolean} options.enableAutoScroll - Load more on scroll (default: true)
+   */
+  progressiveTable(columns, rows, options = {}) {
+    const {
+      initialChunk = 50,
+      chunkSize = 25,
+      enableAutoScroll = true,
+    } = options;
+
+    let renderedCount = Math.min(initialChunk, rows.length);
+    let sortIdx = -1, sortDir = "asc";
+    let sortedRows = rows.slice();
+
+    // Container
+    const container = utils.el("div", { class: "progressive-table-container" });
+
+    // Table
+    const wrapper = utils.el("div", { class: "table-scroll-wrapper" });
+    const table = utils.el("table", { class: "table" });
+    const thead = utils.el("thead");
+    const tbody = utils.el("tbody");
+
+    // Header
+    const trh = utils.el("tr");
+    columns.forEach((c, i) => {
+      const th = utils.el("th", { class: c.sortBy || c.accessor ? "th-sortable" : "" }, c.header);
+      if (c.className) th.classList.add(c.className);
+      if (c.thClass) th.classList.add(c.thClass);
+      if (c.sortBy || c.accessor) {
+        th.addEventListener("click", () => {
+          if (sortIdx === i) { sortDir = sortDir === "asc" ? "desc" : "asc"; }
+          else { sortIdx = i; sortDir = "asc"; }
+          resortAndRender();
+          [...thead.querySelectorAll("th")].forEach(el => el.classList.remove("active", "asc", "desc"));
+          th.classList.add("active", sortDir);
+        });
+      }
+      trh.append(th);
+    });
+    thead.append(trh);
+    table.append(thead, tbody);
+    wrapper.append(table);
+
+    // Helper functions
+    function getVal(r, col) {
+      if (typeof col.sortBy === "function") return col.sortBy(r);
+      if (typeof col.accessor === "function") return col.accessor(r);
+      if (typeof col.accessor === "string") return r[col.accessor];
+      return "";
+    }
+
+    function createRow(r) {
+      const tr = utils.el("tr");
+      columns.forEach(c => {
+        const td = utils.el("td");
+        if (c.tdClass) {
+          const cls = typeof c.tdClass === "function" ? c.tdClass(r) : c.tdClass;
+          if (Array.isArray(cls)) td.classList.add(...cls.filter(Boolean));
+          else if (cls) td.classList.add(cls);
+        }
+        const val = typeof c.cell === "function" ? c.cell(r) :
+                    (c.accessor ? (typeof c.accessor === "function" ? c.accessor(r) : r[c.accessor]) : "");
+        if (val instanceof HTMLElement) td.append(val);
+        else td.textContent = val ?? "";
+        tr.append(td);
+      });
+      return tr;
+    }
+
+    function renderChunk(start, count) {
+      const fragment = document.createDocumentFragment();
+      for (let i = start; i < Math.min(start + count, sortedRows.length); i++) {
+        fragment.appendChild(createRow(sortedRows[i]));
+      }
+      tbody.appendChild(fragment);
+    }
+
+    function resortAndRender() {
+      sortedRows = rows.slice();
+      if (sortIdx >= 0) {
+        const col = columns[sortIdx];
+        sortedRows.sort((a, b) => {
+          const av = getVal(a, col), bv = getVal(b, col);
+          const na = typeof av === "number" || /^[\d.]+$/.test(String(av));
+          const nb = typeof bv === "number" || /^[\d.]+$/.test(String(bv));
+          let cmp = 0;
+          if (na && nb) cmp = (+av) - (+bv);
+          else cmp = String(av).localeCompare(String(bv));
+          return sortDir === "asc" ? cmp : -cmp;
+        });
+      }
+      tbody.innerHTML = "";
+      renderedCount = Math.min(initialChunk, sortedRows.length);
+      renderChunk(0, renderedCount);
+      updateStatus();
+    }
+
+    // Initial render
+    renderChunk(0, renderedCount);
+
+    // Status bar
+    const statusBar = utils.el("div", { class: "progressive-table-status" });
+    statusBar.style.cssText = `
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:8px 12px;
+      background:var(--surface-2, #1e2530);
+      border-radius:0 0 8px 8px;
+      font-size:0.85rem;
+    `;
+
+    const statusText = utils.el("span", { class: "status-text", style: "color:var(--text-secondary)" });
+    function updateStatus() {
+      statusText.textContent = `Showing ${renderedCount} of ${rows.length}`;
+      loadMoreBtn.style.display = renderedCount >= rows.length ? "none" : "";
+      loadAllBtn.style.display = renderedCount >= rows.length ? "none" : "";
+    }
+
+    const loadMoreBtn = utils.el("button", { class: "btn-ghost", style: "font-size:0.8rem;padding:4px 12px" }, "Load More");
+    const loadAllBtn = utils.el("button", { class: "btn-ghost", style: "font-size:0.8rem;padding:4px 12px" }, "Load All");
+
+    loadMoreBtn.addEventListener("click", () => {
+      const newCount = Math.min(chunkSize, rows.length - renderedCount);
+      renderChunk(renderedCount, newCount);
+      renderedCount += newCount;
+      updateStatus();
+    });
+
+    loadAllBtn.addEventListener("click", () => {
+      renderChunk(renderedCount, rows.length - renderedCount);
+      renderedCount = rows.length;
+      updateStatus();
+    });
+
+    updateStatus();
+
+    const btnGroup = utils.el("div", { style: "display:flex;gap:8px" });
+    btnGroup.append(loadMoreBtn, loadAllBtn);
+    statusBar.append(statusText, btnGroup);
+
+    container.append(wrapper);
+    if (rows.length > initialChunk) {
+      container.append(statusBar);
+    }
+
+    // Auto-load on scroll
+    if (enableAutoScroll) {
+      let scrollTimeout = null;
+      wrapper.addEventListener("scroll", () => {
+        if (scrollTimeout) return;
+        scrollTimeout = setTimeout(() => {
+          scrollTimeout = null;
+          const { scrollTop, scrollHeight, clientHeight } = wrapper;
+          if (scrollHeight - scrollTop - clientHeight < 200 && renderedCount < rows.length) {
+            loadMoreBtn.click();
+          }
+        }, 100);
+      }, { passive: true });
+    }
+
+    // Public API
+    container.progressiveTable = {
+      refresh: (newRows) => {
+        rows.length = 0;
+        rows.push(...newRows);
+        resortAndRender();
+      },
+      loadAll: () => loadAllBtn.click(),
+      getRenderedCount: () => renderedCount,
+    };
+
+    return container;
+  },
+
   async chart(canvas, cfg, previousInstance=null){
     try{
       const Chart = await ensureChart();

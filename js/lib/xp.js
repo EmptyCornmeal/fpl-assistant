@@ -1,14 +1,55 @@
 // js/lib/xp.js
 // Lightweight, transparent Expected Points (xP) helpers.
 // Uses last-finished GWs only (no live), recent form (last 5), and FDR-based fixture weighting.
+// Phase 9: Optimized with parallel fetching and improved memoization
 
 import { api } from "../api.js";
 import { state } from "../state.js";
 
-// simple in-tab cache
+// Enhanced memoization with TTL and stats
 const _memo = new Map();
-const getMemo = (k)=> _memo.get(k);
-const setMemo = (k,v)=> _memo.set(k,v);
+const _memoTimestamps = new Map();
+const MEMO_TTL = 10 * 60 * 1000; // 10 minutes TTL (increased from implicit no-TTL)
+
+let _memoStats = { hits: 0, misses: 0 };
+
+function getMemo(k) {
+  const cached = _memo.get(k);
+  if (cached !== undefined) {
+    const timestamp = _memoTimestamps.get(k);
+    if (timestamp && Date.now() - timestamp < MEMO_TTL) {
+      _memoStats.hits++;
+      return cached;
+    }
+    // Expired
+    _memo.delete(k);
+    _memoTimestamps.delete(k);
+  }
+  _memoStats.misses++;
+  return undefined;
+}
+
+function setMemo(k, v) {
+  _memo.set(k, v);
+  _memoTimestamps.set(k, Date.now());
+}
+
+// Export stats for debugging
+export function getMemoStats() {
+  const total = _memoStats.hits + _memoStats.misses;
+  return {
+    hits: _memoStats.hits,
+    misses: _memoStats.misses,
+    size: _memo.size,
+    hitRate: total > 0 ? (_memoStats.hits / total * 100).toFixed(1) + '%' : '0%',
+  };
+}
+
+export function clearMemo() {
+  _memo.clear();
+  _memoTimestamps.clear();
+  _memoStats = { hits: 0, misses: 0 };
+}
 
 // -------- Minutes risk --------
 export function statusMultiplier(code){
@@ -140,11 +181,19 @@ export async function xPForGw(player, gwId){
 }
 
 export async function xPWindow(player, gwIds){
+  // Use parallel fetching for multiple GWs
+  const key = `xpw:${player.id}:${gwIds.join(",")}`;
+  const cached = getMemo(key);
+  if (cached) return cached;
+
+  // Fetch all GWs in parallel
+  const gwResults = await Promise.all(gwIds.map(gw => xPForGw(player, gw)));
+
   let total = 0;
   const parts = {appearance:0, attack:0, cs:0, bonus:0};
   const perGw = [];
-  for (const gw of gwIds){
-    const r = await xPForGw(player, gw);
+
+  for (const r of gwResults){
     total += r.xP;
     parts.appearance += r.parts.appearance;
     parts.attack     += r.parts.attack;
@@ -152,5 +201,68 @@ export async function xPWindow(player, gwIds){
     parts.bonus      += r.parts.bonus;
     perGw.push(r);
   }
-  return { total, parts, perGw };
+
+  const result = { total, parts, perGw };
+  setMemo(key, result);
+  return result;
+}
+
+/**
+ * Batch xP calculation for multiple players (parallel with concurrency limit)
+ * @param {Array} players - Array of player objects
+ * @param {Array} gwIds - Array of gameweek IDs
+ * @param {Object} options - Configuration
+ * @param {number} options.concurrency - Max concurrent operations (default: 10)
+ * @param {Function} options.onProgress - Progress callback (done, total)
+ * @returns {Promise<Map>} Map of playerId -> xP result
+ */
+export async function xPWindowBatch(players, gwIds, options = {}) {
+  const {
+    concurrency = 10,
+    onProgress = null,
+  } = options;
+
+  const results = new Map();
+  let completed = 0;
+  const total = players.length;
+
+  // Create work queue
+  const queue = [...players];
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      const player = queue.shift();
+      try {
+        const xpResult = await xPWindow(player, gwIds);
+        results.set(player.id, xpResult);
+      } catch (e) {
+        results.set(player.id, { total: 0, parts: {}, perGw: [], error: e.message });
+      }
+      completed++;
+      if (onProgress) {
+        onProgress(completed, total);
+      }
+    }
+  };
+
+  // Start workers
+  const workers = [];
+  for (let i = 0; i < Math.min(concurrency, players.length); i++) {
+    workers.push(worker());
+  }
+
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Precompute and cache xP for a list of players
+ * Useful for warming the cache before heavy operations
+ */
+export async function precomputeXP(players, gwIds, options = {}) {
+  const results = await xPWindowBatch(players, gwIds, options);
+  return {
+    results,
+    stats: getMemoStats(),
+  };
 }
