@@ -3,6 +3,10 @@
 // - Deterministic pipeline with loadContext()
 // - Transparent optimizer with horizon/objective controls
 // - Debuggable state with dependency tracking
+// Phase 7: Transfer Optimisation (constrained simulation)
+// - Weakest link identification with explicit reasons
+// - Legal replacement simulation (budget, position, club limit, FT/hit rules)
+// - User controls: lock players, exclude teams/players, hit settings
 
 import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
@@ -11,6 +15,7 @@ import { ui } from "../components/ui.js";
 import { log } from "../logger.js";
 import { STORAGE_KEYS, getJSON, setJSON } from "../storage.js";
 import { getCacheAge, CacheKey, loadFromCache } from "../api/fetchHelper.js";
+import { renderTransferOptimizer, wireUpTransferOptimizer } from "../components/transferOptimizerUI.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHASE 5: HORIZON & OBJECTIVE DEFINITIONS
@@ -1839,8 +1844,16 @@ async function renderOptimisedDashboard(container, recalcBanner) {
 
     // Get transfer recommendations (only if predictions available)
     let transfers = null;
+    let transferOptimizerHtml = "";
     if (predictionsAvailable) {
       transfers = await getTransferRecommendations(context, horizonGwCount, bs, objectiveConfig);
+      // Phase 7: Use new Transfer Optimizer
+      try {
+        transferOptimizerHtml = await renderTransferOptimizer(context, { horizonGwCount });
+      } catch (e) {
+        log.warn("Transfer Optimizer failed, falling back to legacy panel", e);
+        transferOptimizerHtml = "";
+      }
     }
 
     // Get chip recommendation (only if predictions available)
@@ -1892,7 +1905,7 @@ async function renderOptimisedDashboard(container, recalcBanner) {
         ${renderCaptainDecisionPanel(captainData, optimised, captainModeConfig, objectiveConfig)}
       </div>
       <div class="sp-col sp-col-right">
-        ${transfers ? renderTransferPanel(transfers) : renderTransferPanelUnavailable()}
+        ${transferOptimizerHtml || (transfers ? renderTransferPanel(transfers) : renderTransferPanelUnavailable())}
         ${renderFixturesPanel(context, horizonGwCount)}
         ${renderAssumptionsPanel(objectiveConfig)}
       </div>
@@ -1902,6 +1915,15 @@ async function renderOptimisedDashboard(container, recalcBanner) {
     wireUpSquadInteractions(container, squadWithXp, horizonGwCount, objectiveConfig);
     wireUpCaptainModeToggle(container);
     wireUpSnapshotRefresh();
+
+    // Phase 7: Wire up Transfer Optimizer interactions
+    if (transferOptimizerHtml) {
+      const refreshTransferOptimizer = async () => {
+        const recalcBanner = document.getElementById('spRecalcBanner');
+        await renderOptimisedDashboard(container, recalcBanner);
+      };
+      wireUpTransferOptimizer(container, context, refreshTransferOptimizer);
+    }
 
     // Update page timestamp
     setPageUpdated("stat-picker");

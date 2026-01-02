@@ -26,6 +26,13 @@ export const STORAGE_KEYS = {
 
   // Rate limiting
   STAT_PICKER_GATE: 'fpl.stat-picker.gate', // Stat picker rate limit timestamp
+
+  // Phase 7: Transfer Optimizer settings
+  TRANSFER_LOCKED_PLAYERS: 'fpl.transfer.lockedPlayers', // Player IDs exempt from transfer out (JSON array)
+  TRANSFER_EXCLUDED_TEAMS: 'fpl.transfer.excludedTeams', // Team IDs excluded from targets (JSON array)
+  TRANSFER_EXCLUDED_PLAYERS: 'fpl.transfer.excludedPlayers', // Player IDs excluded from targets (JSON array)
+  TRANSFER_HIT_ENABLED: 'fpl.transfer.hitEnabled', // Whether hits are allowed (boolean)
+  TRANSFER_HIT_THRESHOLD: 'fpl.transfer.hitThreshold', // Min net gain to suggest hit (number)
 };
 
 /**
