@@ -209,15 +209,40 @@ export async function renderFixtures(main){
     segDef.onclick = ()=> setSeg("DEF");
     segAtt.onclick = ()=> setSeg("ATT");
 
-    const pinMine = utils.el("label",{},[
-      utils.el("input",{type:"checkbox", checked:true}), utils.el("span",{style:"margin-left:6px"},"Pin my teams")
-    ]);
-    const onlyDoubles = utils.el("label",{},[
-      utils.el("input",{type:"checkbox"}), utils.el("span",{style:"margin-left:6px"},"Only doubles")
-    ]);
-    const showSwings = utils.el("label",{},[
-      utils.el("input",{type:"checkbox"}), utils.el("span",{style:"margin-left:6px"},"Show swings")
-    ]);
+    // Controlled toggle state for Fixtures
+    const fixtureToggleState = {
+      pinMine: true,
+      onlyDoubles: false,
+      showSwings: false
+    };
+
+    // Helper to create controlled fixture toggle with clearer labels
+    function createFixtureToggle(key, label, tooltip) {
+      const wrap = utils.el("label", { class: "fx-toggle", title: tooltip });
+      const checkbox = utils.el("input", { type: "checkbox", checked: fixtureToggleState[key] });
+      const labelSpan = utils.el("span", { class: "fx-toggle-label" }, label);
+      const indicator = utils.el("span", { class: "fx-toggle-indicator" });
+
+      wrap.append(checkbox, indicator, labelSpan);
+
+      checkbox.addEventListener("change", () => {
+        fixtureToggleState[key] = checkbox.checked;
+        indicator.classList.toggle("active", checkbox.checked);
+        render();
+      });
+
+      indicator.classList.toggle("active", fixtureToggleState[key]);
+
+      return { wrap, checkbox, getState: () => fixtureToggleState[key] };
+    }
+
+    const pinMineToggle = createFixtureToggle("pinMine", "Pin my teams", "Keep your owned teams at the top of the matrix");
+    const onlyDoublesToggle = createFixtureToggle("onlyDoubles", "Only doubles", "Show only teams with double gameweeks in the selected window");
+    const showSwingsToggle = createFixtureToggle("showSwings", "Show swings", "Show difficulty direction arrows (▲easier ▼harder) between consecutive GWs");
+
+    const pinMine = pinMineToggle.wrap;
+    const onlyDoubles = onlyDoublesToggle.wrap;
+    const showSwings = showSwingsToggle.wrap;
 
     // Compact toolbar
     const toolbar = utils.el("div",{class:"toolbar-compact"},[
@@ -244,9 +269,8 @@ export async function renderFixtures(main){
     const content = utils.el("div",{class:"fixtures-content"});
     content.append(matrixCard, chartCard);
 
-    shell.innerHTML = "";
     page.append(header, content);
-    shell.append(page);
+    ui.mount(main, page);
 
     const { bucket } = buildXFDRScaler(teams);
 
@@ -262,7 +286,7 @@ export async function renderFixtures(main){
 
       const ranked = teams.slice().sort((a,b)=> (b.strength||0)-(a.strength||0));
       const top6Ids = new Set(ranked.slice(0,6).map(t=>t.id));
-      const showSwingArrows = showSwings.querySelector("input").checked;
+      const showSwingArrows = fixtureToggleState.showSwings === true;
 
       const rows = teams.map(t=>{
         const cells = [];
@@ -349,12 +373,28 @@ export async function renderFixtures(main){
 
       /* Filters */
       let filtered = rows.slice();
-      if (onlyDoubles.querySelector("input").checked){
+      let emptyStateMessage = null;
+
+      // Track if "Only doubles" is filtering
+      const onlyDoublesActive = fixtureToggleState.onlyDoubles === true;
+      if (onlyDoublesActive) {
+        const beforeCount = filtered.length;
         filtered = filtered.filter(r => r.summary.doubles > 0);
+        if (filtered.length === 0 && beforeCount > 0) {
+          emptyStateMessage = "No double gameweeks in the selected horizon";
+        }
+      }
+
+      // Track if "Show swings" would have any effect
+      let swingCount = 0;
+      if (showSwingArrows) {
+        for (const r of filtered) {
+          swingCount += r.cells.filter(c => c.swing).length;
+        }
       }
 
       /* Pin mine top */
-      if (pinMine.querySelector("input").checked && myTeamIds.size){
+      if (fixtureToggleState.pinMine === true && myTeamIds.size){
         filtered.sort((a,b)=>{
           const ai = myTeamIds.has(a.teamId) ? 0 : 1;
           const bi = myTeamIds.has(b.teamId) ? 0 : 1;
@@ -375,13 +415,72 @@ export async function renderFixtures(main){
       /* Render Matrix */
       matrixCard.innerHTML = "";
       matrixCard.append(
-        utils.el("h3",{},`Matrix — GW${windowIds[0]}–${windowIds.slice(-1)[0]}`),
-        utils.el("div",{class:"chips", style:"margin-bottom:6px"},[
-          utils.el("span",{class:"summary-chip"}, "FDR: 1 easiest → 5 hardest"),
-          utils.el("span",{class:"summary-chip"}, (viewSel.value==="XMODEL" || viewPos!=="ALL") ? `View: xFDR (${viewPos==="ALL"?"balanced":"pos-specific"})` : "View: Official FDR"),
-          utils.el("span",{class:"summary-chip"}, "✓ Completed and LIVE fixtures are marked")
-        ])
+        utils.el("h3",{},`Matrix — GW${windowIds[0]}–${windowIds.slice(-1)[0]}`)
       );
+
+      // Legend explaining FDR types and features
+      const legend = utils.el("div", { class: "fx-legend" });
+      legend.innerHTML = `
+        <div class="fx-legend-section">
+          <span class="fx-legend-title">Difficulty:</span>
+          <span class="fdr fdr-1">1</span><span class="fx-legend-label">Easiest</span>
+          <span class="fdr fdr-2">2</span>
+          <span class="fdr fdr-3">3</span>
+          <span class="fdr fdr-4">4</span>
+          <span class="fdr fdr-5">5</span><span class="fx-legend-label">Hardest</span>
+        </div>
+        <div class="fx-legend-section">
+          <span class="fx-legend-title">View:</span>
+          <span class="fx-legend-item ${viewSel.value === "OFFICIAL" && viewPos === "ALL" ? "active" : ""}">
+            <strong>Official FDR</strong> — Premier League's difficulty rating
+          </span>
+          <span class="fx-legend-item ${viewSel.value === "XMODEL" || viewPos !== "ALL" ? "active" : ""}">
+            <strong>xFDR</strong> — Model-based difficulty using team strength stats${viewPos !== "ALL" ? ` (${viewPos === "DEF" ? "defensive" : "attacking"} view)` : ""}
+          </span>
+        </div>
+        ${showSwingArrows ? `
+        <div class="fx-legend-section">
+          <span class="fx-legend-title">Swings:</span>
+          <span class="swing-up">▲ easier next</span>
+          <span class="swing-down">▼ harder next</span>
+          <span class="fx-legend-note">(shown when difficulty changes by ≥2)</span>
+        </div>
+        ` : ""}
+      `;
+      matrixCard.append(legend);
+
+      // Handle empty states
+      if (emptyStateMessage) {
+        const emptyState = utils.el("div", { class: "fx-empty-state" });
+        emptyState.innerHTML = `
+          <div class="fx-empty-icon">📅</div>
+          <h4>${emptyStateMessage}</h4>
+          <p>Try selecting a longer window (Next 5 or Next 8) to find teams with double gameweeks.</p>
+          <button class="btn-ghost fx-clear-filter">Clear "Only doubles" filter</button>
+        `;
+        emptyState.querySelector(".fx-clear-filter").addEventListener("click", () => {
+          fixtureToggleState.onlyDoubles = false;
+          onlyDoublesToggle.checkbox.checked = false;
+          onlyDoublesToggle.wrap.querySelector(".fx-toggle-indicator").classList.remove("active");
+          render();
+        });
+        matrixCard.append(emptyState);
+        chartCard.innerHTML = "";
+        chartCard.append(utils.el("div", { class: "fx-empty-state" }, [
+          utils.el("p", {}, "No data to display. Clear the filter to see all teams.")
+        ]));
+        return;
+      }
+
+      // Show message if swings is enabled but no swings detected
+      if (showSwingArrows && swingCount === 0 && filtered.length > 0) {
+        const swingNotice = utils.el("div", { class: "fx-notice" });
+        swingNotice.innerHTML = `
+          <span class="fx-notice-icon">ℹ️</span>
+          <span>No significant swing events detected in this window. Swings appear when difficulty changes by ≥2 between consecutive GWs.</span>
+        `;
+        matrixCard.append(swingNotice);
+      }
 
       const table = utils.el("table",{class:"table matrix"});
       const thead = utils.el("thead");
@@ -555,9 +654,7 @@ await ui.chart(canvas, cfg);
 const rerender = ()=>render();
 windowSel.onchange = rerender;
 viewSel.onchange  = rerender;
-pinMine.querySelector("input").onchange  = rerender;
-onlyDoubles.querySelector("input").onchange = rerender;
-showSwings.querySelector("input").onchange  = rerender;
+// Note: toggle event handlers are now set up in createFixtureToggle()
 const _setSeg = (k)=>{ setSeg(k); rerender(); };
 segAll.onclick = ()=> _setSeg("ALL");
 segDef.onclick = ()=> _setSeg("DEF");
