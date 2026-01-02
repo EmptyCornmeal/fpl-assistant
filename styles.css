@@ -8887,6 +8887,233 @@
   background: var(--surface-3);
 }
 
+/* ========== DEGRADED STATE CARD ========== */
+.degraded-card {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 16px auto;
+  max-width: 500px;
+}
+
+.degraded-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.degraded-card-icon {
+  font-size: 24px;
+}
+
+.degraded-card-title {
+  font-weight: 600;
+  color: var(--yellow);
+  font-size: 16px;
+}
+
+.degraded-card-message {
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.degraded-card-cache-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.degraded-card-cache-info .cache-icon {
+  font-size: 18px;
+}
+
+.degraded-card-cache-info .cache-text {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.degraded-card-cache-info .cache-text strong {
+  color: var(--brand-light);
+}
+
+.degraded-card-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.degraded-card .btn-retry {
+  background: var(--yellow);
+  color: #1a1a1a;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.degraded-card .btn-retry:hover {
+  background: #f59e0b;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.degraded-card .btn-retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.degraded-card .btn-use-cached {
+  background: var(--brand);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.degraded-card .btn-use-cached:hover {
+  background: var(--brand-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ========== CACHED DATA BANNER ========== */
+.cached-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.cached-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cached-banner-icon {
+  font-size: 18px;
+}
+
+.cached-banner-text {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cached-banner-text strong {
+  color: var(--accent-light);
+}
+
+.cached-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-banner-refresh {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-banner-refresh:hover {
+  background: #2563eb;
+}
+
+.btn-banner-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-banner-dismiss {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-banner-dismiss:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* ========== LOADING STATE ========== */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  min-height: 200px;
+}
+
+.loading-spinner-large {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--surface-2);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-message {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.loading-warning {
+  margin-top: 12px;
+  color: var(--yellow);
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.loading-warning:not(.hidden) {
+  opacity: 1;
+}
+
+.loading-warning.hidden {
+  display: none;
+}
+
 /* ========== SETUP PROMPT ========== */
 .setup-prompt {
   max-width: 500px;

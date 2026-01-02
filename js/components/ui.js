@@ -2,6 +2,7 @@
 import { utils } from "../utils.js";
 import { log } from "../logger.js";
 import { formatPageUpdated, getPageFreshnessClass } from "../state.js";
+import { formatCacheAge, getErrorMessage, ErrorType } from "../api/fetchHelper.js";
 
 let chartPromise = null;
 async function ensureChart(){
@@ -92,6 +93,183 @@ export const ui = {
     }
 
     return card;
+  },
+
+  /**
+   * Degraded state card with Retry and Use Cached Data options
+   * Shows when a fetch fails but cached data is available
+   * @param {Object} options
+   * @param {string} options.title - Error title
+   * @param {string} options.message - Error message (or auto-generated from errorType)
+   * @param {string} options.errorType - Error type from fetchHelper
+   * @param {number} options.cacheAge - Age of cached data in ms
+   * @param {Function} options.onRetry - Retry callback
+   * @param {Function} options.onUseCached - Use cached data callback
+   */
+  degradedCard({ title = "Connection Issue", message = "", errorType = null, cacheAge = null, onRetry = null, onUseCached = null } = {}) {
+    const card = utils.el("div", { class: "degraded-card" });
+
+    // Header
+    const header = utils.el("div", { class: "degraded-card-header" });
+    header.append(utils.el("span", { class: "degraded-card-icon" }, "⚠️"));
+    header.append(utils.el("span", { class: "degraded-card-title" }, title));
+    card.append(header);
+
+    // Message - use provided or generate from errorType
+    const displayMessage = message || (errorType ? getErrorMessage(errorType) : "Unable to load fresh data.");
+    card.append(utils.el("p", { class: "degraded-card-message" }, displayMessage));
+
+    // Cache info
+    if (cacheAge !== null && onUseCached) {
+      const cacheInfo = utils.el("div", { class: "degraded-card-cache-info" });
+      cacheInfo.innerHTML = `
+        <span class="cache-icon">💾</span>
+        <span class="cache-text">Cached data available from <strong>${formatCacheAge(cacheAge)}</strong></span>
+      `;
+      card.append(cacheInfo);
+    }
+
+    // Actions
+    const actions = utils.el("div", { class: "degraded-card-actions" });
+
+    if (onRetry) {
+      const retryBtn = utils.el("button", { class: "btn-retry" }, "Retry");
+      retryBtn.addEventListener("click", async () => {
+        retryBtn.disabled = true;
+        retryBtn.textContent = "Retrying...";
+        try {
+          await onRetry();
+        } catch (e) {
+          log.error("Retry failed:", e);
+          retryBtn.disabled = false;
+          retryBtn.textContent = "Retry";
+        }
+      });
+      actions.append(retryBtn);
+    }
+
+    if (onUseCached && cacheAge !== null) {
+      const cacheBtn = utils.el("button", { class: "btn-use-cached" }, "Use Cached Data");
+      cacheBtn.addEventListener("click", () => {
+        if (onUseCached) onUseCached();
+      });
+      actions.append(cacheBtn);
+    }
+
+    if (actions.children.length > 0) {
+      card.append(actions);
+    }
+
+    return card;
+  },
+
+  /**
+   * Banner shown when viewing cached data
+   * @param {Object} options
+   * @param {number} options.cacheAge - Age of cached data in ms
+   * @param {Function} options.onRefresh - Optional refresh callback
+   * @param {Function} options.onDismiss - Optional dismiss callback
+   */
+  cachedBanner({ cacheAge = 0, onRefresh = null, onDismiss = null } = {}) {
+    const banner = utils.el("div", { class: "cached-banner" });
+
+    const content = utils.el("div", { class: "cached-banner-content" });
+    content.innerHTML = `
+      <span class="cached-banner-icon">📡</span>
+      <span class="cached-banner-text">
+        <strong>Offline Mode</strong> — Using cached data from ${formatCacheAge(cacheAge)}
+      </span>
+    `;
+
+    banner.append(content);
+
+    const actions = utils.el("div", { class: "cached-banner-actions" });
+
+    if (onRefresh) {
+      const refreshBtn = utils.el("button", { class: "btn-banner-refresh" }, "Try Again");
+      refreshBtn.addEventListener("click", async () => {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Refreshing...";
+        try {
+          await onRefresh();
+        } catch {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = "Try Again";
+        }
+      });
+      actions.append(refreshBtn);
+    }
+
+    if (onDismiss) {
+      const dismissBtn = utils.el("button", { class: "btn-banner-dismiss" }, "✕");
+      dismissBtn.title = "Dismiss";
+      dismissBtn.addEventListener("click", () => {
+        banner.remove();
+        if (onDismiss) onDismiss();
+      });
+      actions.append(dismissBtn);
+    }
+
+    banner.append(actions);
+
+    return banner;
+  },
+
+  /**
+   * Loading state with timeout warning
+   * Shows a spinner initially, then adds a warning after timeout threshold
+   * @param {string} message - Loading message
+   * @param {number} warnAfterMs - Show warning after this many ms (default: 5000)
+   */
+  loadingWithTimeout(message = "Loading...", warnAfterMs = 5000) {
+    const wrap = utils.el("div", { class: "loading-state" });
+
+    const spinner = utils.el("div", { class: "loading-spinner-large" });
+    wrap.append(spinner);
+
+    const msg = utils.el("div", { class: "loading-message" }, message);
+    wrap.append(msg);
+
+    const warning = utils.el("div", { class: "loading-warning hidden" });
+    warning.textContent = "This is taking longer than expected...";
+    wrap.append(warning);
+
+    // Show warning after timeout
+    const timeoutId = setTimeout(() => {
+      warning.classList.remove("hidden");
+    }, warnAfterMs);
+
+    // Clean up timeout when element is removed
+    wrap._cleanupTimeout = () => clearTimeout(timeoutId);
+
+    return wrap;
+  },
+
+  /**
+   * Mount content with optional cached banner
+   * @param {HTMLElement} main - Main container
+   * @param {HTMLElement} node - Content to mount
+   * @param {Object} options - Mount options
+   * @param {boolean} options.fromCache - Whether content is from cache
+   * @param {number} options.cacheAge - Age of cached data
+   * @param {Function} options.onRefresh - Refresh callback for banner
+   */
+  mountWithCache(main, node, options = {}) {
+    const { fromCache = false, cacheAge = 0, onRefresh = null } = options;
+
+    main.innerHTML = "";
+
+    // Add cached banner if using cached data
+    if (fromCache && cacheAge > 0) {
+      const banner = this.cachedBanner({
+        cacheAge,
+        onRefresh,
+        onDismiss: () => {},
+      });
+      main.append(banner);
+    }
+
+    main.append(node);
   },
 
   /**

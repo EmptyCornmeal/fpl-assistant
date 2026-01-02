@@ -8,6 +8,7 @@ import { mapBootstrap, mapFixture } from "../api/fplMapping.js";
 import { fixtureEase, getMetricExplanations } from "../api/fplDerived.js";
 import { openModal } from "../components/modal.js";
 import { log } from "../logger.js";
+import { hasCachedData, loadFromCache, CacheKey, getCacheAge } from "../api/fetchHelper.js";
 
 /* ───────────────── Constants ───────────────── */
 const TEAM_BADGE_URL = (teamCode) =>
@@ -861,59 +862,114 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
 
 /* ───────────────── Main Render ───────────────── */
 export async function renderPortal(main) {
-  // Show skeleton while loading
-  ui.mount(main, renderSkeleton());
+  // Show loading state
+  ui.mount(main, ui.loadingWithTimeout("Loading dashboard..."));
 
-  try {
-    // Load bootstrap data
-    const rawBootstrap = await fplClient.bootstrap();
-    const bootstrap = mapBootstrap(rawBootstrap);
+  // Fetch bootstrap data
+  const bootstrapResult = await fplClient.bootstrap();
 
-    // Get current GW
-    const currentGw = bootstrap.currentEvent?.id || bootstrap.events.find(e => e.isCurrent)?.id || 1;
+  // Handle complete failure with degraded state options
+  if (!bootstrapResult.ok) {
+    log.error("Portal: Bootstrap fetch failed", bootstrapResult.message);
 
-    // Load fixtures - pass array, not Map
-    const rawFixtures = await fplClient.fixtures();
-    const fixtures = rawFixtures.map(f => mapFixture(f, bootstrap.teams));
+    // Check if cached data is available
+    const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
+    const hasCache = cacheAge !== null;
 
-    // Build the portal - 3-column dashboard layout
-    const page = utils.el("div", { class: "portal-page" });
-
-    // LEFT COLUMN: Deadline + My Team + Leagues
-    const leftCol = utils.el("div", { class: "portal-column" });
-    const leftHeader = utils.el("div", { class: "portal-header" });
-    leftHeader.innerHTML = `<h1 class="portal-title">FPL Command Center</h1>`;
-    leftCol.append(leftHeader);
-    leftCol.append(buildDeadlineTile(bootstrap.events));
-    leftCol.append(buildTeamStatusTile(state.entryId));
-    leftCol.append(buildLeagueTile(state.leagueIds));
-
-    // CENTER COLUMN: Fixture Outlook + Captain Picks
-    const centerCol = utils.el("div", { class: "portal-column-center" });
-    centerCol.append(buildFixturesTile(bootstrap.teams, fixtures, currentGw));
-    centerCol.append(buildCaptainTile(bootstrap.players, fixtures, currentGw, bootstrap.teams));
-
-    // RIGHT COLUMN: Injuries + Fixture Swings + Transfers
-    const rightCol = utils.el("div", { class: "portal-column" });
-    rightCol.append(buildInjuriesTile(bootstrap.players));
-    rightCol.append(buildFixtureSwingsTile(bootstrap.teams, fixtures, currentGw));
-    rightCol.append(buildTransfersTile(bootstrap.players));
-
-    page.append(leftCol, centerCol, rightCol);
-    ui.mount(main, page);
-
-  } catch (e) {
-    log.error("Portal: Failed to load", e);
-    const errorCard = ui.errorCard({
-      title: "Failed to load Portal",
-      message: "There was a problem loading the dashboard. Please try again.",
-      error: e,
+    const degradedCard = ui.degradedCard({
+      title: "Failed to Load Dashboard",
+      errorType: bootstrapResult.errorType,
+      message: bootstrapResult.message,
+      cacheAge: hasCache ? cacheAge : null,
       onRetry: async () => {
         await renderPortal(main);
-      }
+      },
+      onUseCached: hasCache ? async () => {
+        await renderPortalWithData(main, true);
+      } : null,
     });
-    ui.mount(main, errorCard);
+
+    ui.mount(main, degradedCard);
+    return;
   }
+
+  // Render with data (fresh or auto-cached)
+  await renderPortalWithData(main, bootstrapResult.fromCache, bootstrapResult.cacheAge);
+}
+
+/**
+ * Render portal with bootstrap data (fresh or cached)
+ */
+async function renderPortalWithData(main, fromCache = false, cacheAge = 0) {
+  // If explicitly using cached data, load from cache
+  let bootstrapResult;
+  if (fromCache && cacheAge === 0) {
+    bootstrapResult = fplClient.loadBootstrapFromCache();
+    cacheAge = bootstrapResult.cacheAge;
+  } else {
+    bootstrapResult = await fplClient.bootstrap();
+  }
+
+  if (!bootstrapResult.ok) {
+    log.error("Portal: Failed to load data");
+    ui.mount(main, ui.errorCard({
+      title: "Failed to Load Dashboard",
+      message: "Unable to load dashboard data.",
+      onRetry: () => renderPortal(main),
+    }));
+    return;
+  }
+
+  const rawBootstrap = bootstrapResult.data;
+  const bootstrap = mapBootstrap(rawBootstrap);
+  const currentGw = bootstrap.currentEvent?.id || bootstrap.events.find(e => e.isCurrent)?.id || 1;
+
+  // Fetch fixtures
+  const fixturesResult = await fplClient.fixtures();
+  const rawFixtures = fixturesResult.ok ? fixturesResult.data : [];
+  const fixtures = rawFixtures.map(f => mapFixture(f, bootstrap.teams));
+
+  // Track if we're using any cached data
+  const usingCache = fromCache || bootstrapResult.fromCache || fixturesResult.fromCache;
+  const maxCacheAge = Math.max(
+    fromCache ? cacheAge : 0,
+    bootstrapResult.fromCache ? bootstrapResult.cacheAge : 0,
+    fixturesResult.fromCache ? fixturesResult.cacheAge : 0
+  );
+
+  // Build the portal - 3-column dashboard layout
+  const page = utils.el("div", { class: "portal-page" });
+
+  // LEFT COLUMN: Deadline + My Team + Leagues
+  const leftCol = utils.el("div", { class: "portal-column" });
+  const leftHeader = utils.el("div", { class: "portal-header" });
+  leftHeader.innerHTML = `<h1 class="portal-title">FPL Command Center</h1>`;
+  leftCol.append(leftHeader);
+  leftCol.append(buildDeadlineTile(bootstrap.events));
+  leftCol.append(buildTeamStatusTile(state.entryId));
+  leftCol.append(buildLeagueTile(state.leagueIds));
+
+  // CENTER COLUMN: Fixture Outlook + Captain Picks
+  const centerCol = utils.el("div", { class: "portal-column-center" });
+  centerCol.append(buildFixturesTile(bootstrap.teams, fixtures, currentGw));
+  centerCol.append(buildCaptainTile(bootstrap.players, fixtures, currentGw, bootstrap.teams));
+
+  // RIGHT COLUMN: Injuries + Fixture Swings + Transfers
+  const rightCol = utils.el("div", { class: "portal-column" });
+  rightCol.append(buildInjuriesTile(bootstrap.players));
+  rightCol.append(buildFixtureSwingsTile(bootstrap.teams, fixtures, currentGw));
+  rightCol.append(buildTransfersTile(bootstrap.players));
+
+  page.append(leftCol, centerCol, rightCol);
+
+  // Mount with cached banner if using cached data
+  ui.mountWithCache(main, page, {
+    fromCache: usingCache,
+    cacheAge: maxCacheAge,
+    onRefresh: () => renderPortal(main),
+  });
+
+  setPageUpdated("portal");
 }
 
 export default { renderPortal };

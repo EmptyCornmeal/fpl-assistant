@@ -1,10 +1,26 @@
 // js/api/fplClient.js
-// Centralized FPL API client with caching, retries, and error handling
+// Centralized FPL API client with caching, retries, and graceful degradation
+
+import { log } from "../logger.js";
+import {
+  fetchWithTimeout,
+  fetchWithCache,
+  saveToCache,
+  loadFromCache,
+  hasCachedData,
+  getCacheAge,
+  formatCacheAge,
+  clearAllCache,
+  getCacheStats,
+  ErrorType,
+  CacheKey,
+  getErrorMessage,
+} from "./fetchHelper.js";
 
 const API_BASE = "https://fpl-proxy.myles-fpl-proxy.workers.dev/api";
 
-// Cache configuration
-const cache = new Map();
+// In-memory cache configuration (for fast repeated access within same session)
+const memoryCache = new Map();
 const CACHE_TTL = {
   bootstrap: 5 * 60 * 1000,      // 5 minutes
   fixtures: 5 * 60 * 1000,        // 5 minutes
@@ -13,87 +29,27 @@ const CACHE_TTL = {
   league: 2 * 60 * 1000,          // 2 minutes
 };
 
-// Retry configuration
-const MAX_RETRIES = 3;
-const RETRY_DELAYS = [1000, 2000, 4000]; // exponential backoff
-
 /**
  * FPL API Error with structured information
  */
 export class FplApiError extends Error {
-  constructor(message, { endpoint, status, retryable = false, originalError = null }) {
+  constructor(message, { endpoint, status, retryable = false, errorType = ErrorType.UNKNOWN, originalError = null }) {
     super(message);
     this.name = "FplApiError";
     this.endpoint = endpoint;
     this.status = status;
     this.retryable = retryable;
+    this.errorType = errorType;
     this.originalError = originalError;
     this.timestamp = new Date().toISOString();
   }
 }
 
 /**
- * Fetch with retries and timeout
+ * Get cached data or fetch fresh (in-memory cache)
  */
-async function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        "Accept": "application/json",
-        ...options.headers,
-      },
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const retryable = response.status >= 500 || response.status === 429;
-      throw new FplApiError(`HTTP ${response.status}: ${response.statusText}`, {
-        endpoint: url,
-        status: response.status,
-        retryable,
-      });
-    }
-
-    return response;
-  } catch (error) {
-    clearTimeout(timeout);
-
-    if (error instanceof FplApiError) {
-      if (error.retryable && retries > 0) {
-        const delay = RETRY_DELAYS[MAX_RETRIES - retries] || 4000;
-        await new Promise(r => setTimeout(r, delay));
-        return fetchWithRetry(url, options, retries - 1);
-      }
-      throw error;
-    }
-
-    // Network error or abort
-    if (retries > 0) {
-      const delay = RETRY_DELAYS[MAX_RETRIES - retries] || 4000;
-      await new Promise(r => setTimeout(r, delay));
-      return fetchWithRetry(url, options, retries - 1);
-    }
-
-    throw new FplApiError(`Network error: ${error.message}`, {
-      endpoint: url,
-      status: 0,
-      retryable: false,
-      originalError: error,
-    });
-  }
-}
-
-/**
- * Get cached data or fetch fresh
- */
-function getCached(key, ttl) {
-  const entry = cache.get(key);
+function getMemoryCached(key, ttl) {
+  const entry = memoryCache.get(key);
   if (entry && Date.now() - entry.timestamp < ttl) {
     return entry.data;
   }
@@ -101,14 +57,22 @@ function getCached(key, ttl) {
 }
 
 /**
- * Set cache entry
+ * Set in-memory cache entry
  */
-function setCache(key, data) {
-  cache.set(key, { data, timestamp: Date.now() });
+function setMemoryCache(key, data) {
+  memoryCache.set(key, { data, timestamp: Date.now() });
 }
 
 /**
- * FPL API Client
+ * FPL API Client with standardized responses
+ *
+ * All methods return: { ok, data, errorType, message, fromCache, cacheAge }
+ * - ok: true if data was successfully fetched (fresh or cached)
+ * - data: the response data
+ * - errorType: error classification (if ok is false)
+ * - message: human-readable message
+ * - fromCache: true if data came from localStorage cache
+ * - cacheAge: age of cached data in ms
  */
 export const fplClient = {
   /**
@@ -117,15 +81,32 @@ export const fplClient = {
    */
   async bootstrap(forceRefresh = false) {
     const cacheKey = "bootstrap";
+    const url = `${API_BASE}/bs`;
+
+    // Check in-memory cache first
     if (!forceRefresh) {
-      const cached = getCached(cacheKey, CACHE_TTL.bootstrap);
-      if (cached) return cached;
+      const memoryCached = getMemoryCached(cacheKey, CACHE_TTL.bootstrap);
+      if (memoryCached) {
+        return {
+          ok: true,
+          data: memoryCached,
+          errorType: null,
+          message: "Success (memory cache)",
+          fromCache: false, // Not localStorage cache
+          cacheAge: 0,
+        };
+      }
     }
 
-    const response = await fetchWithRetry(`${API_BASE}/bs`);
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
+    // Fetch with localStorage cache fallback
+    const result = await fetchWithCache(url, CacheKey.BOOTSTRAP);
+
+    if (result.ok) {
+      // Store in memory cache for fast repeated access
+      setMemoryCache(cacheKey, result.data);
+    }
+
+    return result;
   },
 
   /**
@@ -134,16 +115,33 @@ export const fplClient = {
    */
   async fixtures(gwId = null, forceRefresh = false) {
     const cacheKey = gwId ? `fixtures-${gwId}` : "fixtures-all";
+    const url = gwId ? `${API_BASE}/fx/${gwId}` : `${API_BASE}/fx`;
+    const localCacheKey = gwId ? CacheKey.FIXTURES : CacheKey.FIXTURES;
+    const cacheParams = gwId ? [gwId] : [];
+
+    // Check in-memory cache first
     if (!forceRefresh) {
-      const cached = getCached(cacheKey, CACHE_TTL.fixtures);
-      if (cached) return cached;
+      const memoryCached = getMemoryCached(cacheKey, CACHE_TTL.fixtures);
+      if (memoryCached) {
+        return {
+          ok: true,
+          data: memoryCached,
+          errorType: null,
+          message: "Success (memory cache)",
+          fromCache: false,
+          cacheAge: 0,
+        };
+      }
     }
 
-    const url = gwId ? `${API_BASE}/fx/${gwId}` : `${API_BASE}/fx`;
-    const response = await fetchWithRetry(url);
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
+    // Fetch with localStorage cache fallback
+    const result = await fetchWithCache(url, localCacheKey, { cacheParams });
+
+    if (result.ok) {
+      setMemoryCache(cacheKey, result.data);
+    }
+
+    return result;
   },
 
   /**
@@ -152,15 +150,31 @@ export const fplClient = {
    */
   async elementSummary(elementId, forceRefresh = false) {
     const cacheKey = `element-${elementId}`;
+    const url = `${API_BASE}/es/${elementId}`;
+
+    // Check in-memory cache first
     if (!forceRefresh) {
-      const cached = getCached(cacheKey, CACHE_TTL.elementSummary);
-      if (cached) return cached;
+      const memoryCached = getMemoryCached(cacheKey, CACHE_TTL.elementSummary);
+      if (memoryCached) {
+        return {
+          ok: true,
+          data: memoryCached,
+          errorType: null,
+          message: "Success (memory cache)",
+          fromCache: false,
+          cacheAge: 0,
+        };
+      }
     }
 
-    const response = await fetchWithRetry(`${API_BASE}/es/${elementId}`);
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
+    // Fetch with localStorage cache fallback
+    const result = await fetchWithCache(url, CacheKey.ELEMENT_SUMMARY, { cacheParams: [elementId] });
+
+    if (result.ok) {
+      setMemoryCache(cacheKey, result.data);
+    }
+
+    return result;
   },
 
   /**
@@ -169,15 +183,31 @@ export const fplClient = {
    */
   async entry(entryId, forceRefresh = false) {
     const cacheKey = `entry-${entryId}`;
+    const url = `${API_BASE}/en/${entryId}`;
+
+    // Check in-memory cache first
     if (!forceRefresh) {
-      const cached = getCached(cacheKey, CACHE_TTL.entry);
-      if (cached) return cached;
+      const memoryCached = getMemoryCached(cacheKey, CACHE_TTL.entry);
+      if (memoryCached) {
+        return {
+          ok: true,
+          data: memoryCached,
+          errorType: null,
+          message: "Success (memory cache)",
+          fromCache: false,
+          cacheAge: 0,
+        };
+      }
     }
 
-    const response = await fetchWithRetry(`${API_BASE}/en/${entryId}`);
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
+    // Fetch with localStorage cache fallback
+    const result = await fetchWithCache(url, CacheKey.ENTRY, { cacheParams: [entryId] });
+
+    if (result.ok) {
+      setMemoryCache(cacheKey, result.data);
+    }
+
+    return result;
   },
 
   /**
@@ -186,15 +216,31 @@ export const fplClient = {
    */
   async entryHistory(entryId, forceRefresh = false) {
     const cacheKey = `entry-history-${entryId}`;
+    const url = `${API_BASE}/en/${entryId}/history`;
+
+    // Check in-memory cache first
     if (!forceRefresh) {
-      const cached = getCached(cacheKey, CACHE_TTL.entry);
-      if (cached) return cached;
+      const memoryCached = getMemoryCached(cacheKey, CACHE_TTL.entry);
+      if (memoryCached) {
+        return {
+          ok: true,
+          data: memoryCached,
+          errorType: null,
+          message: "Success (memory cache)",
+          fromCache: false,
+          cacheAge: 0,
+        };
+      }
     }
 
-    const response = await fetchWithRetry(`${API_BASE}/en/${entryId}/history`);
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
+    // Fetch with localStorage cache fallback
+    const result = await fetchWithCache(url, CacheKey.ENTRY_HISTORY, { cacheParams: [entryId] });
+
+    if (result.ok) {
+      setMemoryCache(cacheKey, result.data);
+    }
+
+    return result;
   },
 
   /**
@@ -202,20 +248,28 @@ export const fplClient = {
    * Endpoint: entry/{entryId}/event/{gwId}/picks/
    */
   async entryPicks(entryId, gwId) {
-    // Picks are always fresh (no long cache)
-    const response = await fetchWithRetry(`${API_BASE}/ep/${entryId}/${gwId}/picks`);
-    return response.json();
+    const url = `${API_BASE}/ep/${entryId}/${gwId}/picks`;
+
+    // Entry picks should be cached per entry+gw
+    const result = await fetchWithCache(url, CacheKey.ENTRY_PICKS, {
+      cacheParams: [entryId, gwId],
+    });
+
+    return result;
   },
 
   /**
    * Get live event data (current scoring)
    * Endpoint: event/{gwId}/live/
-   * Note: Always fresh, no cache
+   * Note: Always fresh, no localStorage cache (in-memory only for short period)
    */
   async eventLive(gwId) {
-    const url = `${API_BASE}/ev/${gwId}/live?_=${Date.now()}`;
-    const response = await fetchWithRetry(url);
-    return response.json();
+    const url = `${API_BASE}/ev/${gwId}/live`;
+
+    // Live data should always be fresh
+    const result = await fetchWithTimeout(url, { live: true });
+
+    return result;
   },
 
   /**
@@ -224,9 +278,12 @@ export const fplClient = {
    * Note: Always fresh, no cache
    */
   async eventStatus() {
-    const url = `${API_BASE}/ev/status?_=${Date.now()}`;
-    const response = await fetchWithRetry(url);
-    return response.json();
+    const url = `${API_BASE}/ev/status`;
+
+    // Status should always be fresh
+    const result = await fetchWithTimeout(url, { live: true });
+
+    return result;
   },
 
   /**
@@ -235,34 +292,59 @@ export const fplClient = {
    */
   async leagueClassic(leagueId, page = 1, forceRefresh = false) {
     const cacheKey = `league-${leagueId}-${page}`;
+    const url = `${API_BASE}/lc/${leagueId}/${page}`;
+
+    // Check in-memory cache first
     if (!forceRefresh) {
-      const cached = getCached(cacheKey, CACHE_TTL.league);
-      if (cached) return cached;
+      const memoryCached = getMemoryCached(cacheKey, CACHE_TTL.league);
+      if (memoryCached) {
+        return {
+          ok: true,
+          data: memoryCached,
+          errorType: null,
+          message: "Success (memory cache)",
+          fromCache: false,
+          cacheAge: 0,
+        };
+      }
     }
 
-    const response = await fetchWithRetry(`${API_BASE}/lc/${leagueId}/${page}`);
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
+    // Fetch with localStorage cache fallback
+    const result = await fetchWithCache(url, CacheKey.LEAGUE_CLASSIC, {
+      cacheParams: [leagueId, page],
+    });
+
+    if (result.ok) {
+      setMemoryCache(cacheKey, result.data);
+    }
+
+    return result;
   },
 
   /**
-   * Clear all cache or specific key
+   * Clear all in-memory cache or specific key
    */
   clearCache(key = null) {
     if (key) {
-      cache.delete(key);
+      memoryCache.delete(key);
     } else {
-      cache.clear();
+      memoryCache.clear();
     }
   },
 
   /**
-   * Get cache stats
+   * Clear all localStorage cache
    */
-  getCacheStats() {
-    const stats = { size: cache.size, entries: [] };
-    for (const [key, entry] of cache) {
+  clearLocalStorageCache() {
+    clearAllCache();
+  },
+
+  /**
+   * Get in-memory cache stats
+   */
+  getMemoryCacheStats() {
+    const stats = { size: memoryCache.size, entries: [] };
+    for (const [key, entry] of memoryCache) {
       const age = Math.round((Date.now() - entry.timestamp) / 1000);
       stats.entries.push({ key, ageSeconds: age });
     }
@@ -270,16 +352,193 @@ export const fplClient = {
   },
 
   /**
+   * Get localStorage cache stats
+   */
+  getLocalStorageCacheStats() {
+    return getCacheStats();
+  },
+
+  /**
+   * Check if cached data exists for bootstrap
+   */
+  hasBootstrapCache() {
+    return hasCachedData(CacheKey.BOOTSTRAP);
+  },
+
+  /**
+   * Get bootstrap cache age
+   */
+  getBootstrapCacheAge() {
+    return getCacheAge(CacheKey.BOOTSTRAP);
+  },
+
+  /**
+   * Load bootstrap from localStorage cache only (no network)
+   */
+  loadBootstrapFromCache() {
+    const cached = loadFromCache(CacheKey.BOOTSTRAP);
+    if (cached) {
+      return {
+        ok: true,
+        data: cached.data,
+        errorType: null,
+        message: "Loaded from cache",
+        fromCache: true,
+        cacheAge: Date.now() - cached.timestamp,
+      };
+    }
+    return {
+      ok: false,
+      data: null,
+      errorType: ErrorType.CLIENT,
+      message: "No cached data available",
+      fromCache: false,
+      cacheAge: 0,
+    };
+  },
+
+  /**
    * Health check
    */
   async healthCheck() {
-    try {
-      const response = await fetchWithRetry(`${API_BASE}/up?live=true`, {}, 1);
-      const data = await response.json();
-      return { ok: true, ...data };
-    } catch (error) {
-      return { ok: false, error: error.message };
+    const result = await fetchWithTimeout(`${API_BASE}/up?live=true`, { timeout: 5000 });
+
+    if (result.ok) {
+      return { ok: true, ...result.data };
     }
+
+    return { ok: false, error: result.message, errorType: result.errorType };
+  },
+};
+
+// ============================================================
+// Legacy API (throws on error for backward compatibility)
+// ============================================================
+
+/**
+ * Legacy wrapper that throws errors like the original api.js
+ * Use this for gradual migration - pages can switch to result-based API incrementally
+ */
+export const legacyApi = {
+  async bootstrap() {
+    const result = await fplClient.bootstrap();
+    if (!result.ok && !result.fromCache) {
+      throw new FplApiError(result.message, {
+        endpoint: "bootstrap",
+        errorType: result.errorType,
+        status: 0,
+        retryable: [ErrorType.NETWORK, ErrorType.TIMEOUT, ErrorType.SERVER].includes(result.errorType),
+      });
+    }
+    return result.data;
+  },
+
+  async fixtures(gwId) {
+    const result = await fplClient.fixtures(gwId);
+    if (!result.ok && !result.fromCache) {
+      throw new FplApiError(result.message, {
+        endpoint: "fixtures",
+        errorType: result.errorType,
+        status: 0,
+        retryable: true,
+      });
+    }
+    return result.data;
+  },
+
+  async elementSummary(id) {
+    const result = await fplClient.elementSummary(id);
+    if (!result.ok && !result.fromCache) {
+      throw new FplApiError(result.message, {
+        endpoint: "elementSummary",
+        errorType: result.errorType,
+        status: 0,
+        retryable: true,
+      });
+    }
+    return result.data;
+  },
+
+  async entry(id) {
+    const result = await fplClient.entry(id);
+    if (!result.ok && !result.fromCache) {
+      throw new FplApiError(result.message, {
+        endpoint: "entry",
+        errorType: result.errorType,
+        status: 0,
+        retryable: true,
+      });
+    }
+    return result.data;
+  },
+
+  async entryHistory(id) {
+    const result = await fplClient.entryHistory(id);
+    if (!result.ok && !result.fromCache) {
+      throw new FplApiError(result.message, {
+        endpoint: "entryHistory",
+        errorType: result.errorType,
+        status: 0,
+        retryable: true,
+      });
+    }
+    return result.data;
+  },
+
+  async entryPicks(id, gw) {
+    const result = await fplClient.entryPicks(id, gw);
+    if (!result.ok && !result.fromCache) {
+      throw new FplApiError(result.message, {
+        endpoint: "entryPicks",
+        errorType: result.errorType,
+        status: 0,
+        retryable: true,
+      });
+    }
+    return result.data;
+  },
+
+  async eventLive(gw) {
+    const result = await fplClient.eventLive(gw);
+    if (!result.ok) {
+      throw new FplApiError(result.message, {
+        endpoint: "eventLive",
+        errorType: result.errorType,
+        status: 0,
+        retryable: true,
+      });
+    }
+    return result.data;
+  },
+
+  async eventStatus() {
+    const result = await fplClient.eventStatus();
+    if (!result.ok) {
+      throw new FplApiError(result.message, {
+        endpoint: "eventStatus",
+        errorType: result.errorType,
+        status: 0,
+        retryable: true,
+      });
+    }
+    return result.data;
+  },
+
+  async leagueClassic(lid, p = 1) {
+    const result = await fplClient.leagueClassic(lid, p);
+    if (!result.ok && !result.fromCache) {
+      throw new FplApiError(result.message, {
+        endpoint: "leagueClassic",
+        errorType: result.errorType,
+        status: 0,
+        retryable: true,
+      });
+    }
+    return result.data;
+  },
+
+  clearCache() {
+    fplClient.clearCache();
   },
 };
 

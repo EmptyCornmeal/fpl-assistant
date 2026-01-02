@@ -1,12 +1,13 @@
 // js/pages/stat-picker.js
 // Phase 2+3: Stat Picker Dashboard with Optimiser, Transfers, and Chips
 
-import { api } from "../api.js";
+import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { log } from "../logger.js";
 import { STORAGE_KEYS } from "../storage.js";
+import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PASSWORD GATE - localStorage with 24h expiry (Phase 2 - PRESERVED)
@@ -57,7 +58,7 @@ function formatChipName(chip) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 async function buildCurrentState() {
-  const bs = state.bootstrap || await api.bootstrap();
+  const bs = state.bootstrap || await legacyApi.bootstrap();
   if (!bs) throw new Error("Bootstrap data not available");
 
   const entryId = state.entryId;
@@ -86,7 +87,7 @@ async function buildCurrentState() {
 
   const gwForPicks = isLive ? currentGw : (lastFinished?.id || 1);
   let picks = null;
-  try { picks = await api.entryPicks(entryId, gwForPicks); } catch {}
+  try { picks = await legacyApi.entryPicks(entryId, gwForPicks); } catch {}
 
   const currentHistory = history?.current?.find(h => h.event === gwForPicks);
   const bank = currentHistory?.bank ?? entry.last_deadline_bank ?? 0;
@@ -220,7 +221,7 @@ async function calculateExpectedPoints(player, horizon, bs) {
   const gwIds = [];
   for (let gw = startGw; gw < startGw + horizon && gw <= 38; gw++) gwIds.push(gw);
 
-  const allFixtures = await api.fixtures();
+  const allFixtures = await legacyApi.fixtures();
   const teams = bs.teams || [];
 
   const playerFixtures = [];
@@ -769,7 +770,7 @@ async function renderDashboard(container) {
 
 async function renderDashboardContent(container, horizon) {
   try {
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = state.bootstrap || await legacyApi.bootstrap();
     const currentState = await buildCurrentState();
 
     if (currentState.error) {

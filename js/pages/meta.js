@@ -2,11 +2,12 @@
 // ⚡ Meta: multi-league ownership (live-aware), Template XI, Template vs You,
 // Captain EV, EO/xP visuals, and a polished Explainer with compact mini-tables.
 
-import { api } from "../api.js";
+import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
+import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /* ───────────────── formations ───────────────── */
 const FORMATIONS = {
@@ -43,7 +44,7 @@ export async function renderMeta(main){
   ui.mount(main, container);
 
   try {
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = state.bootstrap || await legacyApi.bootstrap();
     state.bootstrap = bs;
     const { elements: players, teams, element_types: positions, events } = bs;
 
@@ -196,7 +197,7 @@ export async function renderMeta(main){
       for (const lid of leagues){
         for (let p=1; p<=pages; p++){
           try {
-            const data = await api.leagueClassic(lid, p);
+            const data = await legacyApi.leagueClassic(lid, p);
             for (const r of (data?.standings?.results||[])) entriesSet.add(r.entry);
           } catch {}
           await utils.sleep(80);
@@ -233,7 +234,7 @@ export async function renderMeta(main){
       let done=0;
       for (const entry of entries){
         try{
-          const picks = await api.entryPicks(entry, Math.max(1,gwRef));
+          const picks = await legacyApi.entryPicks(entry, Math.max(1,gwRef));
           for (const p of (picks.picks||[])) {
             if (startersOnly && (p.multiplier ?? 0) <= 0) continue;
             ownCount.set(p.element, (ownCount.get(p.element)||0)+1);
@@ -263,7 +264,7 @@ export async function renderMeta(main){
       let yourXI = [];
       if (state.entryId){
         try {
-          const you = await api.entryPicks(state.entryId, Math.max(1,gwRef));
+          const you = await legacyApi.entryPicks(state.entryId, Math.max(1,gwRef));
           yourXI = you.picks
             .filter(pk => pk.multiplier > 0)
             .sort((a,b)=>a.position-b.position)

@@ -1,10 +1,11 @@
 // js/pages/gw-explorer.js
-import { api } from "../api.js";
+import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { makeSelect } from "../components/select.js";
 import { log } from "../logger.js";
+import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /* ---- one-time styles to prevent control overlap ---- */
 function ensureGwExplorerStyles(){
@@ -39,7 +40,7 @@ export async function renderGwExplorer(main){
   ui.mount(main, wrap);
 
   try{
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = state.bootstrap || await legacyApi.bootstrap();
     state.bootstrap = bs;
 
     const { events, elements: players, teams, element_types: positions } = bs;
@@ -157,13 +158,13 @@ export async function renderGwExplorer(main){
 
       liveChip.style.display = isLiveGw(gwId) ? "" : "none";
 
-      const live = await api.eventLive(+gwId);
+      const live = await legacyApi.eventLive(+gwId);
 
       // Mark your squad for that GW
       mySet = new Set(); myCaptainId = null; myViceId = null;
       if (state.entryId){
         try{
-          const picks = await api.entryPicks(state.entryId, +gwId);
+          const picks = await legacyApi.entryPicks(state.entryId, +gwId);
           picks.picks.forEach(p=>{
             mySet.add(p.element);
             if (p.is_captain)     myCaptainId = p.element;
