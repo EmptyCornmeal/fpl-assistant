@@ -1,6 +1,6 @@
 // js/api/fetchHelper.js
-// Shared fetch helper with timeout, retries, and standardized response format
-// Also manages localStorage cache for "last good dataset"
+// Shared fetch helper with timeout, retries, standardized response format,
+// plus in-memory + localStorage cache for "last good dataset" fallback.
 
 import { log } from "../logger.js";
 
@@ -8,51 +8,57 @@ import { log } from "../logger.js";
  * Error types for categorizing fetch failures
  */
 export const ErrorType = {
-  NETWORK: 'network',        // Network/connectivity issue
-  TIMEOUT: 'timeout',        // Request timed out
-  SERVER: 'server',          // 5xx server error
-  CLIENT: 'client',          // 4xx client error
-  RATE_LIMIT: 'rate_limit',  // 429 Too Many Requests
-  PARSE: 'parse',            // JSON parse error
-  UNKNOWN: 'unknown',        // Unknown error
+  NETWORK: "network", // Network/connectivity issue
+  TIMEOUT: "timeout", // Request timed out
+  SERVER: "server", // 5xx server error
+  CLIENT: "client", // 4xx client error
+  RATE_LIMIT: "rate_limit", // 429 Too Many Requests
+  PARSE: "parse", // JSON parse error
+  UNKNOWN: "unknown", // Unknown error
 };
 
 /**
  * Configuration for fetch behavior
  */
 const CONFIG = {
-  timeout: 12000,           // 12 second timeout (between 10-15s)
-  maxRetries: 2,            // 1-2 retries
-  retryDelays: [1500, 3000], // Exponential backoff
-  cachePrefix: 'fpl.cache.', // localStorage key prefix
+  timeout: 12000, // 12 second timeout (between 10-15s)
+  maxRetries: 2, // 1-2 retries
+  retryDelays: [1500, 3000], // backoff
+  cachePrefix: "fpl.cache.", // localStorage key prefix
+
+  // In-memory cache (per session)
+  memoryCacheTtlMs: 30_000, // 30s "hot" cache for fast page navigation
+  memoryCacheMaxEntries: 250, // prevent unbounded growth
 };
 
 /**
  * localStorage cache keys for different endpoints
  */
 export const CacheKey = {
-  BOOTSTRAP: 'bootstrap',
-  FIXTURES: 'fixtures',
-  ENTRY: 'entry',
-  ENTRY_HISTORY: 'entryHistory',
-  ENTRY_PICKS: 'entryPicks',
-  LEAGUE_CLASSIC: 'leagueClassic',
-  ELEMENT_SUMMARY: 'elementSummary',
+  BOOTSTRAP: "bootstrap",
+  FIXTURES: "fixtures",
+  ENTRY: "entry",
+  ENTRY_HISTORY: "entryHistory",
+  ENTRY_PICKS: "entryPicks",
+  LEAGUE_CLASSIC: "leagueClassic",
+  ELEMENT_SUMMARY: "elementSummary",
+  // (optional future) EVENT_LIVE: "eventLive",
 };
 
 /**
  * Get human-readable error message based on error type
  */
-export function getErrorMessage(errorType, endpoint = '') {
-  const endpointName = endpoint.includes('/bs') ? 'bootstrap data' :
-                       endpoint.includes('/fx') ? 'fixtures' :
-                       endpoint.includes('/en/') && endpoint.includes('/history') ? 'entry history' :
-                       endpoint.includes('/en/') ? 'entry profile' :
-                       endpoint.includes('/ep/') ? 'entry picks' :
-                       endpoint.includes('/lc/') ? 'league standings' :
-                       endpoint.includes('/es/') ? 'player summary' :
-                       endpoint.includes('/ev/') && endpoint.includes('/live') ? 'live scores' :
-                       'data';
+export function getErrorMessage(errorType, endpoint = "") {
+  const endpointName =
+    endpoint.includes("/bs") ? "bootstrap data" :
+    endpoint.includes("/fx") ? "fixtures" :
+    endpoint.includes("/en/") && endpoint.includes("/history") ? "entry history" :
+    endpoint.includes("/en/") ? "entry profile" :
+    endpoint.includes("/ep/") ? "entry picks" :
+    endpoint.includes("/lc/") ? "league standings" :
+    endpoint.includes("/es/") ? "player summary" :
+    endpoint.includes("/ev/") && endpoint.includes("/live") ? "live scores" :
+    "data";
 
   switch (errorType) {
     case ErrorType.NETWORK:
@@ -83,24 +89,26 @@ function isRetryable(errorType) {
  * Determine error type from error object or response
  */
 function classifyError(error, status = 0) {
-  if (error?.name === 'AbortError' || error?.message?.includes('abort')) {
+  if (error?.name === "AbortError" || `${error?.message || ""}`.toLowerCase().includes("abort")) {
     return ErrorType.TIMEOUT;
   }
-  if (error?.message?.includes('network') || error?.message?.includes('fetch') || error?.message?.includes('Failed to fetch')) {
+
+  // fetch() failures are often TypeError in browsers
+  const msg = `${error?.message || ""}`.toLowerCase();
+  if (
+    msg.includes("failed to fetch") ||
+    msg.includes("network") ||
+    msg.includes("load failed") ||
+    msg.includes("fetch")
+  ) {
     return ErrorType.NETWORK;
   }
-  if (status === 429) {
-    return ErrorType.RATE_LIMIT;
-  }
-  if (status >= 500) {
-    return ErrorType.SERVER;
-  }
-  if (status >= 400) {
-    return ErrorType.CLIENT;
-  }
-  if (error?.message?.includes('JSON') || error?.message?.includes('parse')) {
-    return ErrorType.PARSE;
-  }
+
+  if (status === 429) return ErrorType.RATE_LIMIT;
+  if (status >= 500) return ErrorType.SERVER;
+  if (status >= 400) return ErrorType.CLIENT;
+
+  if (msg.includes("json") || msg.includes("parse")) return ErrorType.PARSE;
   return ErrorType.UNKNOWN;
 }
 
@@ -108,7 +116,52 @@ function classifyError(error, status = 0) {
  * Sleep helper for retry delays
  */
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * In-memory cache (session-only)
+ * Keyed by normalized URL (includes cache busters for live endpoints, so we don't store those).
+ */
+const _memoryCache = new Map();
+
+function pruneMemoryCache() {
+  if (_memoryCache.size <= CONFIG.memoryCacheMaxEntries) return;
+
+  // naive prune: remove oldest entries first
+  const entries = Array.from(_memoryCache.entries());
+  entries.sort((a, b) => (a[1]?.timestamp || 0) - (b[1]?.timestamp || 0));
+  const toRemove = Math.ceil(_memoryCache.size - CONFIG.memoryCacheMaxEntries);
+  for (let i = 0; i < toRemove; i++) {
+    _memoryCache.delete(entries[i][0]);
+  }
+}
+
+function getMemoryCacheKey(url) {
+  // Strip _= cachebuster param so "live" requests don't poison the cache
+  try {
+    const u = new URL(url, window.location.origin);
+    u.searchParams.delete("_");
+    return u.toString();
+  } catch {
+    // If URL constructor fails, fallback to basic stripping
+    return url.replace(/([?&])_=([0-9]+)(&)?/g, (m, p1, p2, p3) => (p1 === "?" && p3 ? "?" : p1 === "?" ? "" : p3 ? p1 : ""));
+  }
+}
+
+function getFromMemoryCache(url, ttlMs = CONFIG.memoryCacheTtlMs) {
+  const key = getMemoryCacheKey(url);
+  const entry = _memoryCache.get(key);
+  if (!entry) return null;
+  const age = Date.now() - (entry.timestamp || 0);
+  if (age > ttlMs) return null;
+  return { ...entry, cacheAge: age };
+}
+
+function saveToMemoryCache(url, data) {
+  const key = getMemoryCacheKey(url);
+  _memoryCache.set(key, { data, timestamp: Date.now() });
+  pruneMemoryCache();
 }
 
 /**
@@ -116,19 +169,28 @@ function sleep(ms) {
  * @typedef {Object} FetchResult
  * @property {boolean} ok - Whether the fetch succeeded
  * @property {any} data - The fetched data (if ok is true)
- * @property {string} errorType - Error type (if ok is false)
+ * @property {string|null} errorType - Error type (if ok is false)
  * @property {string} message - Human-readable message
  * @property {boolean} fromCache - Whether data came from cache
  * @property {number} cacheAge - Age of cached data in ms (if fromCache)
+ * @property {boolean} stale - Whether data was served as a fallback after a failed fetch
+ * @property {number} status - HTTP status if available
+ * @property {number} durationMs - Total request time for the attempt that returned
+ * @property {number} attempt - Attempt index (0 = first try)
  */
 
 /**
- * Fetch data with timeout, retries, and standardized response
+ * Fetch data with timeout, retries, standardized response
+ * Supports in-memory cache unless live=true or forceRefresh=true
+ *
  * @param {string} url - URL to fetch
  * @param {Object} options - Fetch options
- * @param {boolean} options.live - Bypass memory cache (add timestamp)
+ * @param {boolean} options.live - Add timestamp cache-buster to URL
  * @param {number} options.timeout - Custom timeout in ms
  * @param {number} options.retries - Number of retries (0-2)
+ * @param {Object} options.fetchOptions - Passed through to fetch()
+ * @param {boolean} options.forceRefresh - Skip in-memory cache
+ * @param {number} options.memoryTtlMs - Override in-memory TTL
  * @returns {Promise<FetchResult>}
  */
 export async function fetchWithTimeout(url, options = {}) {
@@ -137,43 +199,66 @@ export async function fetchWithTimeout(url, options = {}) {
     timeout = CONFIG.timeout,
     retries = CONFIG.maxRetries,
     fetchOptions = {},
+    forceRefresh = false,
+    memoryTtlMs = CONFIG.memoryCacheTtlMs,
   } = options;
 
-  // Add cache buster for live endpoints
-  const finalUrl = live
-    ? `${url}${url.includes('?') ? '&' : '?'}_=${Date.now()}`
-    : url;
+  // In-memory cache (fast path) unless explicitly bypassed
+  if (!live && !forceRefresh) {
+    const mem = getFromMemoryCache(url, memoryTtlMs);
+    if (mem) {
+      return {
+        ok: true,
+        data: mem.data,
+        errorType: null,
+        message: "Success (memory cache)",
+        fromCache: true,
+        cacheAge: mem.cacheAge || 0,
+        stale: false,
+        status: 200,
+        durationMs: 0,
+        attempt: 0,
+      };
+    }
+  }
 
-  let lastError = null;
+  // Add cache buster for live endpoints
+  const finalUrl = live ? `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}` : url;
+
   let lastErrorType = ErrorType.UNKNOWN;
+  let lastStatus = 0;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
-    // Wait before retry (except first attempt)
     if (attempt > 0) {
-      const delay = CONFIG.retryDelays[attempt - 1] || CONFIG.retryDelays[CONFIG.retryDelays.length - 1];
+      const delay =
+        CONFIG.retryDelays[attempt - 1] ??
+        CONFIG.retryDelays[CONFIG.retryDelays.length - 1] ??
+        1500;
       log.debug(`Fetch retry ${attempt}/${retries} for ${url}, waiting ${delay}ms`);
       await sleep(delay);
     }
 
     const controller = new AbortController();
+    const started = Date.now();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
       const response = await fetch(finalUrl, {
         ...fetchOptions,
         signal: controller.signal,
-        cache: 'no-store',
+        cache: "no-store",
         headers: {
-          'Accept': 'application/json',
+          Accept: "application/json",
           ...fetchOptions.headers,
         },
       });
 
       clearTimeout(timeoutId);
 
+      lastStatus = response.status;
+
       if (!response.ok) {
         lastErrorType = classifyError(null, response.status);
-        lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
 
         // Only retry on retryable errors
         if (!isRetryable(lastErrorType) || attempt >= retries) {
@@ -184,15 +269,46 @@ export async function fetchWithTimeout(url, options = {}) {
             message: getErrorMessage(lastErrorType, url),
             fromCache: false,
             cacheAge: 0,
+            stale: false,
+            status: response.status,
+            durationMs: Date.now() - started,
+            attempt,
           };
         }
         continue;
       }
 
-      // Parse JSON
+      // Handle 204 / empty responses gracefully
+      if (response.status === 204) {
+        return {
+          ok: true,
+          data: null,
+          errorType: null,
+          message: "Success (no content)",
+          fromCache: false,
+          cacheAge: 0,
+          stale: false,
+          status: response.status,
+          durationMs: Date.now() - started,
+          attempt,
+        };
+      }
+
+      // Parse JSON (with content-type sanity check + text fallback)
       let data;
       try {
-        data = await response.json();
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json") || contentType.includes("+json")) {
+          data = await response.json();
+        } else {
+          // Some proxies/CDNs lie — try json anyway, fallback to text
+          const text = await response.text();
+          try {
+            data = JSON.parse(text);
+          } catch {
+            throw new Error("Non-JSON response");
+          }
+        }
       } catch (e) {
         return {
           ok: false,
@@ -201,26 +317,34 @@ export async function fetchWithTimeout(url, options = {}) {
           message: getErrorMessage(ErrorType.PARSE, url),
           fromCache: false,
           cacheAge: 0,
+          stale: false,
+          status: response.status,
+          durationMs: Date.now() - started,
+          attempt,
         };
       }
+
+      // Save to in-memory cache (only for non-live requests)
+      if (!live) saveToMemoryCache(url, data);
 
       return {
         ok: true,
         data,
         errorType: null,
-        message: 'Success',
+        message: "Success",
         fromCache: false,
         cacheAge: 0,
+        stale: false,
+        status: response.status,
+        durationMs: Date.now() - started,
+        attempt,
       };
-
     } catch (error) {
       clearTimeout(timeoutId);
+
       lastErrorType = classifyError(error);
-      lastError = error;
+      log.debug(`Fetch attempt ${attempt + 1} failed:`, error?.message || error);
 
-      log.debug(`Fetch attempt ${attempt + 1} failed:`, error.message);
-
-      // Only continue if we have retries left and error is retryable
       if (!isRetryable(lastErrorType) || attempt >= retries) {
         break;
       }
@@ -235,6 +359,10 @@ export async function fetchWithTimeout(url, options = {}) {
     message: getErrorMessage(lastErrorType, url),
     fromCache: false,
     cacheAge: 0,
+    stale: false,
+    status: lastStatus || 0,
+    durationMs: 0,
+    attempt: retries,
   };
 }
 
@@ -246,7 +374,7 @@ export async function fetchWithTimeout(url, options = {}) {
  * Get the full localStorage key for a cache entry
  */
 function getCacheStorageKey(cacheKey, ...params) {
-  const paramStr = params.length > 0 ? `.${params.join('.')}` : '';
+  const paramStr = params.length > 0 ? `.${params.join(".")}` : "";
   return `${CONFIG.cachePrefix}${cacheKey}${paramStr}`;
 }
 
@@ -267,8 +395,7 @@ export function saveToCache(cacheKey, data, ...params) {
     log.debug(`Cached ${cacheKey}`, params);
     return true;
   } catch (e) {
-    // localStorage may be full or disabled
-    log.warn(`Failed to cache ${cacheKey}:`, e.message);
+    log.warn(`Failed to cache ${cacheKey}:`, e?.message || e);
     return false;
   }
 }
@@ -286,23 +413,23 @@ export function loadFromCache(cacheKey, ...params) {
     if (!raw) return null;
 
     const entry = JSON.parse(raw);
-    if (!entry || !entry.data) return null;
+    if (!entry || typeof entry !== "object") return null;
+
+    // allow caching falsy payloads, but require "data" key to exist
+    if (!Object.prototype.hasOwnProperty.call(entry, "data")) return null;
 
     return {
       data: entry.data,
       timestamp: entry.timestamp || 0,
     };
   } catch (e) {
-    log.warn(`Failed to load cache ${cacheKey}:`, e.message);
+    log.warn(`Failed to load cache ${cacheKey}:`, e?.message || e);
     return null;
   }
 }
 
 /**
  * Check if cached data exists for a key
- * @param {string} cacheKey - Cache key from CacheKey enum
- * @param {...any} params - Additional parameters for cache key
- * @returns {boolean}
  */
 export function hasCachedData(cacheKey, ...params) {
   return loadFromCache(cacheKey, ...params) !== null;
@@ -310,9 +437,6 @@ export function hasCachedData(cacheKey, ...params) {
 
 /**
  * Get cached data age in milliseconds
- * @param {string} cacheKey - Cache key from CacheKey enum
- * @param {...any} params - Additional parameters for cache key
- * @returns {number | null}
  */
 export function getCacheAge(cacheKey, ...params) {
   const entry = loadFromCache(cacheKey, ...params);
@@ -322,14 +446,12 @@ export function getCacheAge(cacheKey, ...params) {
 
 /**
  * Format cache age for display
- * @param {number} ageMs - Age in milliseconds
- * @returns {string}
  */
 export function formatCacheAge(ageMs) {
-  if (ageMs === null || ageMs === undefined) return 'Unknown';
+  if (ageMs === null || ageMs === undefined) return "Unknown";
 
   const seconds = Math.floor(ageMs / 1000);
-  if (seconds < 60) return 'just now';
+  if (seconds < 60) return "just now";
 
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
@@ -343,8 +465,6 @@ export function formatCacheAge(ageMs) {
 
 /**
  * Clear a specific cache entry
- * @param {string} cacheKey - Cache key from CacheKey enum
- * @param {...any} params - Additional parameters for cache key
  */
 export function clearCache(cacheKey, ...params) {
   try {
@@ -364,11 +484,9 @@ export function clearAllCache() {
     const keys = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith(CONFIG.cachePrefix)) {
-        keys.push(key);
-      }
+      if (key && key.startsWith(CONFIG.cachePrefix)) keys.push(key);
     }
-    keys.forEach(key => localStorage.removeItem(key));
+    keys.forEach((key) => localStorage.removeItem(key));
     log.info(`Cleared ${keys.length} cache entries`);
     return true;
   } catch {
@@ -380,33 +498,28 @@ export function clearAllCache() {
  * Get cache statistics for debugging
  */
 export function getCacheStats() {
-  const stats = {
-    entries: [],
-    totalSize: 0,
-  };
+  const stats = { entries: [], totalSize: 0 };
 
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith(CONFIG.cachePrefix)) {
-        const raw = localStorage.getItem(key);
-        const size = raw ? raw.length : 0;
-        let age = null;
+      if (!key || !key.startsWith(CONFIG.cachePrefix)) continue;
 
-        try {
-          const entry = JSON.parse(raw);
-          if (entry?.timestamp) {
-            age = Date.now() - entry.timestamp;
-          }
-        } catch {}
+      const raw = localStorage.getItem(key);
+      const size = raw ? raw.length : 0;
+      let age = null;
 
-        stats.entries.push({
-          key: key.replace(CONFIG.cachePrefix, ''),
-          size,
-          age: age !== null ? formatCacheAge(age) : 'Unknown',
-        });
-        stats.totalSize += size;
-      }
+      try {
+        const entry = JSON.parse(raw);
+        if (entry?.timestamp) age = Date.now() - entry.timestamp;
+      } catch {}
+
+      stats.entries.push({
+        key: key.replace(CONFIG.cachePrefix, ""),
+        size,
+        age: age !== null ? formatCacheAge(age) : "Unknown",
+      });
+      stats.totalSize += size;
     }
   } catch {}
 
@@ -418,14 +531,23 @@ export function getCacheStats() {
 // ============================================================
 
 /**
- * Fetch data with automatic caching and cache fallback on failure
- * @param {string} url - URL to fetch
- * @param {string} cacheKey - Cache key for localStorage
- * @param {Object} options - Options
- * @param {Array} options.cacheParams - Parameters for cache key
- * @param {boolean} options.live - Bypass memory cache
- * @param {boolean} options.forceRefresh - Force fresh fetch (skip memory cache)
- * @param {number} options.timeout - Custom timeout
+ * Fetch data with automatic caching + cache fallback on failure.
+ *
+ * Options:
+ * - forceRefresh: skips in-memory cache (still does network first)
+ * - preferCache: if true, will immediately return localStorage cache when present
+ *               (useful for instant paint), then caller can manually trigger refresh.
+ * - maxStaleMs: if set, only allow localStorage fallback when cache age <= maxStaleMs
+ *
+ * @param {string} url
+ * @param {string} cacheKey
+ * @param {Object} options
+ * @param {Array} options.cacheParams
+ * @param {boolean} options.live
+ * @param {boolean} options.forceRefresh
+ * @param {number} options.timeout
+ * @param {boolean} options.preferCache
+ * @param {number|null} options.maxStaleMs
  * @returns {Promise<FetchResult>}
  */
 export async function fetchWithCache(url, cacheKey, options = {}) {
@@ -434,40 +556,75 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
     live = false,
     forceRefresh = false,
     timeout,
+    preferCache = false,
+    maxStaleMs = null,
   } = options;
 
-  // Try to fetch fresh data
-  const result = await fetchWithTimeout(url, { live, timeout });
+  // Optional: instant paint from localStorage (caller can still refresh)
+  if (preferCache) {
+    const cached = loadFromCache(cacheKey, ...cacheParams);
+    if (cached) {
+      const cacheAge = Date.now() - cached.timestamp;
+      const withinMaxStale = maxStaleMs == null ? true : cacheAge <= maxStaleMs;
+
+      if (withinMaxStale) {
+        return {
+          ok: true,
+          data: cached.data,
+          errorType: null,
+          message: "Success (local cache)",
+          fromCache: true,
+          cacheAge,
+          stale: false,
+          status: 200,
+          durationMs: 0,
+          attempt: 0,
+        };
+      }
+    }
+  }
+
+  // Try to fetch fresh data (network first)
+  const result = await fetchWithTimeout(url, { live, timeout, forceRefresh });
 
   if (result.ok) {
-    // Success - save to localStorage cache
     saveToCache(cacheKey, result.data, ...cacheParams);
     return result;
   }
 
-  // Fetch failed - check for cached data
+  // Network failed -> fallback to localStorage "last good"
   const cached = loadFromCache(cacheKey, ...cacheParams);
   if (cached) {
     const cacheAge = Date.now() - cached.timestamp;
-    log.info(`Using cached ${cacheKey} (${formatCacheAge(cacheAge)} old) after fetch failure`);
+    const withinMaxStale = maxStaleMs == null ? true : cacheAge <= maxStaleMs;
 
-    return {
-      ok: true,
-      data: cached.data,
-      errorType: result.errorType, // Keep original error type for display
-      message: result.message,      // Keep original error message
-      fromCache: true,
-      cacheAge,
-    };
+    if (withinMaxStale) {
+      log.info(`Using cached ${cacheKey} (${formatCacheAge(cacheAge)} old) after fetch failure`);
+
+      return {
+        ok: true,
+        data: cached.data,
+        errorType: result.errorType, // keep original error type for UI messaging
+        message: result.message, // keep original message for UI messaging
+        fromCache: true,
+        cacheAge,
+        stale: true, // important: this was a fallback after a failed fetch
+        status: result.status || 0,
+        durationMs: result.durationMs || 0,
+        attempt: result.attempt ?? 0,
+      };
+    }
   }
 
-  // No cache available - return the error
+  // No cache available (or too stale) -> return the error as-is
   return result;
 }
 
 export default {
   fetchWithTimeout,
   fetchWithCache,
+
+  // localStorage cache tools
   saveToCache,
   loadFromCache,
   hasCachedData,
@@ -476,6 +633,8 @@ export default {
   clearCache,
   clearAllCache,
   getCacheStats,
+
+  // error tools
   ErrorType,
   CacheKey,
   getErrorMessage,
