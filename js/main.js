@@ -7,6 +7,7 @@ import { renderGwExplorer } from "./pages/gw-explorer.js";
 import { renderMiniLeague } from "./pages/mini-league.js";
 import { renderHelp } from "./pages/help.js";
 import { renderStatPicker } from "./pages/stat-picker.js";
+import { renderTransferOptimizer } from "./pages/transfer-optimizer.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
 import { state, setPageUpdated } from "./state.js";
@@ -104,7 +105,8 @@ const KEYBOARD_SHORTCUTS = {
   "4": "#/gw-explorer",
   "5": "#/mini-league",
   "6": "#/stat-picker",
-  "7": "#/help",
+  "7": "#/transfer-optimizer",
+  "8": "#/help",
 };
 
 function bindKeyboardShortcuts() {
@@ -190,7 +192,9 @@ function showKeyboardShortcutsHelp() {
           <div class="shortcut-row"><kbd>3</kbd> Fixtures</div>
           <div class="shortcut-row"><kbd>4</kbd> GW Explorer</div>
           <div class="shortcut-row"><kbd>5</kbd> Mini-League</div>
-          <div class="shortcut-row"><kbd>6</kbd> Help</div>
+          <div class="shortcut-row"><kbd>6</kbd> Stat Picker</div>
+          <div class="shortcut-row"><kbd>7</kbd> Transfer Optimizer</div>
+          <div class="shortcut-row"><kbd>8</kbd> Help</div>
         </div>
         <div class="shortcut-group">
           <h4>Actions</h4>
@@ -263,6 +267,8 @@ const routes = {
   "mini-league": renderMiniLeague,
   "league": renderMiniLeague, // Alias for consistency
   "stat-picker": renderStatPicker,
+  "transfer-optimizer": renderTransferOptimizer,
+  "transfers": renderTransferOptimizer, // Alias for consistency
   "help": renderHelp,
 };
 
@@ -500,6 +506,7 @@ function render404(main, attemptedRoute) {
       <a href="#/gw-explorer" class="route-btn"><span class="route-icon">🔍</span> Explorer</a>
       <a href="#/mini-league" class="route-btn"><span class="route-icon">🏆</span> League</a>
       <a href="#/stat-picker" class="route-btn"><span class="route-icon">📊</span> Stat Picker</a>
+      <a href="#/transfer-optimizer" class="route-btn"><span class="route-icon">🔄</span> Transfers</a>
       <a href="#/help" class="route-btn"><span class="route-icon">❓</span> Help</a>
     </div>
     <button class="btn-primary" onclick="location.hash='#/'">Go to Portal</button>
