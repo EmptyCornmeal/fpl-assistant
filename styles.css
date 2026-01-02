@@ -11208,3 +11208,492 @@ body:hover .dev-toggle-hint {
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 8: BENCH ORDER + CHIP SUGGESTIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sp-bench-chip-advisor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+
+.sp-gw-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Chip Suggestion Section */
+.sp-chip-section {
+  padding: var(--gap-sm);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.sp-chip-none {
+  border-left: 3px solid var(--text-muted);
+}
+
+.sp-chip-active {
+  border-left: 3px solid var(--accent);
+}
+
+.sp-chip-active.sp-chip-bb {
+  border-left-color: var(--success);
+}
+
+.sp-chip-active.sp-chip-tc {
+  border-left-color: var(--warning);
+}
+
+.sp-chip-header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-chip-icon {
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.sp-chip-neutral {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.sp-chip-active .sp-chip-icon {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.sp-chip-bb .sp-chip-icon {
+  background: var(--success);
+}
+
+.sp-chip-tc .sp-chip-icon {
+  background: var(--warning);
+}
+
+.sp-chip-title {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.sp-confidence-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.sp-confidence-high {
+  background: var(--success);
+  color: var(--bg-primary);
+}
+
+.sp-confidence-medium {
+  background: var(--warning);
+  color: var(--bg-primary);
+}
+
+.sp-confidence-low {
+  background: var(--danger);
+  color: white;
+}
+
+.sp-chip-rationale {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-chips-status {
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+}
+
+.sp-chips-label {
+  opacity: 0.7;
+}
+
+.sp-chip-available {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  font-weight: 500;
+}
+
+.sp-chips-exhausted {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+/* Chip Details Section */
+.sp-chip-details {
+  border-top: 1px solid var(--border);
+  padding-top: var(--gap-sm);
+}
+
+.sp-details-toggle {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: var(--gap-xs) 0;
+  user-select: none;
+}
+
+.sp-details-toggle:hover {
+  color: var(--accent);
+}
+
+.sp-details-content {
+  margin-top: var(--gap-sm);
+}
+
+.sp-bb-section,
+.sp-tc-section {
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  padding: var(--gap-sm);
+  margin-bottom: var(--gap-sm);
+}
+
+.sp-bb-section:last-child,
+.sp-tc-section:last-child {
+  margin-bottom: 0;
+}
+
+.sp-bb-header,
+.sp-tc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-bb-title,
+.sp-tc-title {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.sp-bb-status,
+.sp-tc-status {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.sp-status-triggered {
+  background: var(--success);
+  color: var(--bg-primary);
+}
+
+.sp-status-not-triggered {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+}
+
+.sp-bb-summary {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-bb-threshold {
+  opacity: 0.7;
+}
+
+.sp-bb-players {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sp-bb-player {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: var(--gap-xs);
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+
+.sp-bb-player.sp-meets {
+  border-left: 2px solid var(--success);
+}
+
+.sp-bb-player.sp-below {
+  border-left: 2px solid var(--danger);
+}
+
+.sp-bb-name {
+  font-weight: 500;
+}
+
+.sp-bb-xp,
+.sp-bb-mins,
+.sp-bb-fdr {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.sp-tc-captain {
+  display: flex;
+  gap: var(--gap-sm);
+  align-items: center;
+  font-size: 12px;
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-tc-name {
+  font-weight: 500;
+}
+
+.sp-tc-team,
+.sp-tc-pos {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sp-tc-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.sp-tc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+}
+
+.sp-check {
+  color: var(--success);
+  font-weight: bold;
+}
+
+.sp-cross {
+  color: var(--danger);
+  font-weight: bold;
+}
+
+/* Bench Order Section */
+.sp-bench-section {
+  border-top: 1px solid var(--border);
+  padding-top: var(--gap-sm);
+}
+
+.sp-bench-warning-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--warning);
+  color: var(--bg-primary);
+  margin-left: auto;
+}
+
+.sp-bench-ok-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--success);
+  color: var(--bg-primary);
+  margin-left: auto;
+}
+
+.sp-bench-warnings {
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  padding: var(--gap-sm);
+  margin-bottom: var(--gap-sm);
+}
+
+.sp-bench-warning-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  padding-bottom: var(--gap-xs);
+  margin-bottom: var(--gap-xs);
+  border-bottom: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+.sp-bench-warning-item:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.sp-warning-icon {
+  color: var(--warning);
+}
+
+.sp-warning-message {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+}
+
+.sp-warning-reason {
+  color: var(--text-muted);
+  padding-left: calc(var(--gap-sm) + 4px);
+}
+
+.sp-bench-order-container {
+  display: flex;
+  gap: var(--gap-md);
+  align-items: flex-start;
+}
+
+.sp-bench-current,
+.sp-bench-optimal {
+  flex: 1;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: var(--gap-sm);
+}
+
+.sp-bench-optimal {
+  border: 1px solid var(--success);
+  background: rgba(46, 204, 113, 0.05);
+}
+
+.sp-bench-arrow {
+  font-size: 18px;
+  color: var(--text-muted);
+  align-self: center;
+}
+
+.sp-bench-order-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--gap-xs);
+}
+
+.sp-bench-row {
+  display: grid;
+  grid-template-columns: 24px 32px 1fr auto auto;
+  gap: var(--gap-xs);
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.sp-bench-row:last-child:not(.sp-bench-total) {
+  margin-bottom: 0;
+}
+
+.sp-bench-gkp {
+  background: var(--bg-tertiary);
+  opacity: 0.7;
+}
+
+.sp-bench-current .sp-bench-row:not(.sp-bench-gkp):not(.sp-bench-total) {
+  background: var(--bg-tertiary);
+}
+
+.sp-bench-optimal .sp-bench-row:not(.sp-bench-gkp):not(.sp-bench-total) {
+  background: rgba(46, 204, 113, 0.1);
+}
+
+.sp-bench-pos {
+  font-weight: bold;
+  color: var(--text-muted);
+}
+
+.sp-bench-position-type {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg-primary);
+  text-align: center;
+}
+
+.sp-bench-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-bench-xp,
+.sp-bench-mins {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.sp-bench-note {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.sp-bench-total {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding-top: var(--gap-xs);
+  border-top: 1px solid var(--border);
+  margin-top: var(--gap-xs);
+}
+
+/* Error state */
+.sp-bench-chip-error .sp-error-content {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  padding: var(--gap-sm);
+  color: var(--danger);
+}
+
+.sp-bench-chip-error .sp-error-icon {
+  font-size: 16px;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .sp-bench-order-container {
+    flex-direction: column;
+  }
+
+  .sp-bench-arrow {
+    transform: rotate(90deg);
+    align-self: center;
+  }
+
+  .sp-bench-row {
+    grid-template-columns: 20px 28px 1fr auto auto;
+  }
+
+  .sp-bb-player {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .sp-bb-fdr {
+    display: none;
+  }
+}

@@ -16,6 +16,7 @@ import { log } from "../logger.js";
 import { STORAGE_KEYS, getJSON, setJSON } from "../storage.js";
 import { getCacheAge, CacheKey, loadFromCache } from "../api/fetchHelper.js";
 import { renderTransferOptimizer, wireUpTransferOptimizer } from "../components/transferOptimizerUI.js";
+import { renderBenchChipAdvisor, wireUpBenchChipAdvisor } from "../components/benchChipAdvisorUI.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHASE 5: HORIZON & OBJECTIVE DEFINITIONS
@@ -1862,6 +1863,17 @@ async function renderOptimisedDashboard(container, recalcBanner) {
       chipRec = await getChipRecommendation(context, horizonGwCount, bs, squadWithXp, optimised);
     }
 
+    // Phase 8: Bench Order + Chip Suggestions (conservative)
+    let benchChipAdvisorHtml = "";
+    if (predictionsAvailable) {
+      try {
+        benchChipAdvisorHtml = await renderBenchChipAdvisor(context);
+      } catch (e) {
+        log.warn("Bench/Chip Advisor failed", e);
+        benchChipAdvisorHtml = "";
+      }
+    }
+
     // Calculate captain candidates with mode-specific scoring
     const captainData = calculateCaptainCandidates(optimised.xi, captainModeConfig, objectiveConfig);
 
@@ -1898,7 +1910,7 @@ async function renderOptimisedDashboard(container, recalcBanner) {
       <div class="sp-col sp-col-left">
         ${renderStatePanel(context)}
         ${renderFlagsPanel(context)}
-        ${chipRec ? renderChipPanel(chipRec, context) : renderChipPanelUnavailable()}
+        ${benchChipAdvisorHtml || (chipRec ? renderChipPanel(chipRec, context) : renderChipPanelUnavailable())}
       </div>
       <div class="sp-col sp-col-center">
         ${renderSquadRankingPanel(squadWithXp, optimised, horizonGwCount, objectiveConfig, manualOverrides, context)}
@@ -1923,6 +1935,11 @@ async function renderOptimisedDashboard(container, recalcBanner) {
         await renderOptimisedDashboard(container, recalcBanner);
       };
       wireUpTransferOptimizer(container, context, refreshTransferOptimizer);
+    }
+
+    // Phase 8: Wire up Bench/Chip Advisor interactions
+    if (benchChipAdvisorHtml) {
+      wireUpBenchChipAdvisor(container);
     }
 
     // Update page timestamp
