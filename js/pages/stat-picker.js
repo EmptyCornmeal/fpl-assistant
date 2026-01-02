@@ -1,13 +1,59 @@
 // js/pages/stat-picker.js
-// Phase 2+3: Stat Picker Dashboard with Optimiser, Transfers, and Chips
+// Phase 5: Stat Picker Engine Architecture
+// - Deterministic pipeline with loadContext()
+// - Transparent optimizer with horizon/objective controls
+// - Debuggable state with dependency tracking
 
 import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { log } from "../logger.js";
-import { STORAGE_KEYS } from "../storage.js";
-import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
+import { STORAGE_KEYS, getJSON, setJSON } from "../storage.js";
+import { getCacheAge, CacheKey, loadFromCache } from "../api/fetchHelper.js";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 5: HORIZON & OBJECTIVE DEFINITIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const HORIZONS = {
+  THIS_GW: { id: "this_gw", label: "This GW", gwCount: 1 },
+  NEXT_3: { id: "next_3", label: "Next 3", gwCount: 3 },
+  NEXT_5: { id: "next_5", label: "Next 5", gwCount: 5 },
+};
+
+const OBJECTIVES = {
+  MAX_POINTS: { id: "max_points", label: "Max Points", description: "Maximize expected points" },
+  MIN_RISK: { id: "min_risk", label: "Min Risk", description: "Prioritize nailed starters, avoid rotation" },
+  PROTECT_RANK: { id: "protect_rank", label: "Protect Rank", description: "Match effective ownership (EO)" },
+  CHASE_UPSIDE: { id: "chase_upside", label: "Chase Upside", description: "Target differential picks for rank gain" },
+};
+
+const STORAGE_KEY_HORIZON = "fpl.sp.horizon";
+const STORAGE_KEY_OBJECTIVE = "fpl.sp.objective";
+const STORAGE_KEY_CONTEXT_CACHE = "fpl.sp.contextCache";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 5: DEPENDENCY DEFINITIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const DEPENDENCIES = {
+  BOOTSTRAP: { id: "bootstrap", label: "Game Data", required: true, retryable: true },
+  GW_STATE: { id: "gw_state", label: "GW & Deadline", required: true, retryable: true },
+  SQUAD: { id: "squad", label: "Squad (15 players)", required: true, retryable: true },
+  FT_ITB: { id: "ft_itb", label: "FT + Bank + Value", required: true, retryable: true },
+  CHIPS: { id: "chips", label: "Chip Availability", required: true, retryable: true },
+  FIXTURES: { id: "fixtures", label: "Fixtures List", required: true, retryable: true },
+  PREDICTIONS: { id: "predictions", label: "xP Predictions", required: false, retryable: true },
+};
+
+const DEPENDENCY_STATUS = {
+  PENDING: "pending",
+  LOADING: "loading",
+  SUCCESS: "success",
+  FAILED: "failed",
+  CACHED: "cached",
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
    FIX: NORMALISE FIXTURES SHAPE (Option A)
@@ -68,6 +114,328 @@ const CHIP_NAMES = {
 
 function formatChipName(chip) {
   return CHIP_NAMES[chip] || chip;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 5.1: LOAD CONTEXT - Bootstrap Pipeline with Dependency Tracking
+   Returns { ok, context, failures: [], dependencyStatus: {} }
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+async function loadContext(options = {}) {
+  const { forceRefresh = false, retryDependency = null } = options;
+
+  const dependencyStatus = {};
+  const failures = [];
+  let context = {};
+
+  // Initialize all dependencies as pending
+  Object.values(DEPENDENCIES).forEach(dep => {
+    dependencyStatus[dep.id] = { status: DEPENDENCY_STATUS.PENDING, error: null, fromCache: false };
+  });
+
+  // Helper to update dependency status
+  const setDepStatus = (depId, status, error = null, fromCache = false) => {
+    dependencyStatus[depId] = { status, error, fromCache };
+  };
+
+  // If retrying a specific dependency, only reload that one
+  const shouldLoad = (depId) => !retryDependency || retryDependency === depId;
+
+  try {
+    // 1. BOOTSTRAP - Game data (elements, teams, events)
+    if (shouldLoad(DEPENDENCIES.BOOTSTRAP.id)) {
+      setDepStatus(DEPENDENCIES.BOOTSTRAP.id, DEPENDENCY_STATUS.LOADING);
+      try {
+        const bsResult = forceRefresh
+          ? await fplClient.bootstrap(true)
+          : await fplClient.bootstrap();
+
+        if (bsResult.ok) {
+          context.bootstrap = bsResult.data;
+          state.bootstrap = bsResult.data;
+          setDepStatus(DEPENDENCIES.BOOTSTRAP.id, DEPENDENCY_STATUS.SUCCESS, null, bsResult.fromCache);
+        } else {
+          // Try cache fallback
+          const cached = loadFromCache(CacheKey.BOOTSTRAP);
+          if (cached) {
+            context.bootstrap = cached.data;
+            state.bootstrap = cached.data;
+            setDepStatus(DEPENDENCIES.BOOTSTRAP.id, DEPENDENCY_STATUS.CACHED, bsResult.message, true);
+          } else {
+            throw new Error(bsResult.message || "Failed to load game data");
+          }
+        }
+      } catch (err) {
+        setDepStatus(DEPENDENCIES.BOOTSTRAP.id, DEPENDENCY_STATUS.FAILED, err.message);
+        failures.push({ dependency: DEPENDENCIES.BOOTSTRAP, error: err.message });
+      }
+    } else if (state.bootstrap) {
+      context.bootstrap = state.bootstrap;
+      setDepStatus(DEPENDENCIES.BOOTSTRAP.id, DEPENDENCY_STATUS.SUCCESS);
+    }
+
+    const bs = context.bootstrap;
+    if (!bs) {
+      return { ok: false, context: null, failures, dependencyStatus };
+    }
+
+    // 2. GW STATE - Current GW, deadline, live status
+    if (shouldLoad(DEPENDENCIES.GW_STATE.id)) {
+      setDepStatus(DEPENDENCIES.GW_STATE.id, DEPENDENCY_STATUS.LOADING);
+      try {
+        const events = bs.events || [];
+        const currentEvent = events.find(e => e.is_current);
+        const nextEvent = events.find(e => e.is_next);
+        const lastFinished = events.filter(e => e.data_checked).slice(-1)[0];
+
+        context.currentGw = currentEvent?.id || lastFinished?.id || 1;
+        context.nextGw = nextEvent?.id || context.currentGw + 1;
+        context.isLive = currentEvent && !currentEvent.data_checked;
+        context.deadline = nextEvent?.deadline_time || currentEvent?.deadline_time;
+        context.gwForPicks = context.isLive ? context.currentGw : (lastFinished?.id || 1);
+
+        setDepStatus(DEPENDENCIES.GW_STATE.id, DEPENDENCY_STATUS.SUCCESS);
+      } catch (err) {
+        setDepStatus(DEPENDENCIES.GW_STATE.id, DEPENDENCY_STATUS.FAILED, err.message);
+        failures.push({ dependency: DEPENDENCIES.GW_STATE, error: err.message });
+      }
+    }
+
+    // Check entry ID early
+    const entryId = state.entryId;
+    if (!entryId) {
+      return {
+        ok: false,
+        context: null,
+        failures: [{ dependency: { id: "entry_id", label: "Entry ID" }, error: "No Entry ID configured" }],
+        dependencyStatus,
+        needsEntryId: true
+      };
+    }
+    context.entryId = entryId;
+
+    // 3. SQUAD - 15-man squad with picks + player metadata
+    if (shouldLoad(DEPENDENCIES.SQUAD.id)) {
+      setDepStatus(DEPENDENCIES.SQUAD.id, DEPENDENCY_STATUS.LOADING);
+      try {
+        const [entryResult, picksResult] = await Promise.all([
+          fplClient.entry(entryId),
+          fplClient.entryPicks(entryId, context.gwForPicks)
+        ]);
+
+        if (!entryResult.ok && !entryResult.fromCache) {
+          throw new Error(entryResult.message || "Failed to load entry");
+        }
+
+        const entry = entryResult.data;
+        context.entry = entry;
+        context.entryName = entry?.name;
+        context.playerName = entry ? `${entry.player_first_name} ${entry.player_last_name}` : "Unknown";
+        context.overallRank = entry?.summary_overall_rank;
+        context.overallPoints = entry?.summary_overall_points;
+
+        if (!picksResult.ok && !picksResult.fromCache) {
+          throw new Error(picksResult.message || "Failed to load picks");
+        }
+
+        const picks = picksResult.data;
+        const elements = bs.elements || [];
+        const teams = bs.teams || [];
+        const positions = bs.element_types || [];
+
+        context.squad = [];
+        context.xi = [];
+        context.bench = [];
+        context.captain = null;
+        context.viceCaptain = null;
+
+        if (picks?.picks) {
+          context.squad = picks.picks.map((pick, idx) => {
+            const player = elements.find(p => p.id === pick.element);
+            const team = teams.find(t => t.id === player?.team);
+            const pos = positions.find(p => p.id === player?.element_type);
+
+            const isBench = idx >= 11;
+            const isCaptain = pick.is_captain;
+            const isVice = pick.is_vice_captain;
+
+            const playerData = {
+              ...player,
+              pickPosition: pick.position,
+              multiplier: pick.multiplier,
+              isCaptain,
+              isVice,
+              isBench,
+              teamName: team?.short_name || "???",
+              teamCode: team?.code,
+              positionName: pos?.singular_name_short || "?",
+            };
+
+            if (isCaptain) context.captain = playerData;
+            if (isVice) context.viceCaptain = playerData;
+            if (isBench) context.bench.push(playerData);
+            else context.xi.push(playerData);
+
+            return playerData;
+          });
+        }
+
+        context.flaggedPlayers = context.squad
+          .filter(p => p.status !== "a")
+          .map(p => ({ ...p, flagReason: getFlagReason(p) }));
+
+        setDepStatus(DEPENDENCIES.SQUAD.id, DEPENDENCY_STATUS.SUCCESS, null, picksResult.fromCache);
+      } catch (err) {
+        setDepStatus(DEPENDENCIES.SQUAD.id, DEPENDENCY_STATUS.FAILED, err.message);
+        failures.push({ dependency: DEPENDENCIES.SQUAD, error: err.message });
+      }
+    }
+
+    // 4. FT + ITB + TEAM VALUE
+    if (shouldLoad(DEPENDENCIES.FT_ITB.id)) {
+      setDepStatus(DEPENDENCIES.FT_ITB.id, DEPENDENCY_STATUS.LOADING);
+      try {
+        const historyResult = await fplClient.entryHistory(entryId);
+
+        if (!historyResult.ok && !historyResult.fromCache) {
+          throw new Error(historyResult.message || "Failed to load history");
+        }
+
+        const history = historyResult.data;
+        const entry = context.entry;
+        const currentHistory = history?.current?.find(h => h.event === context.gwForPicks);
+
+        context.bank = currentHistory?.bank ?? entry?.last_deadline_bank ?? 0;
+        context.teamValue = currentHistory?.value ?? entry?.last_deadline_value ?? 1000;
+        context.freeTransfers = calculateFreeTransfers(history, context.currentGw);
+        context.history = history;
+
+        context.bankFormatted = `£${(context.bank / 10).toFixed(1)}m`;
+        context.teamValueFormatted = `£${(context.teamValue / 10).toFixed(1)}m`;
+        context.totalValue = context.bank + context.teamValue;
+        context.totalValueFormatted = `£${(context.totalValue / 10).toFixed(1)}m`;
+
+        context.gwRank = currentHistory?.rank;
+        context.gwPoints = currentHistory?.points;
+
+        setDepStatus(DEPENDENCIES.FT_ITB.id, DEPENDENCY_STATUS.SUCCESS, null, historyResult.fromCache);
+      } catch (err) {
+        setDepStatus(DEPENDENCIES.FT_ITB.id, DEPENDENCY_STATUS.FAILED, err.message);
+        failures.push({ dependency: DEPENDENCIES.FT_ITB, error: err.message });
+      }
+    }
+
+    // 5. CHIP AVAILABILITY
+    if (shouldLoad(DEPENDENCIES.CHIPS.id)) {
+      setDepStatus(DEPENDENCIES.CHIPS.id, DEPENDENCY_STATUS.LOADING);
+      try {
+        const history = context.history;
+        const rawChipsUsed = history?.chips || [];
+        context.chipsUsed = rawChipsUsed.map(c => ({ chip: c.name, gw: c.event }));
+
+        const wildcardsUsed = context.chipsUsed.filter(c => c.chip === "wildcard").length;
+        context.chipsAvailable = [];
+        if (wildcardsUsed < 2) context.chipsAvailable.push("wildcard");
+        if (!context.chipsUsed.some(c => c.chip === "freehit")) context.chipsAvailable.push("freehit");
+        if (!context.chipsUsed.some(c => c.chip === "bboost")) context.chipsAvailable.push("bboost");
+        if (!context.chipsUsed.some(c => c.chip === "3xc")) context.chipsAvailable.push("3xc");
+
+        setDepStatus(DEPENDENCIES.CHIPS.id, DEPENDENCY_STATUS.SUCCESS);
+      } catch (err) {
+        setDepStatus(DEPENDENCIES.CHIPS.id, DEPENDENCY_STATUS.FAILED, err.message);
+        failures.push({ dependency: DEPENDENCIES.CHIPS, error: err.message });
+      }
+    }
+
+    // 6. FIXTURES LIST
+    if (shouldLoad(DEPENDENCIES.FIXTURES.id)) {
+      setDepStatus(DEPENDENCIES.FIXTURES.id, DEPENDENCY_STATUS.LOADING);
+      try {
+        const fixturesResult = await fplClient.fixtures();
+
+        if (!fixturesResult.ok && !fixturesResult.fromCache) {
+          throw new Error(fixturesResult.message || "Failed to load fixtures");
+        }
+
+        context.allFixtures = toArrayFixtures(fixturesResult.data);
+
+        // Build fixture matrix for user's teams
+        const userTeamIds = [...new Set((context.squad || []).map(p => p.team))];
+        context.fixtureMatrix = await buildFixtureMatrix(userTeamIds, context.nextGw, context.allFixtures, bs);
+
+        setDepStatus(DEPENDENCIES.FIXTURES.id, DEPENDENCY_STATUS.SUCCESS, null, fixturesResult.fromCache);
+      } catch (err) {
+        setDepStatus(DEPENDENCIES.FIXTURES.id, DEPENDENCY_STATUS.FAILED, err.message);
+        failures.push({ dependency: DEPENDENCIES.FIXTURES, error: err.message });
+      }
+    }
+
+    // 7. PREDICTIONS (xP) - Optional, can degrade gracefully
+    if (shouldLoad(DEPENDENCIES.PREDICTIONS.id)) {
+      setDepStatus(DEPENDENCIES.PREDICTIONS.id, DEPENDENCY_STATUS.LOADING);
+      try {
+        // Pre-calculate xP for squad (will be recalculated with horizon in optimiser)
+        context.predictionsAvailable = true;
+        context.predictionsError = null;
+        setDepStatus(DEPENDENCIES.PREDICTIONS.id, DEPENDENCY_STATUS.SUCCESS);
+      } catch (err) {
+        context.predictionsAvailable = false;
+        context.predictionsError = err.message;
+        setDepStatus(DEPENDENCIES.PREDICTIONS.id, DEPENDENCY_STATUS.FAILED, err.message);
+        // Don't add to failures since predictions are optional
+      }
+    }
+
+    // Cache the context for fallback
+    try {
+      const cacheableContext = {
+        ...context,
+        bootstrap: undefined, // Don't cache bootstrap (too large, cached separately)
+        cachedAt: Date.now()
+      };
+      setJSON(STORAGE_KEY_CONTEXT_CACHE, cacheableContext);
+    } catch (e) {
+      log.warn("Failed to cache context", e);
+    }
+
+    // Determine overall success
+    const requiredFailures = failures.filter(f => f.dependency.required);
+    const ok = requiredFailures.length === 0 && context.squad && context.squad.length > 0;
+
+    return { ok, context, failures, dependencyStatus };
+
+  } catch (err) {
+    log.error("loadContext error", err);
+    return {
+      ok: false,
+      context: null,
+      failures: [{ dependency: { id: "unknown", label: "Unknown" }, error: err.message }],
+      dependencyStatus
+    };
+  }
+}
+
+/**
+ * Load context from cache (for degraded mode fallback)
+ */
+function loadCachedContext() {
+  try {
+    const cached = getJSON(STORAGE_KEY_CONTEXT_CACHE);
+    if (cached && cached.cachedAt) {
+      const age = Date.now() - cached.cachedAt;
+      if (age < 24 * 60 * 60 * 1000) { // 24 hours
+        return {
+          ok: true,
+          context: cached,
+          fromCache: true,
+          cacheAge: age
+        };
+      }
+    }
+  } catch (e) {
+    log.warn("Failed to load cached context", e);
+  }
+  return { ok: false, context: null, fromCache: false };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -430,12 +798,12 @@ function calculateMinutesReliability(player) {
    PHASE 3: XI & CAPTAIN OPTIMISER
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function optimiseXI(squadWithXp) {
+function optimiseXI(squadWithXp, objective = null) {
   // Enforce FPL formation rules: 1 GKP, 3-5 DEF, 2-5 MID, 1-3 FWD
   const byPos = { 1: [], 2: [], 3: [], 4: [] };
   squadWithXp.forEach((p) => byPos[p.element_type]?.push(p));
 
-  // Sort each position by xP descending
+  // Sort each position by xP descending (already adjusted for objective)
   Object.values(byPos).forEach((arr) => arr.sort((a, b) => b.xp - a.xp));
 
   // GKP: take best 1, bench 1
@@ -499,10 +867,11 @@ function optimiseXI(squadWithXp) {
    - Always compare against "Do Nothing" baseline
    ═══════════════════════════════════════════════════════════════════════════ */
 
-async function getTransferRecommendations(currentState, horizon, bs) {
+async function getTransferRecommendations(currentState, horizon, bs, objective = null) {
   const squad = currentState.squad || [];
   const freeTransfers = currentState.freeTransfers || 1;
   const bank = currentState.bank || 0;
+  const objectiveId = objective?.id;
 
   // Calculate xP for all squad
   const squadWithXp = [];
@@ -837,7 +1206,49 @@ function renderPasswordGate(container) {
   input.focus();
 }
 
+/**
+ * Get saved horizon from localStorage or default
+ */
+function getSavedHorizon() {
+  const saved = getJSON(STORAGE_KEY_HORIZON);
+  return saved || HORIZONS.NEXT_3.id;
+}
+
+/**
+ * Get saved objective from localStorage or default
+ */
+function getSavedObjective() {
+  const saved = getJSON(STORAGE_KEY_OBJECTIVE);
+  return saved || OBJECTIVES.MAX_POINTS.id;
+}
+
+/**
+ * Format timestamp as HH:MM:SS
+ */
+function formatTime(date) {
+  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+/**
+ * Main dashboard state - tracks loaded context, current settings, and recalc time
+ */
+let dashboardState = {
+  context: null,
+  dependencyStatus: {},
+  horizon: null,
+  objective: null,
+  lastRecalculated: null,
+  optimisedData: null,
+};
+
 async function renderDashboard(container) {
+  // Load saved preferences
+  const savedHorizon = getSavedHorizon();
+  const savedObjective = getSavedObjective();
+
+  dashboardState.horizon = savedHorizon;
+  dashboardState.objective = savedObjective;
+
   container.innerHTML = `
     <div class="sp-header">
       <div class="sp-header-left">
@@ -845,17 +1256,28 @@ async function renderDashboard(container) {
         <span class="sp-tagline">FPL Decision Engine</span>
       </div>
       <div class="sp-header-right">
-        <select id="horizonSel" class="sp-select">
-          <option value="3">3 GW</option>
-          <option value="6" selected>6 GW</option>
-          <option value="8">8 GW</option>
-        </select>
-        <button id="refreshBtn" class="sp-btn">Refresh</button>
-        <button id="lockBtn" class="sp-btn sp-btn-danger">Lock</button>
+        <div class="sp-control-group">
+          <label class="sp-control-label">Horizon</label>
+          <select id="horizonSel" class="sp-select">
+            ${Object.values(HORIZONS).map(h => `<option value="${h.id}" ${h.id === savedHorizon ? "selected" : ""}>${h.label}</option>`).join("")}
+          </select>
+        </div>
+        <div class="sp-control-group">
+          <label class="sp-control-label">Objective</label>
+          <select id="objectiveSel" class="sp-select sp-select-wide">
+            ${Object.values(OBJECTIVES).map(o => `<option value="${o.id}" ${o.id === savedObjective ? "selected" : ""} title="${o.description}">${o.label}</option>`).join("")}
+          </select>
+        </div>
+        <button id="refreshBtn" class="sp-btn" title="Refresh all data">Refresh</button>
+        <button id="lockBtn" class="sp-btn sp-btn-danger" title="Lock stat picker">Lock</button>
       </div>
     </div>
+    <div id="spRecalcBanner" class="sp-recalc-banner" style="display:none;"></div>
     <div class="sp-grid" id="spContent">
-      <div class="sp-loading">Loading...</div>
+      <div class="sp-loading">
+        <div class="sp-loading-spinner"></div>
+        <div class="sp-loading-text">Loading context...</div>
+      </div>
     </div>
   `;
 
@@ -866,20 +1288,468 @@ async function renderDashboard(container) {
   };
 
   const horizonSel = container.querySelector("#horizonSel");
+  const objectiveSel = container.querySelector("#objectiveSel");
+  const recalcBanner = container.querySelector("#spRecalcBanner");
   const content = container.querySelector("#spContent");
 
-  const load = async () => {
-    content.innerHTML = '<div class="sp-loading">Loading...</div>';
-    const horizon = parseInt(horizonSel.value, 10);
-    await renderDashboardContent(content, horizon);
+  // Initial load with context pipeline
+  const initialLoad = async () => {
+    content.innerHTML = `
+      <div class="sp-loading">
+        <div class="sp-loading-spinner"></div>
+        <div class="sp-loading-text">Loading context...</div>
+        <div id="depChecklist" class="sp-dep-checklist"></div>
+      </div>
+    `;
+
+    const depChecklist = content.querySelector("#depChecklist");
+
+    // Render initial dependency checklist
+    renderDependencyChecklist(depChecklist, {}, true);
+
+    // Load context
+    const result = await loadContext({ forceRefresh: false });
+
+    dashboardState.context = result.context;
+    dashboardState.dependencyStatus = result.dependencyStatus;
+
+    if (result.ok) {
+      await renderOptimisedDashboard(content, recalcBanner);
+    } else if (result.needsEntryId) {
+      renderNoEntryId(content);
+    } else {
+      // Degraded mode - show dependency checklist with retry options
+      renderDegradedMode(content, result, container);
+    }
   };
 
-  container.querySelector("#refreshBtn").onclick = load;
-  horizonSel.onchange = load;
+  // Recompute when horizon/objective changes
+  const recompute = async () => {
+    const newHorizon = horizonSel.value;
+    const newObjective = objectiveSel.value;
 
-  await load();
+    // Save preferences
+    setJSON(STORAGE_KEY_HORIZON, newHorizon);
+    setJSON(STORAGE_KEY_OBJECTIVE, newObjective);
+
+    dashboardState.horizon = newHorizon;
+    dashboardState.objective = newObjective;
+
+    // Show recalculating state
+    content.classList.add("sp-recalculating");
+
+    // Recompute with new settings
+    await renderOptimisedDashboard(content, recalcBanner);
+
+    content.classList.remove("sp-recalculating");
+  };
+
+  // Full refresh
+  const fullRefresh = async () => {
+    content.innerHTML = `
+      <div class="sp-loading">
+        <div class="sp-loading-spinner"></div>
+        <div class="sp-loading-text">Refreshing data...</div>
+      </div>
+    `;
+    recalcBanner.style.display = "none";
+
+    const result = await loadContext({ forceRefresh: true });
+    dashboardState.context = result.context;
+    dashboardState.dependencyStatus = result.dependencyStatus;
+
+    if (result.ok) {
+      await renderOptimisedDashboard(content, recalcBanner);
+    } else if (result.needsEntryId) {
+      renderNoEntryId(content);
+    } else {
+      renderDegradedMode(content, result, container);
+    }
+  };
+
+  container.querySelector("#refreshBtn").onclick = fullRefresh;
+  horizonSel.onchange = recompute;
+  objectiveSel.onchange = recompute;
+
+  await initialLoad();
 }
 
+/**
+ * Render dependency checklist showing status of each data source
+ */
+function renderDependencyChecklist(container, status, isLoading = false) {
+  const deps = Object.values(DEPENDENCIES);
+
+  const rows = deps.map(dep => {
+    const depStatus = status[dep.id] || { status: DEPENDENCY_STATUS.PENDING };
+    const statusClass = `sp-dep-${depStatus.status}`;
+    const statusIcon = getStatusIcon(depStatus.status);
+    const optional = !dep.required ? '<span class="sp-dep-optional">(optional)</span>' : "";
+
+    return `
+      <div class="sp-dep-row ${statusClass}">
+        <span class="sp-dep-icon">${statusIcon}</span>
+        <span class="sp-dep-label">${dep.label} ${optional}</span>
+        ${depStatus.fromCache ? '<span class="sp-dep-cache">cached</span>' : ""}
+        ${depStatus.error ? `<span class="sp-dep-error" title="${depStatus.error}">!</span>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="sp-dep-checklist-inner">
+      ${rows}
+    </div>
+  `;
+}
+
+function getStatusIcon(status) {
+  switch (status) {
+    case DEPENDENCY_STATUS.SUCCESS: return "✓";
+    case DEPENDENCY_STATUS.CACHED: return "◎";
+    case DEPENDENCY_STATUS.FAILED: return "✗";
+    case DEPENDENCY_STATUS.LOADING: return "◌";
+    default: return "○";
+  }
+}
+
+/**
+ * Render the no entry ID state
+ */
+function renderNoEntryId(container) {
+  container.innerHTML = `
+    <div class="sp-error-full">
+      <h3>No Entry ID</h3>
+      <p>Set your FPL Entry ID in the sidebar to see your team state.</p>
+    </div>
+  `;
+}
+
+/**
+ * Render degraded mode with dependency failures and retry options
+ */
+function renderDegradedMode(container, result, parentContainer) {
+  const { failures, dependencyStatus, context } = result;
+
+  // Check if we can fallback to cached context
+  const cachedResult = loadCachedContext();
+
+  let cacheInfo = "";
+  if (cachedResult.ok) {
+    const cacheAgeMin = Math.round(cachedResult.cacheAge / 60000);
+    cacheInfo = `
+      <div class="sp-cache-fallback">
+        <div class="sp-cache-fallback-header">
+          <span class="sp-cache-icon">💾</span>
+          <span>Cached context available (${cacheAgeMin}m old)</span>
+        </div>
+        <button id="useCacheBtn" class="sp-btn sp-btn-primary">Use Cached Data</button>
+      </div>
+    `;
+  }
+
+  const failureRows = failures.map(f => `
+    <div class="sp-failure-row">
+      <span class="sp-failure-label">${f.dependency.label}</span>
+      <span class="sp-failure-error">${f.error}</span>
+      ${f.dependency.retryable ? `<button class="sp-btn sp-btn-small sp-retry-btn" data-dep="${f.dependency.id}">Retry</button>` : ""}
+    </div>
+  `).join("");
+
+  container.innerHTML = `
+    <div class="sp-degraded-mode">
+      <div class="sp-degraded-header">
+        <span class="sp-degraded-icon">⚠️</span>
+        <h3>Some data could not be loaded</h3>
+      </div>
+
+      <div class="sp-dep-status-panel">
+        <h4>Dependency Status</h4>
+        <div id="depStatusList" class="sp-dep-checklist"></div>
+      </div>
+
+      <div class="sp-failures-panel">
+        <h4>Failures</h4>
+        ${failureRows}
+      </div>
+
+      ${cacheInfo}
+
+      <div class="sp-degraded-actions">
+        <button id="retryAllBtn" class="sp-btn sp-btn-primary">Retry All</button>
+      </div>
+
+      ${context && context.squad && context.squad.length > 0 ? `
+        <div class="sp-partial-data">
+          <h4>Partial Data Available</h4>
+          <p>Squad loaded with ${context.squad.length} players. Some features may be limited.</p>
+          ${!context.predictionsAvailable ? '<p class="sp-warning-text">⚠️ Predictions unavailable - showing squad and fixtures only.</p>' : ""}
+          <button id="continuePartialBtn" class="sp-btn">Continue with Partial Data</button>
+        </div>
+      ` : ""}
+    </div>
+  `;
+
+  // Render dependency checklist
+  const depStatusList = container.querySelector("#depStatusList");
+  renderDependencyChecklist(depStatusList, dependencyStatus);
+
+  // Wire up retry buttons
+  container.querySelectorAll(".sp-retry-btn").forEach(btn => {
+    btn.onclick = async () => {
+      const depId = btn.dataset.dep;
+      btn.disabled = true;
+      btn.textContent = "Retrying...";
+
+      const retryResult = await loadContext({ retryDependency: depId });
+
+      if (retryResult.ok) {
+        dashboardState.context = retryResult.context;
+        dashboardState.dependencyStatus = retryResult.dependencyStatus;
+        const recalcBanner = parentContainer.querySelector("#spRecalcBanner");
+        await renderOptimisedDashboard(container, recalcBanner);
+      } else {
+        // Update the degraded mode view
+        renderDegradedMode(container, retryResult, parentContainer);
+      }
+    };
+  });
+
+  // Retry all button
+  const retryAllBtn = container.querySelector("#retryAllBtn");
+  if (retryAllBtn) {
+    retryAllBtn.onclick = async () => {
+      const retryResult = await loadContext({ forceRefresh: true });
+      dashboardState.context = retryResult.context;
+      dashboardState.dependencyStatus = retryResult.dependencyStatus;
+
+      if (retryResult.ok) {
+        const recalcBanner = parentContainer.querySelector("#spRecalcBanner");
+        await renderOptimisedDashboard(container, recalcBanner);
+      } else {
+        renderDegradedMode(container, retryResult, parentContainer);
+      }
+    };
+  }
+
+  // Use cache button
+  const useCacheBtn = container.querySelector("#useCacheBtn");
+  if (useCacheBtn && cachedResult.ok) {
+    useCacheBtn.onclick = async () => {
+      // Merge cached context with bootstrap
+      const bs = state.bootstrap || (await legacyApi.bootstrap());
+      dashboardState.context = { ...cachedResult.context, bootstrap: bs };
+      const recalcBanner = parentContainer.querySelector("#spRecalcBanner");
+      await renderOptimisedDashboard(container, recalcBanner);
+    };
+  }
+
+  // Continue with partial data
+  const continuePartialBtn = container.querySelector("#continuePartialBtn");
+  if (continuePartialBtn && context) {
+    continuePartialBtn.onclick = async () => {
+      const recalcBanner = parentContainer.querySelector("#spRecalcBanner");
+      await renderOptimisedDashboard(container, recalcBanner);
+    };
+  }
+}
+
+/**
+ * Render the optimised dashboard with current horizon/objective settings
+ * This is the main render function for the Phase 5 architecture
+ */
+async function renderOptimisedDashboard(container, recalcBanner) {
+  try {
+    const context = dashboardState.context;
+    if (!context || !context.squad || context.squad.length === 0) {
+      container.innerHTML = `<div class="sp-error-full"><h3>No Data</h3><p>Failed to load squad data. Try refreshing.</p></div>`;
+      return;
+    }
+
+    const bs = context.bootstrap || state.bootstrap;
+    if (!bs) {
+      container.innerHTML = `<div class="sp-error-full"><h3>No Bootstrap</h3><p>Failed to load game data. Try refreshing.</p></div>`;
+      return;
+    }
+
+    // Get horizon settings
+    const horizonId = dashboardState.horizon || HORIZONS.NEXT_3.id;
+    const horizonConfig = Object.values(HORIZONS).find(h => h.id === horizonId) || HORIZONS.NEXT_3;
+    const horizonGwCount = horizonConfig.gwCount;
+
+    // Get objective settings
+    const objectiveId = dashboardState.objective || OBJECTIVES.MAX_POINTS.id;
+    const objectiveConfig = Object.values(OBJECTIVES).find(o => o.id === objectiveId) || OBJECTIVES.MAX_POINTS;
+
+    // Check if predictions are available
+    const predictionsAvailable = context.predictionsAvailable !== false;
+
+    // Calculate xP for all squad members (respecting objective)
+    const squadWithXp = [];
+    for (const p of context.squad) {
+      if (predictionsAvailable) {
+        const xp = await calculateExpectedPoints(p, horizonGwCount, bs);
+        // Apply objective modifiers
+        const adjustedXp = applyObjectiveModifiers(xp, p, objectiveConfig);
+        squadWithXp.push({ ...p, xp: adjustedXp.total, xpData: adjustedXp, rawXp: xp.total });
+      } else {
+        // Fallback: use points from bootstrap
+        squadWithXp.push({ ...p, xp: 0, xpData: null, rawXp: 0 });
+      }
+    }
+
+    // Optimise XI with objective in mind
+    const optimised = optimiseXI(squadWithXp, objectiveConfig);
+
+    // Get transfer recommendations (only if predictions available)
+    let transfers = null;
+    if (predictionsAvailable) {
+      transfers = await getTransferRecommendations(context, horizonGwCount, bs, objectiveConfig);
+    }
+
+    // Get chip recommendation (only if predictions available)
+    let chipRec = null;
+    if (predictionsAvailable) {
+      chipRec = await getChipRecommendation(context, horizonGwCount, bs, squadWithXp, optimised);
+    }
+
+    // Update recalculation timestamp
+    dashboardState.lastRecalculated = new Date();
+    dashboardState.optimisedData = { squadWithXp, optimised, transfers, chipRec };
+
+    // Show recalc banner
+    if (recalcBanner) {
+      recalcBanner.innerHTML = `
+        <span class="sp-recalc-icon">✓</span>
+        <span class="sp-recalc-text">Recalculated at ${formatTime(dashboardState.lastRecalculated)}</span>
+        <span class="sp-recalc-settings">${horizonConfig.label} · ${objectiveConfig.label}</span>
+      `;
+      recalcBanner.style.display = "flex";
+    }
+
+    // Build the dashboard
+    const predictionsWarning = !predictionsAvailable ? `
+      <div class="sp-predictions-warning">
+        <span class="sp-warning-icon">⚠️</span>
+        <span>Predictions unavailable - showing squad and fixtures only</span>
+      </div>
+    ` : "";
+
+    container.innerHTML = `
+      ${predictionsWarning}
+      <div class="sp-col sp-col-left">
+        ${renderStatePanel(context)}
+        ${renderFlagsPanel(context)}
+        ${chipRec ? renderChipPanel(chipRec, context) : renderChipPanelUnavailable()}
+      </div>
+      <div class="sp-col sp-col-center">
+        ${renderSquadPanel(optimised, horizonGwCount, objectiveConfig)}
+        ${renderCaptainPanel(optimised, objectiveConfig)}
+      </div>
+      <div class="sp-col sp-col-right">
+        ${transfers ? renderTransferPanel(transfers) : renderTransferPanelUnavailable()}
+        ${renderFixturesPanel(context, horizonGwCount)}
+        ${renderAssumptionsPanel(objectiveConfig)}
+      </div>
+    `;
+
+    // Update page timestamp
+    setPageUpdated("stat-picker");
+
+  } catch (err) {
+    log.error("Stat Picker: Dashboard error", err);
+    container.innerHTML = `<div class="sp-error-full"><h3>Error</h3><p>${err.message}</p></div>`;
+  }
+}
+
+/**
+ * Apply objective-specific modifiers to xP calculations
+ */
+function applyObjectiveModifiers(xpData, player, objective) {
+  const modifiedXp = { ...xpData };
+  const minsScore = xpData.minutesReliability?.score || 100;
+
+  switch (objective.id) {
+    case OBJECTIVES.MIN_RISK.id:
+      // Prioritize nailed starters - boost high minutes reliability, penalize low
+      if (minsScore >= 90) {
+        modifiedXp.total = xpData.total * 1.15; // 15% boost for nailed players
+      } else if (minsScore < 70) {
+        modifiedXp.total = xpData.total * 0.7; // 30% penalty for rotation risks
+      } else if (minsScore < 80) {
+        modifiedXp.total = xpData.total * 0.85; // 15% penalty for minor risks
+      }
+      modifiedXp.objectiveNote = `Min Risk: ${minsScore >= 90 ? "+15%" : minsScore < 70 ? "-30%" : minsScore < 80 ? "-15%" : "0%"}`;
+      break;
+
+    case OBJECTIVES.PROTECT_RANK.id:
+      // Match effective ownership - boost high ownership players
+      const ownership = parseFloat(player.selected_by_percent) || 0;
+      if (ownership > 30) {
+        modifiedXp.total = xpData.total * 1.1; // Small boost for highly owned
+      } else if (ownership < 5) {
+        modifiedXp.total = xpData.total * 0.9; // Small penalty for differentials
+      }
+      modifiedXp.objectiveNote = `EO: ${ownership.toFixed(1)}% owned`;
+      break;
+
+    case OBJECTIVES.CHASE_UPSIDE.id:
+      // Target differentials - boost low ownership, penalize high ownership
+      const ownPct = parseFloat(player.selected_by_percent) || 0;
+      if (ownPct < 10) {
+        modifiedXp.total = xpData.total * 1.2; // 20% boost for differentials
+      } else if (ownPct > 30) {
+        modifiedXp.total = xpData.total * 0.85; // 15% penalty for template
+      }
+      // Also boost high-upside (high variance) players
+      const form = parseFloat(player.form) || 0;
+      if (form > 6) {
+        modifiedXp.total = xpData.total * 1.1; // Boost hot form
+      }
+      modifiedXp.objectiveNote = `Diff: ${ownPct.toFixed(1)}% owned, form ${form}`;
+      break;
+
+    case OBJECTIVES.MAX_POINTS.id:
+    default:
+      // No modifications for max points
+      modifiedXp.objectiveNote = "Max xP";
+      break;
+  }
+
+  return modifiedXp;
+}
+
+/**
+ * Render chip panel when predictions unavailable
+ */
+function renderChipPanelUnavailable() {
+  return `
+    <div class="sp-card">
+      <div class="sp-card-header">Chip Advice</div>
+      <div class="sp-unavailable">
+        <span class="sp-unavailable-icon">⚠️</span>
+        <span>Predictions unavailable</span>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render transfer panel when predictions unavailable
+ */
+function renderTransferPanelUnavailable() {
+  return `
+    <div class="sp-card sp-card-transfers">
+      <div class="sp-card-header">Transfer Advisor</div>
+      <div class="sp-unavailable">
+        <span class="sp-unavailable-icon">⚠️</span>
+        <span>Predictions unavailable - cannot calculate transfer recommendations</span>
+      </div>
+    </div>
+  `;
+}
+
+// Keep legacy function for backward compatibility
 async function renderDashboardContent(container, horizon) {
   try {
     const bs = state.bootstrap || (await legacyApi.bootstrap());
@@ -993,7 +1863,7 @@ function renderChipPanel(rec, s) {
   `;
 }
 
-function renderSquadPanel(opt, horizon) {
+function renderSquadPanel(opt, horizon, objective = null) {
   const buildBreakdown = (p) => {
     if (!p?.xpData?.components) return "";
     const c = p.xpData.components;
@@ -1002,6 +1872,7 @@ function renderSquadPanel(opt, horizon) {
     if (c.attack > 0) parts.push(`Atk:${c.attack.toFixed(1)}`);
     if (c.cleanSheet > 0) parts.push(`CS:${c.cleanSheet.toFixed(1)}`);
     if (c.bonus > 0) parts.push(`Bns:${c.bonus.toFixed(1)}`);
+    if (p.xpData?.objectiveNote) parts.push(`[${p.xpData.objectiveNote}]`);
     return parts.join(" ");
   };
 
@@ -1010,10 +1881,27 @@ function renderSquadPanel(opt, horizon) {
     const reasons = [];
     const mins = p.xpData?.minutesReliability?.score || 0;
     const posType = p.element_type;
+    const objectiveId = objective?.id;
 
-    if (mins >= 90) reasons.push("nailed");
-    else if (mins >= 70) reasons.push("likely starter");
-    else if (mins >= 50) reasons.push("rotation risk");
+    // Objective-specific reasons first
+    if (objectiveId === OBJECTIVES.MIN_RISK.id) {
+      if (mins >= 90) reasons.push("nailed");
+      else if (mins >= 70) reasons.push("likely starter");
+      else reasons.push("rotation risk");
+    } else if (objectiveId === OBJECTIVES.PROTECT_RANK.id) {
+      const own = parseFloat(p.selected_by_percent) || 0;
+      if (own > 20) reasons.push(`${own.toFixed(0)}% owned`);
+    } else if (objectiveId === OBJECTIVES.CHASE_UPSIDE.id) {
+      const own = parseFloat(p.selected_by_percent) || 0;
+      if (own < 10) reasons.push("differential");
+      const form = parseFloat(p.form) || 0;
+      if (form > 5) reasons.push(`form:${form}`);
+    } else {
+      // Default (Max Points)
+      if (mins >= 90) reasons.push("nailed");
+      else if (mins >= 70) reasons.push("likely starter");
+      else if (mins >= 50) reasons.push("rotation risk");
+    }
 
     if (posType === 1 || posType === 2) {
       if (p.xpData?.components?.cleanSheet > 1) reasons.push("CS potential");
@@ -1066,7 +1954,24 @@ function renderSquadPanel(opt, horizon) {
   `;
 }
 
-function renderCaptainPanel(opt) {
+function renderCaptainPanel(opt, objective = null) {
+  const objectiveId = objective?.id;
+
+  const getCaptainNote = (p) => {
+    if (!p) return "";
+    if (objectiveId === OBJECTIVES.MIN_RISK.id) {
+      const mins = p.xpData?.minutesReliability?.score || 0;
+      return mins >= 90 ? "safe pick" : mins >= 70 ? "some risk" : "risky";
+    } else if (objectiveId === OBJECTIVES.PROTECT_RANK.id) {
+      const own = parseFloat(p.selected_by_percent) || 0;
+      return own > 15 ? "template" : "differential";
+    } else if (objectiveId === OBJECTIVES.CHASE_UPSIDE.id) {
+      const own = parseFloat(p.selected_by_percent) || 0;
+      return own < 10 ? "diff pick" : own > 25 ? "template" : "";
+    }
+    return "";
+  };
+
   const rows = opt.captainCandidates
     .slice(0, 5)
     .map(
@@ -1076,14 +1981,17 @@ function renderCaptainPanel(opt) {
       <span class="sp-cap-name">${p?.web_name || "?"}</span>
       <span class="sp-cap-xp">${p?.xp?.toFixed(1) || "0"}</span>
       <span class="sp-cap-mins">${p?.xpData?.minutesReliability?.score || "?"}%</span>
+      ${getCaptainNote(p) ? `<span class="sp-cap-note">${getCaptainNote(p)}</span>` : ""}
     </div>
   `
     )
     .join("");
 
+  const objectiveHint = objective ? `<span class="sp-obj-hint">${objective.label}</span>` : "";
+
   return `
     <div class="sp-card">
-      <div class="sp-card-header">Captain Picks</div>
+      <div class="sp-card-header">Captain Picks ${objectiveHint}</div>
       <div class="sp-cap-list">${rows}</div>
     </div>
   `;
@@ -1197,11 +2105,25 @@ function renderFixturesPanel(s, horizon) {
   `;
 }
 
-function renderAssumptionsPanel() {
+function renderAssumptionsPanel(objective = null) {
+  const objectiveId = objective?.id;
+
+  let objectiveExplanation = "";
+  if (objectiveId === OBJECTIVES.MIN_RISK.id) {
+    objectiveExplanation = `<li><strong>Min Risk Mode:</strong> Nailed players (+15%), rotation risks (-30%), minor doubts (-15%)</li>`;
+  } else if (objectiveId === OBJECTIVES.PROTECT_RANK.id) {
+    objectiveExplanation = `<li><strong>Protect Rank Mode:</strong> High ownership (&gt;30%) boosted (+10%), differentials (&lt;5%) reduced (-10%)</li>`;
+  } else if (objectiveId === OBJECTIVES.CHASE_UPSIDE.id) {
+    objectiveExplanation = `<li><strong>Chase Upside Mode:</strong> Differentials (&lt;10%) boosted (+20%), template (&gt;30%) reduced (-15%), hot form boosted</li>`;
+  } else {
+    objectiveExplanation = `<li><strong>Max Points Mode:</strong> Pure xP optimization with no ownership adjustments</li>`;
+  }
+
   return `
     <div class="sp-card sp-card-small">
       <div class="sp-card-header">Model & Assumptions</div>
       <ul class="sp-assumptions">
+        ${objectiveExplanation}
         <li><strong>xP Components:</strong> Appearance (2pts 60+min, 1pt &lt;60min) + Attack (xGI × pos multiplier) + Clean Sheet (FDR-adjusted) + Bonus (BPS/30)</li>
         <li><strong>FDR Weights:</strong> FDR1: +15%, FDR2: +10%, FDR3: baseline, FDR4: -10%, FDR5: -20%</li>
         <li><strong>Hit Thresholds:</strong> -4 needs &gt;+6 xP, -8 needs &gt;+12 xP (with uncertainty buffer)</li>
