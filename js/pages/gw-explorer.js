@@ -101,18 +101,49 @@ export async function renderGwExplorer(main){
     // Search input (sizes handled by CSS above)
     const q = utils.el("input",{ placeholder:"Search player" });
 
-    const startersOnly = utils.el("label",{class:"row-check"},[
-      utils.el("input",{type:"checkbox"}), utils.el("span",{class:"tag"}," Starters only")
-    ]);
-    const myOnly = utils.el("label",{class:"row-check"},[
-      utils.el("input",{type:"checkbox"}), utils.el("span",{class:"tag"}," My squad only")
-    ]);
-    const haulsOnly = utils.el("label",{class:"row-check"},[
-      utils.el("input",{type:"checkbox"}), utils.el("span",{class:"tag"}," Hauls (≥10 pts)")
-    ]);
-    const cardsOnly = utils.el("label",{class:"row-check"},[
-      utils.el("input",{type:"checkbox"}), utils.el("span",{class:"tag"}," Cards / RC only")
-    ]);
+    // Controlled toggle state
+    const toggleState = {
+      starters: false,
+      mySquad: false,
+      hauls: false,
+      cards: false
+    };
+
+    // Helper to create controlled toggle with larger hit target
+    function createToggle(key, label, tooltip = "") {
+      const wrap = utils.el("label", { class: "gw-toggle", title: tooltip });
+      const checkbox = utils.el("input", { type: "checkbox", checked: toggleState[key] });
+      const labelSpan = utils.el("span", { class: "gw-toggle-label" }, label);
+      const indicator = utils.el("span", { class: "gw-toggle-indicator" });
+
+      wrap.append(checkbox, indicator, labelSpan);
+
+      // Controlled: always sync with state
+      checkbox.addEventListener("change", () => {
+        toggleState[key] = checkbox.checked;
+        indicator.classList.toggle("active", checkbox.checked);
+        applyFilters();
+      });
+
+      // Update indicator on init
+      indicator.classList.toggle("active", toggleState[key]);
+
+      return { wrap, checkbox, setState: (val) => {
+        toggleState[key] = !!val;
+        checkbox.checked = toggleState[key];
+        indicator.classList.toggle("active", toggleState[key]);
+      }};
+    }
+
+    const startersToggle = createToggle("starters", "Starters only", "Show only players who played minutes");
+    const mySquadToggle = createToggle("mySquad", "My squad", "Show only players in your squad");
+    const haulsToggle = createToggle("hauls", "Hauls (≥10)", "Show only players with 10+ points");
+    const cardsToggle = createToggle("cards", "Cards/RC", "Show only players with yellow or red cards");
+
+    const startersOnly = startersToggle.wrap;
+    const myOnly = mySquadToggle.wrap;
+    const haulsOnly = haulsToggle.wrap;
+    const cardsOnly = cardsToggle.wrap;
 
     const applyBtn = utils.el("button",{class:"btn-primary"},"Apply");
 
@@ -218,12 +249,14 @@ export async function renderGwExplorer(main){
       if (teamVal !== "ALL")   rows = rows.filter(r=>String(r.teamId)===teamVal);
       if (qv)                  rows = rows.filter(r=>r.name.toLowerCase().includes(qv));
 
-      if (startersOnly.querySelector("input").checked) rows = rows.filter(r=>r.minutes>0);
-      if (myOnly.querySelector("input").checked)       rows = rows.filter(r=>r.isMine);
-      if (haulsOnly.querySelector("input").checked)    rows = rows.filter(r=>r.pts>=10);
-      if (cardsOnly.querySelector("input").checked)    rows = rows.filter(r=>r.yc>0 || r.rc>0);
+      // Use controlled toggle state (explicit true/false)
+      if (toggleState.starters === true) rows = rows.filter(r=>r.minutes>0);
+      if (toggleState.mySquad === true)  rows = rows.filter(r=>r.isMine);
+      if (toggleState.hauls === true)    rows = rows.filter(r=>r.pts>=10);
+      if (toggleState.cards === true)    rows = rows.filter(r=>r.yc>0 || r.rc>0);
 
-      rows.sort((a,b)=> b.pts - a.pts);
+      // Numeric sort by points (descending)
+      rows.sort((a,b)=> Number(b.pts) - Number(a.pts));
       return rows;
     }
 

@@ -1189,6 +1189,34 @@
   .ap-toolbar .w90{
     width:80px;
   }
+
+  /* Price input wrapper with validation */
+  .price-input-wrap{
+    position:relative;
+    display:inline-flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .price-input-wrap .input-error{
+    font-size:10px;
+    color:var(--pain);
+    position:absolute;
+    top:100%;
+    left:0;
+    white-space:nowrap;
+    padding:2px 4px;
+    background:rgba(0,0,0,.85);
+    border-radius:3px;
+    z-index:10;
+  }
+  .price-input-wrap input.input-invalid{
+    border-color:var(--pain);
+    background:rgba(255,68,68,.08);
+  }
+  .price-input-wrap input.input-invalid:focus{
+    box-shadow:0 0 0 2px rgba(255,68,68,.25);
+  }
+
   /* Compact toolbar variant */
   .toolbar-compact{
     display:flex;
@@ -7668,6 +7696,55 @@
   font-size: 10px;
 }
 
+/* GW Explorer - Improved toggle buttons with larger hit targets */
+.gw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+  font-size: 11px;
+}
+.gw-toggle:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+.gw-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.gw-toggle-indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.gw-toggle-indicator.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.gw-toggle-indicator.active::after {
+  content: "✓";
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+}
+.gw-toggle-label {
+  color: var(--text);
+  white-space: nowrap;
+}
+
 /* Top row: balanced grid with GW summary left, Team of Week right */
 .gw-top-row {
   min-height: 180px;
@@ -8392,6 +8469,153 @@
 .fixtures-dashboard .toolbar .badge {
   font-size: 9px;
   padding: 2px 6px;
+}
+
+/* Fixtures - Improved toggle buttons */
+.fx-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+  font-size: 11px;
+}
+.fx-toggle:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+.fx-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.fx-toggle-indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.fx-toggle-indicator.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.fx-toggle-indicator.active::after {
+  content: "✓";
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+}
+.fx-toggle-label {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Fixtures Legend */
+.fx-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+.fx-legend-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fx-legend-title {
+  font-weight: 600;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.fx-legend-label {
+  color: var(--muted);
+  font-size: 10px;
+}
+.fx-legend-item {
+  padding: 2px 8px;
+  background: var(--surface-1);
+  border-radius: 4px;
+  color: var(--muted);
+}
+.fx-legend-item.active {
+  background: var(--accent);
+  color: white;
+}
+.fx-legend-item strong {
+  color: inherit;
+}
+.fx-legend-note {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: italic;
+}
+.fx-legend .swing-up {
+  color: var(--ok);
+}
+.fx-legend .swing-down {
+  color: var(--pain);
+}
+
+/* Fixtures Empty State */
+.fx-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.fx-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+.fx-empty-state h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 16px;
+}
+.fx-empty-state p {
+  margin: 0 0 16px;
+  font-size: 13px;
+  max-width: 300px;
+}
+.fx-clear-filter {
+  margin-top: 8px;
+}
+
+/* Fixtures Notice */
+.fx-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 200, 0, 0.1);
+  border: 1px solid rgba(255, 200, 0, 0.3);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text);
+}
+.fx-notice-icon {
+  font-size: 14px;
 }
 
 /* Matrix remains focal point */

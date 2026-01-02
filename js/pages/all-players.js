@@ -51,6 +51,51 @@ function readLS(key, fallback){
 function writeLS(key, val){
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
+
+/* ========= Debounce utility ========= */
+function debounce(fn, delay = 300) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
+
+/* ========= Price validation ========= */
+function parsePrice(val) {
+  if (val === "" || val == null) return { valid: true, value: null };
+  // Remove £ and m if user typed them
+  const cleaned = String(val).replace(/[£m\s]/gi, "").trim();
+  if (cleaned === "") return { valid: true, value: null };
+  const num = parseFloat(cleaned);
+  if (isNaN(num)) return { valid: false, value: null, error: "Enter a valid number" };
+  if (num < 0) return { valid: false, value: null, error: "Price must be positive" };
+  if (num > 20) return { valid: false, value: null, error: "Max price is £20m" };
+  return { valid: true, value: num };
+}
+
+function validatePriceRange(minVal, maxVal) {
+  const minParsed = parsePrice(minVal);
+  const maxParsed = parsePrice(maxVal);
+  const errors = { min: null, max: null };
+
+  if (!minParsed.valid) errors.min = minParsed.error;
+  if (!maxParsed.valid) errors.max = maxParsed.error;
+
+  // Check min > max
+  if (minParsed.valid && maxParsed.valid &&
+      minParsed.value !== null && maxParsed.value !== null &&
+      minParsed.value > maxParsed.value) {
+    errors.min = "Min cannot exceed max";
+  }
+
+  return {
+    valid: errors.min === null && errors.max === null,
+    min: minParsed.value,
+    max: maxParsed.value,
+    errors
+  };
+}
 function stableSort(arr, getter, dir="desc"){
   const withIndex = arr.map((v,i)=>({v,i}));
   withIndex.sort((a,b)=>{
@@ -529,8 +574,43 @@ export async function renderAllPlayers(main){
       openModal("Select Teams", box);
     });
 
-    const priceMin = utils.el("input",{placeholder:"£ min", inputmode:"decimal", value: filters.priceMin, class:"w90"});
-    const priceMax = utils.el("input",{placeholder:"£ max", inputmode:"decimal", value: filters.priceMax, class:"w90"});
+    // Price inputs with validation UI
+    const priceMinWrap = utils.el("div", { class: "price-input-wrap" });
+    const priceMin = utils.el("input", {
+      placeholder: "£ min",
+      inputmode: "decimal",
+      value: filters.priceMin,
+      class: "w90",
+      "aria-label": "Minimum price"
+    });
+    const priceMinError = utils.el("span", { class: "input-error", style: "display:none" });
+    priceMinWrap.append(priceMin, priceMinError);
+
+    const priceMaxWrap = utils.el("div", { class: "price-input-wrap" });
+    const priceMax = utils.el("input", {
+      placeholder: "£ max",
+      inputmode: "decimal",
+      value: filters.priceMax,
+      class: "w90",
+      "aria-label": "Maximum price"
+    });
+    const priceMaxError = utils.el("span", { class: "input-error", style: "display:none" });
+    priceMaxWrap.append(priceMax, priceMaxError);
+
+    // Price validation display
+    function updatePriceValidation() {
+      const result = validatePriceRange(priceMin.value, priceMax.value);
+
+      priceMin.classList.toggle("input-invalid", !!result.errors.min);
+      priceMinError.textContent = result.errors.min || "";
+      priceMinError.style.display = result.errors.min ? "" : "none";
+
+      priceMax.classList.toggle("input-invalid", !!result.errors.max);
+      priceMaxError.textContent = result.errors.max || "";
+      priceMaxError.style.display = result.errors.max ? "" : "none";
+
+      return result.valid;
+    }
 
     const statusSel = utils.el("select");
     statusSel.innerHTML = `
@@ -548,7 +628,7 @@ export async function renderAllPlayers(main){
       utils.el("span",{},"xMins ≥ 60")
     ]);
 
-    row1.append(acWrap, posWrap, teamBtn, priceMin, priceMax, statusSel, minutesChk);
+    row1.append(acWrap, posWrap, teamBtn, priceMinWrap, priceMaxWrap, statusSel, minutesChk);
 
     // row2
     const row2 = utils.el("div",{class:"ap-toolbar-row"});
@@ -616,8 +696,13 @@ export async function renderAllPlayers(main){
     /* ---- Mount ---- */
     ui.mount(main, page);
 
-    /* ---- Apply ---- */
-    applyBtn.addEventListener("click", ()=>{
+    /* ---- Apply filters (shared function) ---- */
+    function applyFilters() {
+      // Validate prices first
+      if (!updatePriceValidation()) {
+        return; // Don't apply if validation fails
+      }
+
       const fNew = {
         q: q.value.trim(),
         posId: String(filters.posId || ""),
@@ -631,7 +716,34 @@ export async function renderAllPlayers(main){
       const [key, dir] = sortSel.value.split(" ");
       writeLS(LS_AP_SORT, { key, dir });
       update();
+    }
+
+    // Debounced version for auto-apply on text inputs
+    const debouncedApply = debounce(applyFilters, 400);
+
+    /* ---- Apply button (manual trigger) ---- */
+    applyBtn.addEventListener("click", applyFilters);
+
+    /* ---- Auto-apply on price inputs with debounce ---- */
+    priceMin.addEventListener("input", () => {
+      updatePriceValidation();
+      debouncedApply();
     });
+    priceMax.addEventListener("input", () => {
+      updatePriceValidation();
+      debouncedApply();
+    });
+
+    /* ---- Auto-apply on dropdowns ---- */
+    statusSel.addEventListener("change", applyFilters);
+    sortSel.addEventListener("change", applyFilters);
+
+    /* ---- Auto-apply on minutes checkbox ---- */
+    minutesChk.querySelector("input").addEventListener("change", applyFilters);
+
+    /* ---- Auto-apply on xGI/xP toggles ---- */
+    xgiToggle.querySelector("input").addEventListener("change", applyFilters);
+    xpToggle.querySelector("input").addEventListener("change", applyFilters);
 
     // Auto run once on load
     update();
@@ -646,8 +758,12 @@ export async function renderAllPlayers(main){
       const qv = utils.normalizeText(f.q||"");
       const pid = f.posId ? +f.posId : null;
       const teamSet = new Set((f.teamIds||[]).map(x=>+x));
-      const min = f.priceMin ? +f.priceMin : null;
-      const max = f.priceMax ? +f.priceMax : null;
+
+      // Use parsePrice for proper decimal handling
+      const minParsed = parsePrice(f.priceMin);
+      const maxParsed = parsePrice(f.priceMax);
+      const min = minParsed.valid ? minParsed.value : null;
+      const max = maxParsed.valid ? maxParsed.value : null;
       const status = f.status || "";
 
       let rows = base.filter(p=>{
@@ -660,7 +776,14 @@ export async function renderAllPlayers(main){
         return true;
       });
 
-      rows = stableSort(rows, (r)=> r[s.key] ?? -Infinity, s.dir);
+      // Ensure numeric sorting - use Number() to force numeric comparison
+      rows = stableSort(rows, (r) => {
+        const val = r[s.key];
+        // Handle null/undefined values
+        if (val == null) return s.dir === "asc" ? Infinity : -Infinity;
+        // Force numeric for known numeric columns
+        return typeof val === "number" ? val : (parseFloat(val) || val);
+      }, s.dir);
       return rows;
     }
 
