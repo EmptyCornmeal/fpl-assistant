@@ -689,7 +689,20 @@ export async function renderStatPicker(main) {
   renderDashboard(page);
 }
 
+function isDevMode() {
+  // Dev mode if running on localhost or if DEV_MODE is set
+  return window.location.hostname === 'localhost' ||
+         window.location.hostname === '127.0.0.1' ||
+         window.FPL_DEV_MODE === true;
+}
+
 function renderPasswordGate(container) {
+  const devModeHtml = isDevMode() ? `
+    <div class="sp-gate-dev">
+      <button id="gateDevBtn" class="sp-btn-link">Dev Unlock</button>
+    </div>
+  ` : '';
+
   container.innerHTML = `
     <div class="sp-gate">
       <div class="sp-gate-card">
@@ -700,7 +713,9 @@ function renderPasswordGate(container) {
           <input type="password" id="gatePassword" placeholder="Password" autocomplete="off" />
           <button id="gateUnlockBtn" class="btn-primary">Unlock</button>
         </div>
-        <p id="gateError" class="sp-gate-error" style="display:none;">Incorrect</p>
+        <p id="gateCapsHint" class="sp-gate-caps" style="display:none;">⚠️ Caps Lock is on</p>
+        <p id="gateError" class="sp-gate-error" style="display:none;">Incorrect password</p>
+        ${devModeHtml}
       </div>
     </div>
   `;
@@ -708,20 +723,50 @@ function renderPasswordGate(container) {
   const input = container.querySelector("#gatePassword");
   const btn = container.querySelector("#gateUnlockBtn");
   const error = container.querySelector("#gateError");
+  const capsHint = container.querySelector("#gateCapsHint");
+  const devBtn = container.querySelector("#gateDevBtn");
 
   const tryUnlock = () => {
-    if (input.value === GATE_PASSWORD) {
+    const inputValue = input.value.trim().toLowerCase();
+    const password = GATE_PASSWORD.toLowerCase();
+
+    if (inputValue === password) {
       unlock();
       container.innerHTML = "";
       renderDashboard(container);
     } else {
       error.style.display = "block";
+      capsHint.style.display = "none";
       input.value = "";
+      input.focus();
+    }
+  };
+
+  // Caps lock detection
+  const checkCapsLock = (e) => {
+    if (e.getModifierState && e.getModifierState('CapsLock')) {
+      capsHint.style.display = "block";
+    } else {
+      capsHint.style.display = "none";
     }
   };
 
   btn.onclick = tryUnlock;
-  input.onkeydown = e => e.key === "Enter" && tryUnlock();
+  input.onkeydown = e => {
+    checkCapsLock(e);
+    if (e.key === "Enter") tryUnlock();
+  };
+  input.onkeyup = checkCapsLock;
+
+  // Dev unlock button
+  if (devBtn) {
+    devBtn.onclick = () => {
+      unlock();
+      container.innerHTML = "";
+      renderDashboard(container);
+    };
+  }
+
   input.focus();
 }
 
