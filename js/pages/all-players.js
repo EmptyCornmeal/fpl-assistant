@@ -506,6 +506,7 @@ export async function renderAllPlayers(main){
         posButtons.forEach(x=>x.classList.remove("active"));
         b.classList.add("active");
         filters.posId = val;
+        applyFilters(); // Auto-apply on position change
       });
       posButtons.push(b);
       posWrap.append(b);
@@ -568,6 +569,7 @@ export async function renderAllPlayers(main){
       done.addEventListener("click", ()=>{
         teamBtn.textContent = teamBtnLabel();
         document.querySelector(".modal [data-close]")?.click();
+        applyFilters(); // Auto-apply on team selection done
       });
 
       box.append(done);
@@ -657,8 +659,20 @@ export async function renderAllPlayers(main){
     const chartWrap = utils.el("div",{class:"segmented"});
     const btnChartPoints = utils.el("button",{class:"seg-btn"+(chartMode==="points"?" active":""), type:"button"},"Chart: Points");
     const btnChartXP     = utils.el("button",{class:"seg-btn"+(chartMode==="xp"?" active":""), type:"button"},"Chart: xP (Next 5)");
-    btnChartPoints.addEventListener("click", ()=>{ chartMode="points"; writeLS(LS_AP_CHART, chartMode); update(); });
-    btnChartXP.addEventListener("click", ()=>{ chartMode="xp"; writeLS(LS_AP_CHART, chartMode); update(); });
+    btnChartPoints.addEventListener("click", ()=>{
+      chartMode="points";
+      writeLS(LS_AP_CHART, chartMode);
+      btnChartPoints.classList.add("active");
+      btnChartXP.classList.remove("active");
+      update();
+    });
+    btnChartXP.addEventListener("click", ()=>{
+      chartMode="xp";
+      writeLS(LS_AP_CHART, chartMode);
+      btnChartXP.classList.add("active");
+      btnChartPoints.classList.remove("active");
+      update();
+    });
     chartWrap.append(btnChartPoints, btnChartXP);
 
     const applyBtn = utils.el("button",{class:"btn-primary"}, "Apply");
@@ -685,10 +699,20 @@ export async function renderAllPlayers(main){
     const tableCard = utils.el("div", { class: "card card-flush players-table" });
     const tableHeader = utils.el("div", { class: "tile-header", style: "display:flex;justify-content:space-between;align-items:center" });
     tableHeader.innerHTML = `<span class="tile-title">All Players</span>`;
+    const scrollHint = utils.el("span", { class: "scroll-hint" }, "← Scroll for more columns →");
+    tableHeader.append(scrollHint);
     const progress = utils.el("div", { class: "progress", style: "display:none" }, [
       utils.el("div", { class: "bar", style: "width:0%" })
     ]);
     const tableSlot = utils.el("div", { id: "ap-table-slot", class: "table-scroll-container", style: "flex:1;overflow:auto" });
+
+    // Update scroll hint visibility based on scroll position
+    tableSlot.addEventListener("scroll", () => {
+      const hasHorizontalScroll = tableSlot.scrollWidth > tableSlot.clientWidth;
+      const scrolledToEnd = tableSlot.scrollLeft >= tableSlot.scrollWidth - tableSlot.clientWidth - 10;
+      scrollHint.classList.toggle("hidden", !hasHorizontalScroll || scrolledToEnd);
+    });
+
     tableCard.append(tableHeader, progress, tableSlot);
 
     page.append(chartCard, tableCard);
