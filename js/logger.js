@@ -2,9 +2,10 @@
 // Tiny logger utility with console output + optional on-screen dev panel
 
 const LOG_LEVELS = {
-  info: { label: 'INFO', color: '#3b82f6', priority: 0 },
-  warn: { label: 'WARN', color: '#f59e0b', priority: 1 },
-  error: { label: 'ERROR', color: '#ef4444', priority: 2 },
+  debug: { label: "DEBUG", color: "#94a3b8", priority: -1 },
+  info: { label: "INFO", color: "#3b82f6", priority: 0 },
+  warn: { label: "WARN", color: "#f59e0b", priority: 1 },
+  error: { label: "ERROR", color: "#ef4444", priority: 2 },
 };
 
 const MAX_LOG_ENTRIES = 100;
@@ -19,13 +20,21 @@ let devPanelEl = null;
 function logMessage(level, ...args) {
   const config = LOG_LEVELS[level] || LOG_LEVELS.info;
   const timestamp = new Date().toISOString();
-  const message = args.map(a =>
-    typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)
-  ).join(' ');
+  const message = args
+    .map((a) => (typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)))
+    .join(" ");
 
   // Console output
-  const consoleMethod = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
-  consoleMethod(`[${config.label}] ${timestamp.split('T')[1].split('.')[0]}:`, ...args);
+  const consoleMethod =
+    level === "error"
+      ? console.error
+      : level === "warn"
+      ? console.warn
+      : level === "debug"
+      ? console.debug
+      : console.log;
+
+  consoleMethod(`[${config.label}] ${timestamp.split("T")[1].split(".")[0]}:`, ...args);
 
   // Store in history
   const entry = { level, timestamp, message, args };
@@ -48,9 +57,9 @@ function logMessage(level, ...args) {
 function createDevPanel() {
   if (devPanelEl) return devPanelEl;
 
-  const panel = document.createElement('div');
-  panel.id = 'devLogPanel';
-  panel.className = 'dev-log-panel';
+  const panel = document.createElement("div");
+  panel.id = "devLogPanel";
+  panel.className = "dev-log-panel";
   panel.innerHTML = `
     <div class="dev-log-header">
       <span class="dev-log-title">Dev Console</span>
@@ -60,6 +69,7 @@ function createDevPanel() {
       </div>
     </div>
     <div class="dev-log-filters">
+      <label><input type="checkbox" data-level="debug" checked> Debug</label>
       <label><input type="checkbox" data-level="info" checked> Info</label>
       <label><input type="checkbox" data-level="warn" checked> Warn</label>
       <label><input type="checkbox" data-level="error" checked> Error</label>
@@ -68,15 +78,15 @@ function createDevPanel() {
   `;
 
   // Bind events
-  panel.querySelector('.dev-log-close').addEventListener('click', () => log.hideDevPanel());
-  panel.querySelector('.dev-log-clear').addEventListener('click', () => {
+  panel.querySelector(".dev-log-close").addEventListener("click", () => log.hideDevPanel());
+  panel.querySelector(".dev-log-clear").addEventListener("click", () => {
     logHistory.length = 0;
-    panel.querySelector('.dev-log-content').innerHTML = '';
+    panel.querySelector(".dev-log-content").innerHTML = "";
   });
 
   // Filter checkboxes
-  panel.querySelectorAll('.dev-log-filters input').forEach(cb => {
-    cb.addEventListener('change', () => refreshPanelContent());
+  panel.querySelectorAll(".dev-log-filters input").forEach((cb) => {
+    cb.addEventListener("change", () => refreshPanelContent());
   });
 
   devPanelEl = panel;
@@ -89,17 +99,17 @@ function createDevPanel() {
 function appendLogToPanel(entry) {
   if (!devPanelEl) return;
 
-  const content = devPanelEl.querySelector('.dev-log-content');
-  const config = LOG_LEVELS[entry.level];
+  const content = devPanelEl.querySelector(".dev-log-content");
+  const config = LOG_LEVELS[entry.level] || LOG_LEVELS.info;
 
   // Check if filtered
   const checkbox = devPanelEl.querySelector(`input[data-level="${entry.level}"]`);
   if (checkbox && !checkbox.checked) return;
 
-  const row = document.createElement('div');
+  const row = document.createElement("div");
   row.className = `dev-log-entry dev-log-${entry.level}`;
   row.innerHTML = `
-    <span class="dev-log-time">${entry.timestamp.split('T')[1].split('.')[0]}</span>
+    <span class="dev-log-time">${entry.timestamp.split("T")[1].split(".")[0]}</span>
     <span class="dev-log-level" style="color:${config.color}">[${config.label}]</span>
     <span class="dev-log-message">${escapeHtml(entry.message)}</span>
   `;
@@ -115,17 +125,17 @@ function appendLogToPanel(entry) {
 function refreshPanelContent() {
   if (!devPanelEl) return;
 
-  const content = devPanelEl.querySelector('.dev-log-content');
-  content.innerHTML = '';
+  const content = devPanelEl.querySelector(".dev-log-content");
+  content.innerHTML = "";
 
-  logHistory.forEach(entry => appendLogToPanel(entry));
+  logHistory.forEach((entry) => appendLogToPanel(entry));
 }
 
 /**
  * Escape HTML for safe rendering
  */
 function escapeHtml(str) {
-  const div = document.createElement('div');
+  const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
 }
@@ -134,9 +144,10 @@ function escapeHtml(str) {
  * Logger API
  */
 export const log = {
-  info: (...args) => logMessage('info', ...args),
-  warn: (...args) => logMessage('warn', ...args),
-  error: (...args) => logMessage('error', ...args),
+  debug: (...args) => logMessage("debug", ...args),
+  info: (...args) => logMessage("info", ...args),
+  warn: (...args) => logMessage("warn", ...args),
+  error: (...args) => logMessage("error", ...args),
 
   /**
    * Get log history
@@ -146,7 +157,9 @@ export const log = {
   /**
    * Clear log history
    */
-  clear: () => { logHistory.length = 0; },
+  clear: () => {
+    logHistory.length = 0;
+  },
 
   /**
    * Show the dev panel
@@ -156,7 +169,7 @@ export const log = {
     if (!panel.parentElement) {
       document.body.appendChild(panel);
     }
-    panel.classList.add('visible');
+    panel.classList.add("visible");
     devPanelVisible = true;
     refreshPanelContent();
   },
@@ -166,7 +179,7 @@ export const log = {
    */
   hideDevPanel: () => {
     if (devPanelEl) {
-      devPanelEl.classList.remove('visible');
+      devPanelEl.classList.remove("visible");
     }
     devPanelVisible = false;
   },
@@ -189,6 +202,6 @@ export const log = {
 };
 
 // Expose to window for debugging
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   window.fplLog = log;
 }
