@@ -67,10 +67,11 @@ async function buildCurrentState() {
   }
 
   const [entry, history, fixtures] = await Promise.all([
-    api.entry(entryId).catch(() => null),
-    api.entryHistory(entryId).catch(() => null),
-    api.fixtures().catch(() => [])
+    fplClient.entry(entryId).catch(() => null),
+    fplClient.entryHistory(entryId).catch(() => null),
+    fplClient.fixtures().catch(() => [])
   ]);
+
 
   if (!entry) {
     return { error: "ENTRY_NOT_FOUND", message: `Entry ${entryId} not found. Check your Entry ID.` };
