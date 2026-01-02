@@ -10,6 +10,21 @@ import { STORAGE_KEYS } from "../storage.js";
 import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   FIX: NORMALISE FIXTURES SHAPE (Option A)
+   fplClient.fixtures() may return an object wrapper instead of an array.
+   This ensures downstream code always receives an array.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function toArrayFixtures(x) {
+  if (Array.isArray(x)) return x;
+  if (!x) return [];
+  if (Array.isArray(x.fixtures)) return x.fixtures;
+  if (Array.isArray(x.data)) return x.data;
+  if (Array.isArray(x.results)) return x.results;
+  return [];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    PASSWORD GATE - localStorage with 24h expiry (Phase 2 - PRESERVED)
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -27,7 +42,9 @@ function isUnlocked() {
       return false;
     }
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 function unlock() {
@@ -46,7 +63,7 @@ const CHIP_NAMES = {
   wildcard: "Wildcard",
   freehit: "Free Hit",
   bboost: "Bench Boost",
-  "3xc": "Triple Captain"
+  "3xc": "Triple Captain",
 };
 
 function formatChipName(chip) {
@@ -58,58 +75,70 @@ function formatChipName(chip) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 async function buildCurrentState() {
-  const bs = state.bootstrap || await legacyApi.bootstrap();
+  const bs = state.bootstrap || (await legacyApi.bootstrap());
   if (!bs) throw new Error("Bootstrap data not available");
 
   const entryId = state.entryId;
   if (!entryId) {
-    return { error: "NO_ENTRY_ID", message: "Set your Entry ID in the sidebar to see your team state." };
+    return {
+      error: "NO_ENTRY_ID",
+      message: "Set your Entry ID in the sidebar to see your team state.",
+    };
   }
 
-  const [entry, history, fixtures] = await Promise.all([
+  const [entry, history, fixturesRaw] = await Promise.all([
     fplClient.entry(entryId).catch(() => null),
     fplClient.entryHistory(entryId).catch(() => null),
-    fplClient.fixtures().catch(() => [])
+    fplClient.fixtures().catch(() => []),
   ]);
 
+  const fixtures = toArrayFixtures(fixturesRaw);
 
   if (!entry) {
-    return { error: "ENTRY_NOT_FOUND", message: `Entry ${entryId} not found. Check your Entry ID.` };
+    return {
+      error: "ENTRY_NOT_FOUND",
+      message: `Entry ${entryId} not found. Check your Entry ID.`,
+    };
   }
 
   const events = bs.events || [];
-  const currentEvent = events.find(e => e.is_current);
-  const nextEvent = events.find(e => e.is_next);
-  const lastFinished = events.filter(e => e.data_checked).slice(-1)[0];
+  const currentEvent = events.find((e) => e.is_current);
+  const nextEvent = events.find((e) => e.is_next);
+  const lastFinished = events.filter((e) => e.data_checked).slice(-1)[0];
 
   const currentGw = currentEvent?.id || lastFinished?.id || 1;
   const nextGw = nextEvent?.id || currentGw + 1;
   const isLive = currentEvent && !currentEvent.data_checked;
 
-  const gwForPicks = isLive ? currentGw : (lastFinished?.id || 1);
+  const gwForPicks = isLive ? currentGw : lastFinished?.id || 1;
   let picks = null;
-  try { picks = await legacyApi.entryPicks(entryId, gwForPicks); } catch {}
+  try {
+    picks = await legacyApi.entryPicks(entryId, gwForPicks);
+  } catch {}
 
-  const currentHistory = history?.current?.find(h => h.event === gwForPicks);
+  const currentHistory = history?.current?.find((h) => h.event === gwForPicks);
   const bank = currentHistory?.bank ?? entry.last_deadline_bank ?? 0;
   const teamValue = currentHistory?.value ?? entry.last_deadline_value ?? 1000;
   const freeTransfers = calculateFreeTransfers(history, currentGw);
 
   // CHIPS: Strictly derive from entry history - no defaults, no guessing
   const rawChipsUsed = history?.chips || [];
-  const chipsUsed = rawChipsUsed.map(c => ({ chip: c.name, gw: c.event }));
+  const chipsUsed = rawChipsUsed.map((c) => ({ chip: c.name, gw: c.event }));
 
   // Count wildcards used (max 2 per season)
-  const wildcardsUsed = chipsUsed.filter(c => c.chip === "wildcard").length;
+  const wildcardsUsed = chipsUsed.filter((c) => c.chip === "wildcard").length;
 
   // Build available chips list - only if NOT in used list
   const chipsAvailable = [];
   if (wildcardsUsed < 2) chipsAvailable.push("wildcard");
-  if (!chipsUsed.some(c => c.chip === "freehit")) chipsAvailable.push("freehit");
-  if (!chipsUsed.some(c => c.chip === "bboost")) chipsAvailable.push("bboost");
-  if (!chipsUsed.some(c => c.chip === "3xc")) chipsAvailable.push("3xc");
+  if (!chipsUsed.some((c) => c.chip === "freehit")) chipsAvailable.push("freehit");
+  if (!chipsUsed.some((c) => c.chip === "bboost")) chipsAvailable.push("bboost");
+  if (!chipsUsed.some((c) => c.chip === "3xc")) chipsAvailable.push("3xc");
 
-  let squad = [], captain = null, viceCaptain = null, bench = [];
+  let squad = [],
+    captain = null,
+    viceCaptain = null,
+    bench = [];
 
   if (picks?.picks) {
     const elements = bs.elements || [];
@@ -117,9 +146,9 @@ async function buildCurrentState() {
     const positions = bs.element_types || [];
 
     squad = picks.picks.map((pick, idx) => {
-      const player = elements.find(p => p.id === pick.element);
-      const team = teams.find(t => t.id === player?.team);
-      const pos = positions.find(p => p.id === player?.element_type);
+      const player = elements.find((p) => p.id === pick.element);
+      const team = teams.find((t) => t.id === player?.team);
+      const pos = positions.find((p) => p.id === player?.element_type);
 
       const isBench = idx >= 11;
       const isCaptain = pick.is_captain;
@@ -129,7 +158,9 @@ async function buildCurrentState() {
         ...player,
         pickPosition: pick.position,
         multiplier: pick.multiplier,
-        isCaptain, isVice, isBench,
+        isCaptain,
+        isVice,
+        isBench,
         teamName: team?.short_name || "???",
         positionName: pos?.singular_name_short || "?",
       };
@@ -141,21 +172,36 @@ async function buildCurrentState() {
     });
   }
 
-  const xi = squad.filter(p => !p.isBench);
-  const flaggedPlayers = squad.filter(p => p.status !== "a").map(p => ({ ...p, flagReason: getFlagReason(p) }));
-  const userTeamIds = [...new Set(squad.map(p => p.team))];
+  const xi = squad.filter((p) => !p.isBench);
+  const flaggedPlayers = squad
+    .filter((p) => p.status !== "a")
+    .map((p) => ({ ...p, flagReason: getFlagReason(p) }));
+  const userTeamIds = [...new Set(squad.map((p) => p.team))];
   const fixtureMatrix = await buildFixtureMatrix(userTeamIds, nextGw, fixtures, bs);
 
   return {
-    entryId, entryName: entry.name,
+    entryId,
+    entryName: entry.name,
     playerName: `${entry.player_first_name} ${entry.player_last_name}`,
-    currentGw, nextGw, isLive, freeTransfers,
-    bank, bankFormatted: `£${(bank / 10).toFixed(1)}m`,
-    teamValue, teamValueFormatted: `£${(teamValue / 10).toFixed(1)}m`,
+    currentGw,
+    nextGw,
+    isLive,
+    freeTransfers,
+    bank,
+    bankFormatted: `£${(bank / 10).toFixed(1)}m`,
+    teamValue,
+    teamValueFormatted: `£${(teamValue / 10).toFixed(1)}m`,
     totalValue: bank + teamValue,
     totalValueFormatted: `£${((bank + teamValue) / 10).toFixed(1)}m`,
-    chipsAvailable, chipsUsed, squad, xi, bench, captain, viceCaptain,
-    flaggedPlayers, fixtureMatrix,
+    chipsAvailable,
+    chipsUsed,
+    squad,
+    xi,
+    bench,
+    captain,
+    viceCaptain,
+    flaggedPlayers,
+    fixtureMatrix,
     overallRank: entry.summary_overall_rank,
     overallPoints: entry.summary_overall_points,
     gwRank: currentHistory?.rank,
@@ -166,16 +212,23 @@ async function buildCurrentState() {
 function calculateFreeTransfers(history, currentGw) {
   if (!history?.current) return 1;
   let ft = 1;
-  const lastGw = history.current.find(h => h.event === currentGw - 1);
+  const lastGw = history.current.find((h) => h.event === currentGw - 1);
   if (lastGw) ft = Math.min(5, 1 + (lastGw.event_transfers === 0 ? 1 : 0));
   return ft;
 }
 
 function getFlagReason(player) {
-  const statusMap = { d: "Doubtful", i: "Injured", s: "Suspended", u: "Unavailable", n: "Not in squad" };
+  const statusMap = {
+    d: "Doubtful",
+    i: "Injured",
+    s: "Suspended",
+    u: "Unavailable",
+    n: "Not in squad",
+  };
   let reason = statusMap[player.status] || "Unknown";
   if (player.news) reason += ` - ${player.news}`;
-  if (player.chance_of_playing_next_round != null) reason += ` (${player.chance_of_playing_next_round}%)`;
+  if (player.chance_of_playing_next_round != null)
+    reason += ` (${player.chance_of_playing_next_round}%)`;
   return reason;
 }
 
@@ -184,8 +237,11 @@ async function buildFixtureMatrix(teamIds, startGw, allFixtures, bs) {
   const horizons = [3, 6, 8];
   const matrix = {};
 
+  // Defensive: ensure array even if someone passes wrapper/null
+  allFixtures = toArrayFixtures(allFixtures);
+
   for (const teamId of teamIds) {
-    const team = teams.find(t => t.id === teamId);
+    const team = teams.find((t) => t.id === teamId);
     matrix[teamId] = { teamId, teamName: team?.short_name || "???", horizons: {} };
 
     for (const h of horizons) {
@@ -194,19 +250,21 @@ async function buildFixtureMatrix(teamIds, startGw, allFixtures, bs) {
 
       const fixtures = [];
       for (const gw of gwRange) {
-        const gwFx = allFixtures.filter(f => f.event === gw);
-        const teamFx = gwFx.filter(f => f.team_h === teamId || f.team_a === teamId);
+        const gwFx = allFixtures.filter((f) => f.event === gw);
+        const teamFx = gwFx.filter((f) => f.team_h === teamId || f.team_a === teamId);
 
         for (const fx of teamFx) {
           const isHome = fx.team_h === teamId;
           const oppId = isHome ? fx.team_a : fx.team_h;
-          const opp = teams.find(t => t.id === oppId);
+          const opp = teams.find((t) => t.id === oppId);
           const fdr = isHome ? fx.team_h_difficulty : fx.team_a_difficulty;
           fixtures.push({ gw, opponent: opp?.short_name || "???", isHome, fdr });
         }
       }
 
-      const avgFdr = fixtures.length ? (fixtures.reduce((s, f) => s + f.fdr, 0) / fixtures.length).toFixed(1) : null;
+      const avgFdr = fixtures.length
+        ? (fixtures.reduce((s, f) => s + f.fdr, 0) / fixtures.length).toFixed(1)
+        : null;
       matrix[teamId].horizons[h] = { fixtures, avgFdr, label: `Next ${h}` };
     }
   }
@@ -218,7 +276,7 @@ async function buildFixtureMatrix(teamIds, startGw, allFixtures, bs) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 async function calculateExpectedPoints(player, horizon, bs) {
-  const startGw = (bs.events || []).find(e => e.is_next)?.id || 1;
+  const startGw = (bs.events || []).find((e) => e.is_next)?.id || 1;
   const gwIds = [];
   for (let gw = startGw; gw < startGw + horizon && gw <= 38; gw++) gwIds.push(gw);
 
@@ -227,19 +285,24 @@ async function calculateExpectedPoints(player, horizon, bs) {
 
   const playerFixtures = [];
   for (const gw of gwIds) {
-    const gwFx = allFixtures.filter(f => f.event === gw);
-    const teamFx = gwFx.filter(f => f.team_h === player.team || f.team_a === player.team);
+    const gwFx = allFixtures.filter((f) => f.event === gw);
+    const teamFx = gwFx.filter((f) => f.team_h === player.team || f.team_a === player.team);
     for (const fx of teamFx) {
       const isHome = fx.team_h === player.team;
       const oppId = isHome ? fx.team_a : fx.team_h;
-      const opp = teams.find(t => t.id === oppId);
+      const opp = teams.find((t) => t.id === oppId);
       const fdr = isHome ? fx.team_h_difficulty : fx.team_a_difficulty;
       playerFixtures.push({ gw, isHome, fdr, opponent: opp?.short_name || "???" });
     }
   }
 
   if (playerFixtures.length === 0) {
-    return { total: 0, perGw: [], explanation: "No fixtures (blank GWs)", components: { appearance: 0, attack: 0, cleanSheet: 0, bonus: 0 } };
+    return {
+      total: 0,
+      perGw: [],
+      explanation: "No fixtures (blank GWs)",
+      components: { appearance: 0, attack: 0, cleanSheet: 0, bonus: 0 },
+    };
   }
 
   const minutesReliability = calculateMinutesReliability(player);
@@ -252,30 +315,40 @@ async function calculateExpectedPoints(player, horizon, bs) {
   const csPoints = posId <= 2 ? 4 : posId === 3 ? 1 : 0;
   const goalPoints = posId <= 2 ? 6 : posId === 3 ? 5 : 4;
 
-  let totalXp = 0, totalApp = 0, totalAtk = 0, totalCS = 0, totalBonus = 0;
+  let totalXp = 0,
+    totalApp = 0,
+    totalAtk = 0,
+    totalCS = 0,
+    totalBonus = 0;
   const perGw = [];
 
   for (const fx of playerFixtures) {
     const appXp = xMins >= 60 ? 2 : xMins > 0 ? 1 : 0;
-    const fdrMult = ({ 1: 1.15, 2: 1.10, 3: 1.00, 4: 0.90, 5: 0.80 })[fx.fdr] || 1;
+    const fdrMult = ({ 1: 1.15, 2: 1.1, 3: 1.0, 4: 0.9, 5: 0.8 })[fx.fdr] || 1;
     const homeMult = fx.isHome ? 1.05 : 0.95;
     const atkXp = xgi90 * (xMins / 90) * goalPoints * fdrMult * homeMult;
 
     const csProb = getCSProb(fx.fdr, fx.isHome);
     const csXp = csProb * csPoints * (xMins >= 60 ? 1 : 0);
 
-    const bps90 = player.minutes > 0 ? (parseFloat(player.bps || 0) / (player.minutes / 90)) : 0;
+    const bps90 = player.minutes > 0 ? parseFloat(player.bps || 0) / (player.minutes / 90) : 0;
     const bonusXp = Math.min(0.8, bps90 / 30) * (xMins / 90);
 
     const gwXp = appXp + atkXp + csXp + bonusXp;
-    totalXp += gwXp; totalApp += appXp; totalAtk += atkXp; totalCS += csXp; totalBonus += bonusXp;
+    totalXp += gwXp;
+    totalApp += appXp;
+    totalAtk += atkXp;
+    totalCS += csXp;
+    totalBonus += bonusXp;
     perGw.push({ gw: fx.gw, opponent: fx.opponent, isHome: fx.isHome, fdr: fx.fdr, xp: gwXp.toFixed(1) });
   }
 
   return {
-    total: parseFloat(totalXp.toFixed(1)), perGw, minutesReliability,
+    total: parseFloat(totalXp.toFixed(1)),
+    perGw,
+    minutesReliability,
     components: { appearance: totalApp, attack: totalAtk, cleanSheet: totalCS, bonus: totalBonus },
-    explanation: buildExplanation(player, minutesReliability, xgi90, playerFixtures, totalXp)
+    explanation: buildExplanation(player, minutesReliability, xgi90, playerFixtures, totalXp),
   };
 }
 
@@ -283,19 +356,23 @@ function estimateXgi90(player) {
   const threat = parseFloat(player.threat || 0);
   const creativity = parseFloat(player.creativity || 0);
   const mins = Math.max(player.minutes || 1, 1);
-  return (threat / (mins / 90) / 500) + (creativity / (mins / 90) / 1000);
+  return threat / (mins / 90) / 500 + creativity / (mins / 90) / 1000;
 }
 
 function getCSProb(fdr, isHome) {
-  let prob = ({ 1: 0.40, 2: 0.35, 3: 0.25, 4: 0.15, 5: 0.08 })[fdr] || 0.20;
+  let prob = ({ 1: 0.4, 2: 0.35, 3: 0.25, 4: 0.15, 5: 0.08 })[fdr] || 0.2;
   prob += isHome ? 0.03 : -0.03;
-  return Math.max(0.02, Math.min(0.60, prob));
+  return Math.max(0.02, Math.min(0.6, prob));
 }
 
 function buildExplanation(player, mins, xgi90, fixtures, totalXp) {
   const pos = ({ 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" })[player.element_type] || "?";
-  const avgFdr = fixtures.length ? (fixtures.reduce((s, f) => s + f.fdr, 0) / fixtures.length).toFixed(1) : "N/A";
-  return `${player.web_name} (${pos}) | Mins: ${mins.score}/100 | xGI90: ${xgi90.toFixed(2)} | Avg FDR: ${avgFdr} | xP: ${totalXp.toFixed(1)}`;
+  const avgFdr = fixtures.length
+    ? (fixtures.reduce((s, f) => s + f.fdr, 0) / fixtures.length).toFixed(1)
+    : "N/A";
+  return `${player.web_name} (${pos}) | Mins: ${mins.score}/100 | xGI90: ${xgi90.toFixed(
+    2
+  )} | Avg FDR: ${avgFdr} | xP: ${totalXp.toFixed(1)}`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -320,14 +397,27 @@ function calculateMinutesReliability(player) {
 
   const gp = Math.max(1, Math.round((player.minutes || 0) / 90));
   const avgMins = gp > 0 ? (player.minutes || 0) / gp : 0;
-  if (avgMins < 45) { score -= 20; details.push("Low mins"); }
-  else if (avgMins < 60) { score -= 10; details.push("Rotation risk"); }
+  if (avgMins < 45) {
+    score -= 20;
+    details.push("Low mins");
+  } else if (avgMins < 60) {
+    score -= 10;
+    details.push("Rotation risk");
+  }
 
   if (player.news) {
     const nl = player.news.toLowerCase();
-    if (nl.includes("knock") || nl.includes("minor")) { score -= 10; details.push("Minor concern"); }
-    if (nl.includes("rest") || nl.includes("rotation")) { score -= 15; details.push("Rotation"); }
-    if (nl.includes("returned") || nl.includes("back in training")) { score += 5; }
+    if (nl.includes("knock") || nl.includes("minor")) {
+      score -= 10;
+      details.push("Minor concern");
+    }
+    if (nl.includes("rest") || nl.includes("rotation")) {
+      score -= 15;
+      details.push("Rotation");
+    }
+    if (nl.includes("returned") || nl.includes("back in training")) {
+      score += 5;
+    }
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
@@ -343,22 +433,25 @@ function calculateMinutesReliability(player) {
 function optimiseXI(squadWithXp) {
   // Enforce FPL formation rules: 1 GKP, 3-5 DEF, 2-5 MID, 1-3 FWD
   const byPos = { 1: [], 2: [], 3: [], 4: [] };
-  squadWithXp.forEach(p => byPos[p.element_type]?.push(p));
+  squadWithXp.forEach((p) => byPos[p.element_type]?.push(p));
 
   // Sort each position by xP descending
-  Object.values(byPos).forEach(arr => arr.sort((a, b) => b.xp - a.xp));
-
-  // Start with minimum formation: 1-3-4-3 = 11
-  const xi = [];
-  const bench = [];
+  Object.values(byPos).forEach((arr) => arr.sort((a, b) => b.xp - a.xp));
 
   // GKP: take best 1, bench 1
-  xi.push(byPos[1][0]);
+  const bench = [];
   if (byPos[1][1]) bench.push(byPos[1][1]);
 
   // Determine best formation by trying valid combos
   const formations = [
-    [3, 4, 3], [3, 5, 2], [4, 4, 2], [4, 3, 3], [4, 5, 1], [5, 4, 1], [5, 3, 2], [5, 2, 3]
+    [3, 4, 3],
+    [3, 5, 2],
+    [4, 4, 2],
+    [4, 3, 3],
+    [4, 5, 1],
+    [5, 4, 1],
+    [5, 3, 2],
+    [5, 2, 3],
   ];
 
   let bestXI = null;
@@ -371,7 +464,7 @@ function optimiseXI(squadWithXp) {
       byPos[1][0],
       ...byPos[2].slice(0, dCount),
       ...byPos[3].slice(0, mCount),
-      ...byPos[4].slice(0, fCount)
+      ...byPos[4].slice(0, fCount),
     ];
 
     const totalXp = testXI.reduce((s, p) => s + (p?.xp || 0), 0);
@@ -382,11 +475,11 @@ function optimiseXI(squadWithXp) {
   }
 
   // Build bench from remaining
-  const xiIds = new Set((bestXI || []).map(p => p?.id));
-  const benchPlayers = squadWithXp.filter(p => !xiIds.has(p.id)).sort((a, b) => b.xp - a.xp);
+  const xiIds = new Set((bestXI || []).map((p) => p?.id));
+  const benchPlayers = squadWithXp.filter((p) => !xiIds.has(p.id)).sort((a, b) => b.xp - a.xp);
 
   // Rank captain candidates (top 5 by xP in XI)
-  const captainCandidates = [...(bestXI || [])].filter(p => p).sort((a, b) => b.xp - a.xp).slice(0, 5);
+  const captainCandidates = [...(bestXI || [])].filter((p) => p).sort((a, b) => b.xp - a.xp).slice(0, 5);
 
   return {
     xi: bestXI || [],
@@ -394,7 +487,7 @@ function optimiseXI(squadWithXp) {
     totalXp: bestXp,
     captainCandidates,
     recommendedCaptain: captainCandidates[0],
-    recommendedVice: captainCandidates[1]
+    recommendedVice: captainCandidates[1],
   };
 }
 
@@ -424,31 +517,32 @@ async function getTransferRecommendations(currentState, horizon, bs) {
   // Get potential targets
   const elements = bs.elements || [];
   const teams = bs.teams || [];
-  const squadIds = new Set(squad.map(p => p.id));
-  const squadTeams = squad.map(p => p.team);
+  const squadIds = new Set(squad.map((p) => p.id));
+  const squadTeams = squad.map((p) => p.team);
 
   const recommendations = [];
 
   // Only consider bottom performers with actual issues
-  const candidates = sortedByXp.filter(p => {
-    // Skip GKs unless injured or suspended
-    if (p.element_type === 1 && p.status === "a") return false;
-    // Skip players with decent xP (>3 per GW average)
-    if (p.xp > horizon * 3) return false;
-    return true;
-  }).slice(0, 4);
+  const candidates = sortedByXp
+    .filter((p) => {
+      if (p.element_type === 1 && p.status === "a") return false; // Skip GKs unless injured/suspended
+      if (p.xp > horizon * 3) return false; // Skip decent xP
+      return true;
+    })
+    .slice(0, 4);
 
   for (const outPlayer of candidates) {
     const budget = (outPlayer.now_cost || 0) + bank;
     const outMinsReliability = outPlayer.xpData?.minutesReliability?.score || 100;
 
     // Find alternatives at same position
-    const alternatives = elements.filter(p =>
-      p.element_type === outPlayer.element_type &&
-      !squadIds.has(p.id) &&
-      p.status === "a" &&
-      p.now_cost <= budget &&
-      p.minutes > 180 // At least 2 full games
+    const alternatives = elements.filter(
+      (p) =>
+        p.element_type === outPlayer.element_type &&
+        !squadIds.has(p.id) &&
+        p.status === "a" &&
+        p.now_cost <= budget &&
+        p.minutes > 180 // At least 2 full games
     );
 
     // Calculate xP for alternatives with sanity checks
@@ -459,28 +553,13 @@ async function getTransferRecommendations(currentState, horizon, bs) {
       let xpGain = xp.total - outPlayer.xp;
 
       // SANITY PENALTIES:
-      // 1. Penalize downgrading from nailed starter to fringe player
-      if (outMinsReliability > 80 && inMinsReliability < 60) {
-        xpGain -= 2; // Heavy penalty for destabilizing
-      }
+      if (outMinsReliability > 80 && inMinsReliability < 60) xpGain -= 2; // nailed -> fringe
+      if (outPlayer.element_type === 1) xpGain -= 1.5; // GK transfers
+      if (alt.chance_of_playing_next_round != null && alt.chance_of_playing_next_round < 75) xpGain -= 2; // injury risk
+      const sameTeamCount = squadTeams.filter((t) => t === alt.team).length;
+      if (sameTeamCount >= 2) xpGain -= 0.5; // concentration risk
 
-      // 2. Penalize GK transfers (usually not worth it)
-      if (outPlayer.element_type === 1) {
-        xpGain -= 1.5;
-      }
-
-      // 3. Penalize bringing in another injury risk
-      if (alt.chance_of_playing_next_round != null && alt.chance_of_playing_next_round < 75) {
-        xpGain -= 2;
-      }
-
-      // 4. Penalize having 3+ from same team
-      const sameTeamCount = squadTeams.filter(t => t === alt.team).length;
-      if (sameTeamCount >= 2) {
-        xpGain -= 0.5; // Slight penalty for concentration risk
-      }
-
-      const teamName = teams.find(t => t.id === alt.team)?.short_name || "???";
+      const teamName = teams.find((t) => t.id === alt.team)?.short_name || "???";
 
       // Build why-out and why-in explanations
       const whyOut = [];
@@ -502,7 +581,7 @@ async function getTransferRecommendations(currentState, horizon, bs) {
         rawXpGain: xp.total - outPlayer.xp,
         whyOut: whyOut.join(", ") || "underperforming",
         whyIn: whyIn.join(", ") || "better option",
-        breakEvenGw: xpGain > 0 ? Math.ceil(4 / xpGain) : "N/A"
+        breakEvenGw: xpGain > 0 ? Math.ceil(4 / xpGain) : "N/A",
       });
     }
 
@@ -520,7 +599,7 @@ async function getTransferRecommendations(currentState, horizon, bs) {
         costChange: best.now_cost - outPlayer.now_cost,
         whyOut: best.whyOut,
         whyIn: best.whyIn,
-        breakEvenGw: best.breakEvenGw
+        breakEvenGw: best.breakEvenGw,
       });
     }
   }
@@ -529,8 +608,6 @@ async function getTransferRecommendations(currentState, horizon, bs) {
   recommendations.sort((a, b) => b.xpGain - a.xpGain);
 
   // CONSERVATIVE HIT LOGIC:
-  // -4 hit: requires > +6 xP total gain (margin of 2 pts for uncertainty)
-  // -8 hit: requires > +12 xP total gain (margin of 4 pts for uncertainty)
   let action = "Hold";
   let actionDetail = "Do nothing. Current squad is optimal or no transfers clear the threshold.";
   let transfers = [];
@@ -566,7 +643,7 @@ async function getTransferRecommendations(currentState, horizon, bs) {
       const totalGain = recommendations.slice(0, 3).reduce((s, r) => s + r.xpGain, 0);
       if (totalGain > 12) {
         action = "Consider -8 Hit";
-        const names = recommendations.slice(0, 3).map(r => `${r.out.web_name}→${r.in.web_name}`).join(", ");
+        const names = recommendations.slice(0, 3).map((r) => `${r.out.web_name}→${r.in.web_name}`).join(", ");
         actionDetail = `3 transfers: ${names}. Gain: ${totalGain.toFixed(1)} xP − 8 = +${(totalGain - 8).toFixed(1)} net`;
         transfers = recommendations.slice(0, 3);
         netGain = totalGain - 8;
@@ -576,7 +653,7 @@ async function getTransferRecommendations(currentState, horizon, bs) {
   }
 
   // Always include "Do Nothing" baseline
-  const doNothingXp = squadWithXp.filter(p => !p.isBench).reduce((s, p) => s + p.xp, 0);
+  const doNothingXp = squadWithXp.filter((p) => !p.isBench).reduce((s, p) => s + p.xp, 0);
 
   return {
     action,
@@ -586,7 +663,7 @@ async function getTransferRecommendations(currentState, horizon, bs) {
     hitCost,
     freeTransfers,
     doNothingXp,
-    allRecommendations: recommendations.slice(0, 5)
+    allRecommendations: recommendations.slice(0, 5),
   };
 }
 
@@ -596,16 +673,16 @@ async function getTransferRecommendations(currentState, horizon, bs) {
 
 async function getChipRecommendation(currentState, horizon, bs, squadWithXp, optimised) {
   const available = currentState.chipsAvailable || [];
-  if (available.length === 0) {
-    return { chip: null, reason: "No chips remaining" };
-  }
+  if (available.length === 0) return { chip: null, reason: "No chips remaining" };
 
   const recommendations = [];
 
   // BENCH BOOST check
   if (available.includes("bboost")) {
     const benchXp = optimised.bench.reduce((s, p) => s + (p?.xp || 0), 0);
-    const avgBenchMins = optimised.bench.reduce((s, p) => s + (p?.xpData?.minutesReliability?.score || 0), 0) / Math.max(optimised.bench.length, 1);
+    const avgBenchMins =
+      optimised.bench.reduce((s, p) => s + (p?.xpData?.minutesReliability?.score || 0), 0) /
+      Math.max(optimised.bench.length, 1);
 
     if (benchXp > 12 && avgBenchMins > 70) {
       recommendations.push({
@@ -613,7 +690,7 @@ async function getChipRecommendation(currentState, horizon, bs, squadWithXp, opt
         name: "Bench Boost",
         reason: `Strong bench (${benchXp.toFixed(1)} xP) with high minutes certainty (${avgBenchMins.toFixed(0)}%)`,
         expectedGain: benchXp,
-        confidence: avgBenchMins > 80 ? "High" : "Medium"
+        confidence: avgBenchMins > 80 ? "High" : "Medium",
       });
     }
   }
@@ -628,14 +705,14 @@ async function getChipRecommendation(currentState, horizon, bs, squadWithXp, opt
           chip: "3xc",
           name: "Triple Captain",
           reason: `${captain.web_name} has high ceiling (${captain.xp.toFixed(1)} xP) and is nailed (${minsScore}%)`,
-          expectedGain: captain.xp, // Extra captain points
-          confidence: minsScore > 90 ? "High" : "Medium"
+          expectedGain: captain.xp,
+          confidence: minsScore > 90 ? "High" : "Medium",
         });
       }
     }
   }
 
-  // FREE HIT check (when many flagged or bad fixtures)
+  // FREE HIT check
   if (available.includes("freehit")) {
     const flaggedCount = currentState.flaggedPlayers?.length || 0;
     if (flaggedCount >= 3) {
@@ -643,33 +720,28 @@ async function getChipRecommendation(currentState, horizon, bs, squadWithXp, opt
         chip: "freehit",
         name: "Free Hit",
         reason: `${flaggedCount} flagged players - squad misaligned for this GW`,
-        expectedGain: flaggedCount * 3, // Rough estimate
-        confidence: "Medium"
+        expectedGain: flaggedCount * 3,
+        confidence: "Medium",
       });
     }
   }
 
-  // WILDCARD check (structural issues)
+  // WILDCARD check
   if (available.includes("wildcard")) {
-    const lowXpCount = squadWithXp.filter(p => p.xp < 3).length;
+    const lowXpCount = squadWithXp.filter((p) => p.xp < 3).length;
     if (lowXpCount >= 5) {
       recommendations.push({
         chip: "wildcard",
         name: "Wildcard",
         reason: `${lowXpCount} underperforming assets - structural rebuild needed`,
         expectedGain: lowXpCount * 2,
-        confidence: "Medium"
+        confidence: "Medium",
       });
     }
   }
 
-  // Sort by expected gain
   recommendations.sort((a, b) => b.expectedGain - a.expectedGain);
-
-  if (recommendations.length === 0) {
-    return { chip: null, reason: "No chip recommended this GW. Save for better opportunity." };
-  }
-
+  if (recommendations.length === 0) return { chip: null, reason: "No chip recommended this GW. Save for better opportunity." };
   return recommendations[0];
 }
 
@@ -691,18 +763,17 @@ export async function renderStatPicker(main) {
 }
 
 function isDevMode() {
-  // Dev mode if running on localhost or if DEV_MODE is set
-  return window.location.hostname === 'localhost' ||
-         window.location.hostname === '127.0.0.1' ||
-         window.FPL_DEV_MODE === true;
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.FPL_DEV_MODE === true;
 }
 
 function renderPasswordGate(container) {
-  const devModeHtml = isDevMode() ? `
+  const devModeHtml = isDevMode()
+    ? `
     <div class="sp-gate-dev">
       <button id="gateDevBtn" class="sp-btn-link">Dev Unlock</button>
     </div>
-  ` : '';
+  `
+    : "";
 
   container.innerHTML = `
     <div class="sp-gate">
@@ -743,23 +814,18 @@ function renderPasswordGate(container) {
     }
   };
 
-  // Caps lock detection
   const checkCapsLock = (e) => {
-    if (e.getModifierState && e.getModifierState('CapsLock')) {
-      capsHint.style.display = "block";
-    } else {
-      capsHint.style.display = "none";
-    }
+    if (e.getModifierState && e.getModifierState("CapsLock")) capsHint.style.display = "block";
+    else capsHint.style.display = "none";
   };
 
   btn.onclick = tryUnlock;
-  input.onkeydown = e => {
+  input.onkeydown = (e) => {
     checkCapsLock(e);
     if (e.key === "Enter") tryUnlock();
   };
   input.onkeyup = checkCapsLock;
 
-  // Dev unlock button
   if (devBtn) {
     devBtn.onclick = () => {
       unlock();
@@ -804,7 +870,7 @@ async function renderDashboard(container) {
 
   const load = async () => {
     content.innerHTML = '<div class="sp-loading">Loading...</div>';
-    const horizon = parseInt(horizonSel.value);
+    const horizon = parseInt(horizonSel.value, 10);
     await renderDashboardContent(content, horizon);
   };
 
@@ -816,7 +882,7 @@ async function renderDashboard(container) {
 
 async function renderDashboardContent(container, horizon) {
   try {
-    const bs = state.bootstrap || await legacyApi.bootstrap();
+    const bs = state.bootstrap || (await legacyApi.bootstrap());
     const currentState = await buildCurrentState();
 
     if (currentState.error) {
@@ -831,16 +897,10 @@ async function renderDashboardContent(container, horizon) {
       squadWithXp.push({ ...p, xp: xp.total, xpData: xp });
     }
 
-    // Optimise XI
     const optimised = optimiseXI(squadWithXp);
-
-    // Get transfer recommendations
     const transfers = await getTransferRecommendations(currentState, horizon, bs);
-
-    // Get chip recommendation
     const chipRec = await getChipRecommendation(currentState, horizon, bs, squadWithXp, optimised);
 
-    // Render dashboard grid
     container.innerHTML = `
       <div class="sp-col sp-col-left">
         ${renderStatePanel(currentState)}
@@ -857,7 +917,6 @@ async function renderDashboardContent(container, horizon) {
         ${renderAssumptionsPanel()}
       </div>
     `;
-
   } catch (err) {
     log.error("Stat Picker: Dashboard error", err);
     container.innerHTML = `<div class="sp-error-full"><h3>Error</h3><p>${err.message}</p></div>`;
@@ -866,20 +925,20 @@ async function renderDashboardContent(container, horizon) {
 
 function renderStatePanel(s) {
   const chipsAvail = s.chipsAvailable.map(formatChipName).join(", ") || "None";
-  const chipsUsed = s.chipsUsed.map(c => `${formatChipName(c.chip)} (GW${c.gw})`).join(", ") || "None";
+  const chipsUsed = s.chipsUsed.map((c) => `${formatChipName(c.chip)} (GW${c.gw})`).join(", ") || "None";
 
   return `
     <div class="sp-card">
       <div class="sp-card-header">Current State</div>
       <div class="sp-state-compact">
-        <div class="sp-stat"><span class="sp-stat-val">${s.currentGw}${s.isLive ? '*' : ''}</span><span class="sp-stat-lbl">GW</span></div>
+        <div class="sp-stat"><span class="sp-stat-val">${s.currentGw}${s.isLive ? "*" : ""}</span><span class="sp-stat-lbl">GW</span></div>
         <div class="sp-stat"><span class="sp-stat-val">${s.freeTransfers}</span><span class="sp-stat-lbl">FT</span></div>
         <div class="sp-stat"><span class="sp-stat-val">${s.bankFormatted}</span><span class="sp-stat-lbl">Bank</span></div>
         <div class="sp-stat"><span class="sp-stat-val">${s.teamValueFormatted}</span><span class="sp-stat-lbl">Value</span></div>
       </div>
       <div class="sp-state-row"><span>Team</span><span>${s.entryName}</span></div>
-      <div class="sp-state-row"><span>Rank</span><span>${s.overallRank?.toLocaleString() || 'N/A'}</span></div>
-      <div class="sp-state-row"><span>Points</span><span>${s.overallPoints?.toLocaleString() || 'N/A'}</span></div>
+      <div class="sp-state-row"><span>Rank</span><span>${s.overallRank?.toLocaleString() || "N/A"}</span></div>
+      <div class="sp-state-row"><span>Points</span><span>${s.overallPoints?.toLocaleString() || "N/A"}</span></div>
       <div class="sp-state-row"><span>Chips</span><span class="sp-chips-avail">${chipsAvail}</span></div>
       <div class="sp-state-row sp-muted"><span>Used</span><span>${chipsUsed}</span></div>
     </div>
@@ -891,13 +950,17 @@ function renderFlagsPanel(s) {
     return `<div class="sp-card sp-card-ok"><div class="sp-card-header">Flags</div><div class="sp-ok-msg">All players available</div></div>`;
   }
 
-  const rows = s.flaggedPlayers.map(p => `
+  const rows = s.flaggedPlayers
+    .map(
+      (p) => `
     <div class="sp-flag-row">
       <span class="sp-flag-name">${p.web_name}</span>
       <span class="sp-flag-status" data-status="${p.status}">${p.status.toUpperCase()}</span>
-      <span class="sp-flag-chance">${p.chance_of_playing_next_round ?? '?'}%</span>
+      <span class="sp-flag-chance">${p.chance_of_playing_next_round ?? "?"}%</span>
     </div>
-  `).join("");
+  `
+    )
+    .join("");
 
   return `
     <div class="sp-card sp-card-warn">
@@ -931,62 +994,66 @@ function renderChipPanel(rec, s) {
 }
 
 function renderSquadPanel(opt, horizon) {
-  // Build xP breakdown for each player (explainability)
   const buildBreakdown = (p) => {
-    if (!p?.xpData?.components) return '';
+    if (!p?.xpData?.components) return "";
     const c = p.xpData.components;
     const parts = [];
     if (c.appearance > 0) parts.push(`App:${c.appearance.toFixed(1)}`);
     if (c.attack > 0) parts.push(`Atk:${c.attack.toFixed(1)}`);
     if (c.cleanSheet > 0) parts.push(`CS:${c.cleanSheet.toFixed(1)}`);
     if (c.bonus > 0) parts.push(`Bns:${c.bonus.toFixed(1)}`);
-    return parts.join(' ');
+    return parts.join(" ");
   };
 
-  // Why picked explanation based on FPL scoring rules
   const whyPicked = (p) => {
-    if (!p) return '';
+    if (!p) return "";
     const reasons = [];
     const mins = p.xpData?.minutesReliability?.score || 0;
     const posType = p.element_type;
 
-    // Minutes likelihood
-    if (mins >= 90) reasons.push('nailed');
-    else if (mins >= 70) reasons.push('likely starter');
-    else if (mins >= 50) reasons.push('rotation risk');
+    if (mins >= 90) reasons.push("nailed");
+    else if (mins >= 70) reasons.push("likely starter");
+    else if (mins >= 50) reasons.push("rotation risk");
 
-    // Position-specific value
     if (posType === 1 || posType === 2) {
-      if (p.xpData?.components?.cleanSheet > 1) reasons.push('CS potential');
+      if (p.xpData?.components?.cleanSheet > 1) reasons.push("CS potential");
     }
     if (posType === 3 || posType === 4) {
-      if (p.xpData?.components?.attack > 2) reasons.push('attacking returns');
+      if (p.xpData?.components?.attack > 2) reasons.push("attacking returns");
     }
 
-    // Bonus potential
-    if (p.xpData?.components?.bonus > 0.5) reasons.push('BPS');
+    if (p.xpData?.components?.bonus > 0.5) reasons.push("BPS");
 
-    return reasons.slice(0, 2).join(', ');
+    return reasons.slice(0, 2).join(", ");
   };
 
-  const xiRows = opt.xi.map(p => `
-    <div class="sp-xi-row ${p?.status !== 'a' ? 'sp-xi-flagged' : ''}" data-tooltip="${buildBreakdown(p)}">
-      <span class="sp-xi-pos">${({ 1: 'G', 2: 'D', 3: 'M', 4: 'F' })[p?.element_type] || '?'}</span>
-      <span class="sp-xi-name">${p?.web_name || '?'}</span>
-      <span class="sp-xi-team">${p?.teamName || ''}</span>
-      <span class="sp-xi-xp">${p?.xp?.toFixed(1) || '0'}</span>
+  const xiRows = opt.xi
+    .map(
+      (p) => `
+    <div class="sp-xi-row ${p?.status !== "a" ? "sp-xi-flagged" : ""}" data-tooltip="${buildBreakdown(p)}">
+      <span class="sp-xi-pos">${({ 1: "G", 2: "D", 3: "M", 4: "F" })[p?.element_type] || "?"}</span>
+      <span class="sp-xi-name">${p?.web_name || "?"}</span>
+      <span class="sp-xi-team">${p?.teamName || ""}</span>
+      <span class="sp-xi-xp">${p?.xp?.toFixed(1) || "0"}</span>
       <span class="sp-xi-why">${whyPicked(p)}</span>
     </div>
-  `).join("");
+  `
+    )
+    .join("");
 
-  const benchRows = opt.bench.slice(0, 4).map((p, i) => `
+  const benchRows = opt.bench
+    .slice(0, 4)
+    .map(
+      (p, i) => `
     <div class="sp-bench-row" data-tooltip="${buildBreakdown(p)}">
       <span class="sp-bench-order">${i + 1}</span>
-      <span class="sp-xi-pos">${({ 1: 'G', 2: 'D', 3: 'M', 4: 'F' })[p?.element_type] || '?'}</span>
-      <span class="sp-xi-name">${p?.web_name || '?'}</span>
-      <span class="sp-xi-xp">${p?.xp?.toFixed(1) || '0'}</span>
+      <span class="sp-xi-pos">${({ 1: "G", 2: "D", 3: "M", 4: "F" })[p?.element_type] || "?"}</span>
+      <span class="sp-xi-name">${p?.web_name || "?"}</span>
+      <span class="sp-xi-xp">${p?.xp?.toFixed(1) || "0"}</span>
     </div>
-  `).join("");
+  `
+    )
+    .join("");
 
   return `
     <div class="sp-card sp-card-squad">
@@ -1000,14 +1067,19 @@ function renderSquadPanel(opt, horizon) {
 }
 
 function renderCaptainPanel(opt) {
-  const rows = opt.captainCandidates.slice(0, 5).map((p, i) => `
-    <div class="sp-cap-row ${i === 0 ? 'sp-cap-best' : ''}">
-      <span class="sp-cap-rank">${i === 0 ? 'C' : i === 1 ? 'VC' : i + 1}</span>
-      <span class="sp-cap-name">${p?.web_name || '?'}</span>
-      <span class="sp-cap-xp">${p?.xp?.toFixed(1) || '0'}</span>
-      <span class="sp-cap-mins">${p?.xpData?.minutesReliability?.score || '?'}%</span>
+  const rows = opt.captainCandidates
+    .slice(0, 5)
+    .map(
+      (p, i) => `
+    <div class="sp-cap-row ${i === 0 ? "sp-cap-best" : ""}">
+      <span class="sp-cap-rank">${i === 0 ? "C" : i === 1 ? "VC" : i + 1}</span>
+      <span class="sp-cap-name">${p?.web_name || "?"}</span>
+      <span class="sp-cap-xp">${p?.xp?.toFixed(1) || "0"}</span>
+      <span class="sp-cap-mins">${p?.xpData?.minutesReliability?.score || "?"}%</span>
     </div>
-  `).join("");
+  `
+    )
+    .join("");
 
   return `
     <div class="sp-card">
@@ -1024,7 +1096,9 @@ function renderTransferPanel(t) {
   let noTransferExplanation = "";
 
   if (t.transfers.length > 0) {
-    transferRows = t.transfers.map(tr => `
+    transferRows = t.transfers
+      .map(
+        (tr) => `
       <div class="sp-transfer-row">
         <div class="sp-tr-players">
           <span class="sp-tr-out">${tr.out.web_name}</span>
@@ -1033,55 +1107,40 @@ function renderTransferPanel(t) {
           <span class="sp-tr-gain">+${tr.xpGain.toFixed(1)}</span>
         </div>
         <div class="sp-tr-why">
-          <span class="sp-tr-why-out">OUT: ${tr.whyOut || 'underperforming'}</span>
-          <span class="sp-tr-why-in">IN: ${tr.whyIn || 'better option'}</span>
+          <span class="sp-tr-why-out">OUT: ${tr.whyOut || "underperforming"}</span>
+          <span class="sp-tr-why-in">IN: ${tr.whyIn || "better option"}</span>
         </div>
       </div>
-    `).join("");
+    `
+      )
+      .join("");
   } else if (t.action === "Hold") {
-    // Explain why no transfers are recommended
     const reasons = [];
 
-    // Check if all players are performing well
-    if (t.allRecommendations && t.allRecommendations.length === 0) {
-      reasons.push("All squad players have adequate expected returns");
-    }
+    if (t.allRecommendations && t.allRecommendations.length === 0) reasons.push("All squad players have adequate expected returns");
 
-    // Check if recommendations exist but don't clear thresholds
     if (t.allRecommendations && t.allRecommendations.length > 0) {
       const bestGain = t.allRecommendations[0]?.xpGain || 0;
-      if (bestGain < 2) {
-        reasons.push(`Best available gain (+${bestGain.toFixed(1)} xP) doesn't clear the +2.0 threshold`);
-      }
-      if (t.hitCost > 0 && bestGain < 6) {
-        reasons.push(`Hit penalty (-${t.hitCost}) outweighs potential gains`);
-      }
+      if (bestGain < 2) reasons.push(`Best available gain (+${bestGain.toFixed(1)} xP) doesn't clear the +2.0 threshold`);
+      if (t.hitCost > 0 && bestGain < 6) reasons.push(`Hit penalty (-${t.hitCost}) outweighs potential gains`);
     }
 
-    // Free transfers context
-    if (t.freeTransfers === 0) {
-      reasons.push("No free transfers available — any move costs -4 points");
-    } else if (t.freeTransfers > 1) {
-      reasons.push(`${t.freeTransfers} FTs rolling — consider saving for a future double move`);
-    }
+    if (t.freeTransfers === 0) reasons.push("No free transfers available — any move costs -4 points");
+    else if (t.freeTransfers > 1) reasons.push(`${t.freeTransfers} FTs rolling — consider saving for a future double move`);
 
-    // Default reason if none identified
-    if (reasons.length === 0) {
-      reasons.push("Current squad is optimal for the projected period");
-    }
+    if (reasons.length === 0) reasons.push("Current squad is optimal for the projected period");
 
     noTransferExplanation = `
       <div class="sp-no-transfers">
         <div class="sp-no-transfers-icon">✓</div>
         <div class="sp-no-transfers-title">No transfers recommended</div>
         <div class="sp-no-transfers-reason">
-          ${reasons.map(r => `<div>• ${r}</div>`).join("")}
+          ${reasons.map((r) => `<div>• ${r}</div>`).join("")}
         </div>
       </div>
     `;
   }
 
-  // Hit warning for risky moves
   let hitWarning = "";
   if (t.hitCost > 0) {
     hitWarning = `
@@ -1099,10 +1158,10 @@ function renderTransferPanel(t) {
       <div class="sp-action ${actionClass}">${t.action}</div>
       <div class="sp-action-detail">${t.actionDetail}</div>
       ${hitWarning}
-      ${t.netGain > 0 && t.hitCost === 0 ? `<div class="sp-net-gain">Net gain: +${t.netGain.toFixed(1)} xP</div>` : ''}
+      ${t.netGain > 0 && t.hitCost === 0 ? `<div class="sp-net-gain">Net gain: +${t.netGain.toFixed(1)} xP</div>` : ""}
       ${transferRows}
       ${noTransferExplanation}
-      <div class="sp-baseline">Do Nothing baseline: ${t.doNothingXp?.toFixed(1) || '?'} xP</div>
+      <div class="sp-baseline">Do Nothing baseline: ${t.doNothingXp?.toFixed(1) || "?"} xP</div>
     </div>
   `;
 }
@@ -1115,17 +1174,20 @@ function renderFixturesPanel(s, horizon) {
     return `<div class="sp-card"><div class="sp-card-header">Fixtures</div><div class="sp-no-data">No data</div></div>`;
   }
 
-  const rows = teamIds.map(tid => {
-    const team = matrix[tid];
-    const hData = team.horizons[horizon];
-    if (!hData) return "";
+  const rows = teamIds
+    .map((tid) => {
+      const team = matrix[tid];
+      const hData = team.horizons[horizon];
+      if (!hData) return "";
 
-    const cells = hData.fixtures.slice(0, Math.min(horizon, 6)).map(f => {
-      return `<span class="sp-fdr sp-fdr-${f.fdr}" title="GW${f.gw}: ${f.isHome ? '' : '@'}${f.opponent}">${f.opponent.slice(0, 3)}</span>`;
-    }).join("");
+      const cells = hData.fixtures
+        .slice(0, Math.min(horizon, 6))
+        .map((f) => `<span class="sp-fdr sp-fdr-${f.fdr}" title="GW${f.gw}: ${f.isHome ? "" : "@"}${f.opponent}">${f.opponent.slice(0, 3)}</span>`)
+        .join("");
 
-    return `<div class="sp-fx-row"><span class="sp-fx-team">${team.teamName}</span><span class="sp-fx-cells">${cells}</span><span class="sp-fx-avg">${hData.avgFdr}</span></div>`;
-  }).join("");
+      return `<div class="sp-fx-row"><span class="sp-fx-team">${team.teamName}</span><span class="sp-fx-cells">${cells}</span><span class="sp-fx-avg">${hData.avgFdr}</span></div>`;
+    })
+    .join("");
 
   return `
     <div class="sp-card">
