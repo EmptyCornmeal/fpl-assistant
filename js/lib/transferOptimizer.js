@@ -37,7 +37,7 @@ const DEFAULT_CONFIG = {
    EXPENDABILITY REASONS
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const EXPENDABILITY_REASONS = {
+export const EXPENDABILITY_REASONS = {
   INJURED: { id: "injured", priority: 1, label: "Injured/Unavailable" },
   SUSPENDED: { id: "suspended", priority: 2, label: "Suspended" },
   POOR_FIXTURES: { id: "poor_fixtures", priority: 3, label: "Poor upcoming fixtures" },
@@ -49,6 +49,7 @@ const EXPENDABILITY_REASONS = {
   ROTATION_RISK: { id: "rotation_risk", priority: 9, label: "Rotation risk" },
   BLANKS: { id: "blanks", priority: 10, label: "Has blank gameweeks" },
 };
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    7.1: IDENTIFY WEAKEST CONTRIBUTORS
