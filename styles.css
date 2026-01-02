@@ -9549,3 +9549,359 @@ body:hover .dev-toggle-hint {
   opacity: 0.6;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 5: STAT PICKER ENGINE ARCHITECTURE STYLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Control group for horizon/objective dropdowns */
+.sp-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sp-control-label {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sp-select-wide {
+  min-width: 120px;
+}
+
+/* Recalculation banner */
+.sp-recalc-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.sp-recalc-icon {
+  color: var(--green);
+  font-weight: bold;
+}
+
+.sp-recalc-text {
+  color: var(--text);
+}
+
+.sp-recalc-settings {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: auto;
+  background: var(--surface-2);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Recalculating state */
+.sp-recalculating {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Loading state with spinner */
+.sp-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--surface-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 12px;
+}
+
+.sp-loading-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Dependency checklist */
+.sp-dep-checklist {
+  margin-top: 16px;
+  min-width: 200px;
+}
+
+.sp-dep-checklist-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sp-dep-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.sp-dep-icon {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+}
+
+.sp-dep-pending .sp-dep-icon { color: var(--muted); }
+.sp-dep-loading .sp-dep-icon { color: var(--accent); animation: pulse 1s infinite; }
+.sp-dep-success .sp-dep-icon { color: var(--green); }
+.sp-dep-cached .sp-dep-icon { color: var(--amber); }
+.sp-dep-failed .sp-dep-icon { color: var(--red); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.sp-dep-label {
+  flex: 1;
+  color: var(--text);
+}
+
+.sp-dep-optional {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.sp-dep-cache {
+  font-size: 9px;
+  background: var(--amber);
+  color: #000;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.sp-dep-error {
+  width: 16px;
+  height: 16px;
+  background: var(--red);
+  color: white;
+  border-radius: 50%;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+
+/* Degraded mode */
+.sp-degraded-mode {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.sp-degraded-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.sp-degraded-icon {
+  font-size: 28px;
+}
+
+.sp-degraded-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--amber);
+}
+
+.sp-dep-status-panel,
+.sp-failures-panel {
+  background: var(--surface-1);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.sp-dep-status-panel h4,
+.sp-failures-panel h4 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sp-failure-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 3px solid var(--red);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.sp-failure-label {
+  font-weight: 600;
+  color: var(--text);
+  min-width: 120px;
+}
+
+.sp-failure-error {
+  flex: 1;
+  font-size: 12px;
+  color: var(--red);
+}
+
+.sp-btn-small {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.sp-btn-primary {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.sp-btn-primary:hover {
+  background: #2563eb;
+}
+
+/* Cache fallback */
+.sp-cache-fallback {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.sp-cache-fallback-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--green);
+  font-weight: 600;
+}
+
+.sp-cache-icon {
+  font-size: 20px;
+}
+
+/* Degraded actions */
+.sp-degraded-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Partial data panel */
+.sp-partial-data {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.sp-partial-data h4 {
+  margin: 0 0 8px;
+  color: var(--accent);
+}
+
+.sp-partial-data p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sp-warning-text {
+  color: var(--amber);
+}
+
+/* Predictions warning banner */
+.sp-predictions-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--amber);
+  grid-column: 1 / -1;
+}
+
+.sp-warning-icon {
+  font-size: 16px;
+}
+
+/* Unavailable panel state */
+.sp-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sp-unavailable-icon {
+  font-size: 18px;
+}
+
+/* Objective hint badge */
+.sp-obj-hint {
+  font-size: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  font-weight: normal;
+}
+
+/* Captain note */
+.sp-cap-note {
+  font-size: 9px;
+  color: var(--muted);
+  margin-left: auto;
+  font-style: italic;
+}
+
+/* Enhanced header layout for controls */
+@media (max-width: 768px) {
+  .sp-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .sp-header-right {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .sp-control-group {
+    flex: 1;
+    min-width: 100px;
+  }
+}
+
+/* Smooth transitions */
+.sp-card,
+.sp-dep-row,
+.sp-recalc-banner {
+  transition: opacity 0.2s, transform 0.2s;
+}
+
