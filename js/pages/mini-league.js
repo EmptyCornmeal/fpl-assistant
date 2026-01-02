@@ -1,10 +1,11 @@
 // js/pages/mini-league.js
 // PHASE 3: League page with Selector Grid + Detail View (no scrolling)
-import { api } from "../api.js";
+import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, validateState, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { log } from "../logger.js";
+import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /**
  * Mini-League - Two-view model:
@@ -18,12 +19,36 @@ let selectedLeagueId = null;
 let leagueDataCache = new Map();
 
 export async function renderMiniLeague(main) {
+  // Show loading state
+  ui.mount(main, ui.loadingWithTimeout("Loading leagues..."));
+
+  // Fetch bootstrap
+  const bootstrapResult = state.bootstrap
+    ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
+    : await fplClient.bootstrap();
+
+  if (!bootstrapResult.ok) {
+    const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
+    const hasCache = cacheAge !== null;
+
+    ui.mount(main, ui.degradedCard({
+      title: "Failed to Load Leagues",
+      errorType: bootstrapResult.errorType,
+      message: bootstrapResult.message,
+      cacheAge: hasCache ? cacheAge : null,
+      onRetry: () => renderMiniLeague(main),
+      onUseCached: hasCache ? async () => {
+        state.bootstrap = fplClient.loadBootstrapFromCache().data;
+        await renderMiniLeague(main);
+      } : null,
+    }));
+    return;
+  }
+
   const page = utils.el("div", { class: "league-page" });
-  page.innerHTML = '<div class="league-loading">Loading leagues...</div>';
-  ui.mount(main, page);
 
   try {
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = bootstrapResult.data;
     state.bootstrap = bs;
     const { events, elements: players, teams, element_types: positions } = bs;
 
@@ -66,7 +91,8 @@ export async function renderMiniLeague(main) {
     let extraMap = null;
     if (liveGwId) {
       try {
-        const live = await api.eventLive(liveGwId);
+        const liveResult = await fplClient.eventLive(liveGwId);
+        const live = liveResult.ok ? liveResult.data : { elements: [] };
         extraMap = new Map((live?.elements || []).map(e => [e.id, e.stats || {}]));
       } catch { extraMap = new Map(); }
     }
@@ -101,7 +127,9 @@ export async function renderMiniLeague(main) {
       if (leagueDataCache.has(lid)) return leagueDataCache.get(lid);
 
       try {
-        const data = await api.leagueClassic(lid, 1);
+        const leagueResult = await fplClient.leagueClassic(lid, 1);
+        if (!leagueResult.ok) return { id: lid, name: `League ${lid}`, error: true };
+        const data = leagueResult.data;
         const leagueName = data?.league?.name || `League ${lid}`;
         const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
 
@@ -260,7 +288,8 @@ export async function renderMiniLeague(main) {
       await poolMap(rows.slice(0, 10), 4, async (r, idx) => {
         if (!r?.entry) return;
         try {
-          const hist = await api.entryHistory(r.entry);
+          const histResult = await fplClient.entryHistory(r.entry);
+          const hist = histResult.ok ? histResult.data : { current: [] };
           const totals = [];
           const perGW = [];
 
@@ -275,7 +304,8 @@ export async function renderMiniLeague(main) {
           if (liveGwId && extraMap) {
             let extraPts = 0;
             try {
-              const picks = await api.entryPicks(r.entry, liveGwId);
+              const picksResult = await fplClient.entryPicks(r.entry, liveGwId);
+              const picks = picksResult.ok ? picksResult.data : { picks: [] };
               for (const p of (picks?.picks || [])) {
                 const mult = p.multiplier ?? (p.is_captain ? 2 : (p.position <= 11 ? 1 : 0));
                 const pts = (extraMap.get(p.element)?.total_points) ?? 0;
@@ -306,7 +336,8 @@ export async function renderMiniLeague(main) {
       const caps = new Map();
       await poolMap(rows.slice(0, 20), 4, async (r) => {
         try {
-          const picks = await api.entryPicks(r.entry, gwRef);
+          const picksResult = await fplClient.entryPicks(r.entry, gwRef);
+          const picks = picksResult.ok ? picksResult.data : { picks: [] };
           for (const p of (picks?.picks || [])) {
             counts.set(p.element, (counts.get(p.element) || 0) + 1);
             if (p.is_captain) caps.set(p.element, (caps.get(p.element) || 0) + 1);

@@ -1,11 +1,12 @@
 // js/pages/all-players.js
-import { api } from "../api.js";
+import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
+import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /* ========= LocalStorage keys ========= */
 const LS_AP_FILTERS = "fpl.ap.filters";
@@ -276,16 +277,47 @@ export async function renderAllPlayers(main){
     selectionBar = null;
   }
 
-  const wrap = utils.el("div");
-  wrap.append(ui.spinner("Loading players…"));
-  ui.mount(main, wrap);
+  // Show loading state
+  ui.mount(main, ui.loadingWithTimeout("Loading players..."));
+
+  // Fetch bootstrap
+  const bootstrapResult = state.bootstrap
+    ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
+    : await fplClient.bootstrap();
+
+  if (!bootstrapResult.ok) {
+    const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
+    const hasCache = cacheAge !== null;
+
+    ui.mount(main, ui.degradedCard({
+      title: "Failed to Load Players",
+      errorType: bootstrapResult.errorType,
+      message: bootstrapResult.message,
+      cacheAge: hasCache ? cacheAge : null,
+      onRetry: () => renderAllPlayers(main),
+      onUseCached: hasCache ? async () => {
+        state.bootstrap = fplClient.loadBootstrapFromCache().data;
+        await renderAllPlayers(main);
+      } : null,
+    }));
+    return;
+  }
+
+  // Track cache state
+  let usingCache = bootstrapResult.fromCache;
+  let maxCacheAge = bootstrapResult.cacheAge || 0;
 
   try{
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = bootstrapResult.data;
     state.bootstrap = bs;
     const { elements: players, teams, element_types: positions, events } = bs;
 
-    const fixturesAll = await api.fixtures();
+    const fixturesResult = await fplClient.fixtures();
+    const fixturesAll = fixturesResult.ok ? fixturesResult.data : [];
+    if (fixturesResult.fromCache) {
+      usingCache = true;
+      maxCacheAge = Math.max(maxCacheAge, fixturesResult.cacheAge);
+    }
     const fixturesByEvent = new Map();
     for (const f of fixturesAll){
       if (!fixturesByEvent.has(f.event)) fixturesByEvent.set(f.event, []);
@@ -852,7 +884,8 @@ export async function renderAllPlayers(main){
             r._xgi90 = cached.xgi90; done++; bar.style.width = `${Math.floor(done/total*100)}%`; continue;
           }
           try{
-            const sum = await api.elementSummary(r.id);
+            const sumResult = await fplClient.elementSummary(r.id);
+            const sum = sumResult.ok ? sumResult.data : null;
             const lastFin = lastFinished;
             const last5 = sum.history.filter(h=>h.round <= lastFin).slice(-5);
             const mins = last5.reduce((a,b)=>a+(b.minutes||0),0);

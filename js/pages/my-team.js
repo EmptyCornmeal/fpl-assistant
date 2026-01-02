@@ -1,11 +1,12 @@
 // js/pages/my-team.js
-import { api } from "../api.js";
+import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, isInWatchlist, toggleWatchlist, validateState, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
+import { hasCachedData, getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /* ───────────────── constants ───────────────── */
 const STATUS_MAP = {
@@ -388,12 +389,58 @@ export async function renderMyTeam(main){
     return;
   }
 
-  // Show skeleton loading instead of spinner
-  ui.mount(main, renderSkeletonLoading());
+  // Show loading state
+  ui.mount(main, ui.loadingWithTimeout("Loading your team..."));
+
+  // Fetch bootstrap data
+  const bootstrapResult = state.bootstrap
+    ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
+    : await fplClient.bootstrap();
+
+  // Handle complete failure with degraded state options
+  if (!bootstrapResult.ok) {
+    log.error("My Team: Bootstrap fetch failed", bootstrapResult.message);
+
+    // Check if cached data is available
+    const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
+    const hasCache = cacheAge !== null;
+
+    const degradedCard = ui.degradedCard({
+      title: "Failed to Load Team Data",
+      errorType: bootstrapResult.errorType,
+      message: bootstrapResult.message,
+      cacheAge: hasCache ? cacheAge : null,
+      onRetry: async () => {
+        await renderMyTeam(main);
+      },
+      onUseCached: hasCache ? async () => {
+        state.bootstrap = fplClient.loadBootstrapFromCache().data;
+        await renderMyTeam(main);
+      } : null,
+    });
+
+    ui.mount(main, degradedCard);
+    return;
+  }
+
+  // Render with data
+  await renderMyTeamWithData(main, bootstrapResult);
+}
+
+/**
+ * Render my team page with bootstrap data
+ */
+async function renderMyTeamWithData(main, bootstrapResult) {
+  const bs = bootstrapResult.data;
+  state.bootstrap = bs;
+
+  // Track cache state
+  let usingCache = bootstrapResult.fromCache;
+  let maxCacheAge = bootstrapResult.cacheAge || 0;
 
   try {
     // Bootstrap + core data
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = state.bootstrap || bootstrapResult.data;
     state.bootstrap = bs;
     const { events, elements: players, teams, element_types: positions } = bs;
 
@@ -419,12 +466,26 @@ export async function renderMyTeam(main){
       .slice(0, winN)
       .map(e => e.id);
 
-    // Core pulls
-    const [profile, hist, fixturesAll] = await Promise.all([
-      api.entry(state.entryId),
-      api.entryHistory(state.entryId),
-      api.fixtures()
+    // Core pulls using new API with standardized results
+    const [profileResult, histResult, fixturesResult] = await Promise.all([
+      fplClient.entry(state.entryId),
+      fplClient.entryHistory(state.entryId),
+      fplClient.fixtures()
     ]);
+
+    // Check for failures
+    if (!profileResult.ok || !histResult.ok) {
+      throw new Error(profileResult.message || histResult.message || "Failed to load team data");
+    }
+
+    // Track cache usage
+    if (profileResult.fromCache) { usingCache = true; maxCacheAge = Math.max(maxCacheAge, profileResult.cacheAge); }
+    if (histResult.fromCache) { usingCache = true; maxCacheAge = Math.max(maxCacheAge, histResult.cacheAge); }
+    if (fixturesResult.fromCache) { usingCache = true; maxCacheAge = Math.max(maxCacheAge, fixturesResult.cacheAge); }
+
+    const profile = profileResult.data;
+    const hist = histResult.data;
+    const fixturesAll = fixturesResult.ok ? fixturesResult.data : [];
 
     // Maps
     const fixturesByEvent = new Map();
@@ -440,15 +501,23 @@ export async function renderMyTeam(main){
     const teamShort  = (id)=> teamById.get(id)?.short_name || "?";
     const priceM     = (p)=> +(p.now_cost/10).toFixed(1);
 
-    // Picks & live
-    const [picksPrev, livePrev, picksUpc] = await Promise.all([
-      prevGw ? api.entryPicks(state.entryId, prevGw) : Promise.resolve(null),
-      prevGw ? api.eventLive(prevGw) : Promise.resolve({ elements: [] }),
-      upcGw  ? api.entryPicks(state.entryId, upcGw).catch(()=>null) : Promise.resolve(null),
+    // Picks & live using new API
+    const [picksPrevResult, livePrevResult, picksUpcResult] = await Promise.all([
+      prevGw ? fplClient.entryPicks(state.entryId, prevGw) : Promise.resolve({ ok: true, data: null }),
+      prevGw ? fplClient.eventLive(prevGw) : Promise.resolve({ ok: true, data: { elements: [] } }),
+      upcGw  ? fplClient.entryPicks(state.entryId, upcGw) : Promise.resolve({ ok: true, data: null }),
     ]);
 
+    const picksPrev = picksPrevResult.ok ? picksPrevResult.data : null;
+    const livePrev = livePrevResult.ok ? livePrevResult.data : { elements: [] };
+    const picksUpc = picksUpcResult.ok ? picksUpcResult.data : null;
+
+    // Track cache usage
+    if (picksPrevResult.fromCache) { usingCache = true; maxCacheAge = Math.max(maxCacheAge, picksPrevResult.cacheAge); }
+
     // Live map (if any)
-    const liveMap = liveGw ? toMap((await api.eventLive(liveGw)).elements || []) : new Map();
+    const liveResult = liveGw ? await fplClient.eventLive(liveGw) : { ok: true, data: { elements: [] } };
+    const liveMap = liveGw && liveResult.ok ? toMap(liveResult.data.elements || []) : new Map();
 
     // Roster preference: UPCOMING > PREVIOUS
     const roster =
@@ -609,7 +678,8 @@ export async function renderMyTeam(main){
               r.xpWindow = (await xPWindow(r.player, windowGwIds())).total || 0;
             }
             // Element summary for form sparkline
-            const summary = await api.elementSummary(r.id);
+            const summaryResult = await fplClient.elementSummary(r.id);
+            const summary = summaryResult.ok ? summaryResult.data : null;
             if (summary?.history) {
               r.formData = summary.history
                 .filter(h => h.round <= lastFinished)
@@ -1060,18 +1130,48 @@ export async function renderMyTeam(main){
     mainContent.append(leftCol, rightCol);
     page.append(mainContent);
 
-    ui.mount(main, page);
+    // Mount with cached banner if using cached data
+    ui.mountWithCache(main, page, {
+      fromCache: usingCache,
+      cacheAge: maxCacheAge,
+      onRefresh: () => renderMyTeam(main),
+    });
+
+    setPageUpdated("my-team");
 
   } catch (e) {
     log.error("My Team: Failed to load", e);
-    const errorCard = ui.errorCard({
-      title: "Failed to load My Team",
-      message: "There was a problem fetching your team data. This could be a network issue or the FPL API may be temporarily unavailable.",
-      error: e,
-      onRetry: async () => {
-        await renderMyTeam(main);
-      }
-    });
-    ui.mount(main, errorCard);
+
+    // Check if cached data is available for degraded state
+    const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
+    const hasCache = cacheAge !== null;
+
+    if (hasCache) {
+      // Show degraded card with cache option
+      const degradedCard = ui.degradedCard({
+        title: "Failed to Load Team Data",
+        message: e.message || "There was a problem fetching your team data.",
+        cacheAge,
+        onRetry: async () => {
+          await renderMyTeam(main);
+        },
+        onUseCached: async () => {
+          state.bootstrap = fplClient.loadBootstrapFromCache().data;
+          await renderMyTeam(main);
+        },
+      });
+      ui.mount(main, degradedCard);
+    } else {
+      // No cache available - show standard error
+      const errorCard = ui.errorCard({
+        title: "Failed to load My Team",
+        message: "There was a problem fetching your team data. This could be a network issue or the FPL API may be temporarily unavailable.",
+        error: e,
+        onRetry: async () => {
+          await renderMyTeam(main);
+        }
+      });
+      ui.mount(main, errorCard);
+    }
   }
 }

@@ -1,10 +1,11 @@
 // js/pages/fixtures.js
-import { api } from "../api.js";
+import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { makeSelect } from "../components/select.js";
 import { log } from "../logger.js";
+import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /* ───────── helpers ───────── */
 
@@ -22,8 +23,10 @@ const toLocal = (dt, tz="Europe/London")=>{
 async function getFixturesForEvents(eventIds){
   const out = [];
   for (const id of eventIds){
-    const fx = await api.fixtures(id);
-    out.push(...fx);
+    const result = await fplClient.fixtures(id);
+    if (result.ok) {
+      out.push(...result.data);
+    }
     await utils.sleep(60);
   }
   return out;
@@ -114,12 +117,38 @@ function ensureFixtureStyles(){
 export async function renderFixtures(main){
   ensureFixtureStyles();
 
-  const shell = utils.el("div");
-  shell.append(ui.spinner("Loading fixtures & difficulty…"));
-  ui.mount(main, shell);
+  // Show loading state
+  ui.mount(main, ui.loadingWithTimeout("Loading fixtures & difficulty..."));
+
+  // Fetch bootstrap
+  const bootstrapResult = state.bootstrap
+    ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
+    : await fplClient.bootstrap();
+
+  if (!bootstrapResult.ok) {
+    const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
+    const hasCache = cacheAge !== null;
+
+    ui.mount(main, ui.degradedCard({
+      title: "Failed to Load Fixtures",
+      errorType: bootstrapResult.errorType,
+      message: bootstrapResult.message,
+      cacheAge: hasCache ? cacheAge : null,
+      onRetry: () => renderFixtures(main),
+      onUseCached: hasCache ? async () => {
+        state.bootstrap = fplClient.loadBootstrapFromCache().data;
+        await renderFixtures(main);
+      } : null,
+    }));
+    return;
+  }
+
+  // Track cache state
+  let usingCache = bootstrapResult.fromCache;
+  let maxCacheAge = bootstrapResult.cacheAge || 0;
 
   try{
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = bootstrapResult.data;
     state.bootstrap = bs;
     const { events, teams, elements, element_types } = bs;
     const teamById = mapTeams(teams);
@@ -132,7 +161,8 @@ export async function renderFixtures(main){
     let ownedByTeam = new Map();
     if (state.entryId){
       try{
-        const picks = await api.entryPicks(state.entryId, Math.max(1,lastFinished));
+        const picksResult = await fplClient.entryPicks(state.entryId, Math.max(1,lastFinished));
+        const picks = picksResult.ok ? picksResult.data : { picks: [] };
         const byId = new Map(elements.map(p=>[p.id,p]));
         for (const pk of picks.picks){
           const pl = byId.get(pk.element);

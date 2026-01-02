@@ -1,10 +1,11 @@
 // js/pages/planner.js
-import { api } from "../api.js";
+import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
+import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
 
 /* ───────────────── helpers & constants ───────────────── */
 const FORMATIONS = ["3-4-3","3-5-2","4-4-2","4-3-3","5-4-1","4-5-1","5-3-2"];
@@ -398,7 +399,7 @@ export async function renderPlanner(main){
   });
 
   try{
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = state.bootstrap || await legacyApi.bootstrap();
     state.bootstrap = bs;
 
     const { elements: players, teams, element_types: positions, events } = bs;
@@ -423,9 +424,9 @@ export async function renderPlanner(main){
 
     // === Picks: try NEXT GW first, then current/last as fallback ===
     let picks = null;
-    try { picks = await api.entryPicks(state.entryId, planGwClamped); } catch {}
+    try { picks = await legacyApi.entryPicks(state.entryId, planGwClamped); } catch {}
     if (!picks?.picks?.length) {
-      try { picks = await api.entryPicks(state.entryId, currEvent?.id ?? lastFinished); } catch {}
+      try { picks = await legacyApi.entryPicks(state.entryId, currEvent?.id ?? lastFinished); } catch {}
     }
     if (!picks?.picks?.length){
       ui.mount(main, ui.error("Planner couldn’t fetch your picks for the next or current GW."));
