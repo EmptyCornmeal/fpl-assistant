@@ -474,10 +474,10 @@ export async function renderFixtures(main){
 
       // Show message if swings is enabled but no swings detected
       if (showSwingArrows && swingCount === 0 && filtered.length > 0) {
-        const swingNotice = utils.el("div", { class: "fx-notice" });
+        const swingNotice = utils.el("div", { class: "fx-notice fx-notice-info" });
         swingNotice.innerHTML = `
           <span class="fx-notice-icon">ℹ️</span>
-          <span>No significant swing events detected in this window. Swings appear when difficulty changes by ≥2 between consecutive GWs.</span>
+          <span><strong>No swing events detected</strong> — Fixture difficulty is relatively stable in this window. Swings only appear when difficulty changes by ≥2 between consecutive GWs.</span>
         `;
         matrixCard.append(swingNotice);
       }

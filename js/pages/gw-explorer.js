@@ -396,9 +396,20 @@ export async function renderGwExplorer(main){
       renderTable(rows, gwId);
     }
 
+    // Debounce utility for auto-apply on search
+    function debounce(fn, delay = 300) {
+      let timer = null;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+      };
+    }
+    const debouncedApply = debounce(applyFilters, 400);
+
     // events
     applyBtn.addEventListener("click", applyFilters);
     q.addEventListener("keydown", e => { if (e.key === "Enter") applyFilters(); });
+    q.addEventListener("input", debouncedApply); // Auto-apply on search with debounce
     gwSel.onChange(val => loadGw(val));
     teamSel.onChange(() => applyFilters());
 
