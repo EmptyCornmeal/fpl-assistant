@@ -32,6 +32,39 @@ const OBJECTIVES = {
 const STORAGE_KEY_HORIZON = "fpl.sp.horizon";
 const STORAGE_KEY_OBJECTIVE = "fpl.sp.objective";
 const STORAGE_KEY_CONTEXT_CACHE = "fpl.sp.contextCache";
+const STORAGE_KEY_CAPTAIN_MODE = "fpl.sp.captainMode";
+const STORAGE_KEY_MANUAL_OVERRIDES = "fpl.sp.manualOverrides";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 6: CAPTAIN MODES (Conservative vs Aggressive)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const CAPTAIN_MODES = {
+  CONSERVATIVE: {
+    id: "conservative",
+    label: "Conservative",
+    description: "Prefer nailed starters with high floor",
+    icon: "🛡️"
+  },
+  AGGRESSIVE: {
+    id: "aggressive",
+    label: "Aggressive",
+    description: "Target highest ceiling, accept variance",
+    icon: "🚀"
+  },
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 6: VERDICT LABELS FOR SQUAD RANKING
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const VERDICTS = {
+  LOCK: { id: "lock", label: "LOCK", class: "sp-verdict-lock", description: "Guaranteed starter, high confidence" },
+  START: { id: "start", label: "START", class: "sp-verdict-start", description: "Recommended for XI" },
+  BENCH: { id: "bench", label: "BENCH", class: "sp-verdict-bench", description: "Optimal as bench cover" },
+  SELL_WATCH: { id: "sell_watch", label: "SELL WATCH", class: "sp-verdict-sell-watch", description: "Consider replacing soon" },
+  SELL: { id: "sell", label: "SELL", class: "sp-verdict-sell", description: "Priority to transfer out" },
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHASE 5: DEPENDENCY DEFINITIONS
@@ -795,10 +828,136 @@ function calculateMinutesReliability(player) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   PHASE 3: XI & CAPTAIN OPTIMISER
+   PHASE 3 + 6: XI & CAPTAIN OPTIMISER (Enhanced with manual overrides & explanations)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function optimiseXI(squadWithXp, objective = null) {
+/**
+ * Calculate adjusted xP (adjXP = expectedPoints * minutesProbability)
+ * and assign verdict labels for each player
+ */
+function calculateAdjustedXpAndVerdict(player, horizonGwCount) {
+  const minutesProb = (player.xpData?.minutesReliability?.score || 100) / 100;
+  const rawXp = player.rawXp || player.xp || 0;
+  const adjXp = rawXp * minutesProb;
+
+  // Determine verdict based on adjusted xP and context
+  let verdict = VERDICTS.START;
+  const avgAdjXpPerGw = adjXp / horizonGwCount;
+  const minsScore = player.xpData?.minutesReliability?.score || 100;
+
+  if (minsScore >= 95 && avgAdjXpPerGw >= 3.5) {
+    verdict = VERDICTS.LOCK;
+  } else if (avgAdjXpPerGw >= 2.5 || (minsScore >= 85 && avgAdjXpPerGw >= 2)) {
+    verdict = VERDICTS.START;
+  } else if (avgAdjXpPerGw >= 1.5 || minsScore >= 70) {
+    verdict = VERDICTS.BENCH;
+  } else if (avgAdjXpPerGw >= 0.8 || minsScore >= 40) {
+    verdict = VERDICTS.SELL_WATCH;
+  } else {
+    verdict = VERDICTS.SELL;
+  }
+
+  // Override verdict based on status flags
+  if (player.status === 'i' || player.status === 's') {
+    verdict = VERDICTS.SELL;
+  } else if (player.status === 'd' && minsScore < 50) {
+    verdict = VERDICTS.SELL_WATCH;
+  }
+
+  return { adjXp, verdict };
+}
+
+/**
+ * Generate explanation for why a player is benched
+ */
+function getBenchingReason(player, xiPlayers, objectiveConfig) {
+  const reasons = [];
+  const minsScore = player.xpData?.minutesReliability?.score || 0;
+  const posType = player.element_type;
+  const posName = ({ 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" })[posType] || "?";
+
+  // Check if it's a formation constraint
+  const xiByPos = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  xiPlayers.forEach(p => xiByPos[p.element_type]++);
+
+  // Formation limits
+  const maxByPos = { 1: 1, 2: 5, 3: 5, 4: 3 };
+  const minByPos = { 1: 1, 2: 3, 3: 2, 4: 1 };
+
+  if (posType === 1 && xiByPos[1] >= 1) {
+    reasons.push("Formation: only 1 GKP allowed");
+  } else if (xiByPos[posType] >= maxByPos[posType]) {
+    reasons.push(`Formation: max ${maxByPos[posType]} ${posName}s reached`);
+  }
+
+  // Low minutes probability
+  if (minsScore < 70) {
+    reasons.push(`Low mins: ${minsScore}% reliability`);
+  }
+
+  // Compare to XI players of same position
+  const xiSamePos = xiPlayers.filter(p => p.element_type === posType);
+  if (xiSamePos.length > 0) {
+    const worstXiXp = Math.min(...xiSamePos.map(p => p.xp));
+    if (player.xp < worstXiXp) {
+      const diff = (worstXiXp - player.xp).toFixed(1);
+      reasons.push(`Opportunity cost: -${diff} xP vs worst XI ${posName}`);
+    }
+  }
+
+  // Fixture difficulty
+  if (player.xpData?.perGw && player.xpData.perGw.length > 0) {
+    const avgFdr = player.xpData.perGw.reduce((s, f) => s + f.fdr, 0) / player.xpData.perGw.length;
+    if (avgFdr > 3.5) {
+      reasons.push(`Poor fixtures: avg FDR ${avgFdr.toFixed(1)}`);
+    }
+  }
+
+  // Status flags
+  if (player.status === 'd') reasons.push("Doubtful status");
+  if (player.status === 'i') reasons.push("Injured");
+  if (player.status === 's') reasons.push("Suspended");
+
+  return reasons.length > 0 ? reasons[0] : "Lower xP than alternatives";
+}
+
+/**
+ * Optimise XI with support for manual overrides
+ * Returns { xi, bench, totalXp, captainCandidates, benchReasons, overrideDelta }
+ */
+function optimiseXI(squadWithXp, objective = null, manualOverrides = null) {
+  const overrides = manualOverrides || { pinnedToXI: [], pinnedToBench: [] };
+  const pinnedXISet = new Set(overrides.pinnedToXI || []);
+  const pinnedBenchSet = new Set(overrides.pinnedToBench || []);
+
+  // First, calculate without overrides for baseline comparison
+  const baselineResult = optimiseXIInternal(squadWithXp, objective, null);
+
+  // Then calculate with overrides
+  const overriddenResult = optimiseXIInternal(squadWithXp, objective, overrides);
+
+  // Calculate delta if there are overrides
+  let overrideDelta = 0;
+  let hasOverrides = pinnedXISet.size > 0 || pinnedBenchSet.size > 0;
+  if (hasOverrides) {
+    overrideDelta = baselineResult.totalXp - overriddenResult.totalXp;
+  }
+
+  return {
+    ...overriddenResult,
+    baselineTotalXp: baselineResult.totalXp,
+    overrideDelta,
+    hasOverrides,
+  };
+}
+
+/**
+ * Internal XI optimization logic
+ */
+function optimiseXIInternal(squadWithXp, objective = null, overrides = null) {
+  const pinnedXISet = new Set(overrides?.pinnedToXI || []);
+  const pinnedBenchSet = new Set(overrides?.pinnedToBench || []);
+
   // Enforce FPL formation rules: 1 GKP, 3-5 DEF, 2-5 MID, 1-3 FWD
   const byPos = { 1: [], 2: [], 3: [], 4: [] };
   squadWithXp.forEach((p) => byPos[p.element_type]?.push(p));
@@ -806,9 +965,14 @@ function optimiseXI(squadWithXp, objective = null) {
   // Sort each position by xP descending (already adjusted for objective)
   Object.values(byPos).forEach((arr) => arr.sort((a, b) => b.xp - a.xp));
 
-  // GKP: take best 1, bench 1
-  const bench = [];
-  if (byPos[1][1]) bench.push(byPos[1][1]);
+  // Handle pinned players
+  const forcedXI = squadWithXp.filter(p => pinnedXISet.has(p.id));
+  const forcedBench = squadWithXp.filter(p => pinnedBenchSet.has(p.id));
+  const freePool = squadWithXp.filter(p => !pinnedXISet.has(p.id) && !pinnedBenchSet.has(p.id));
+
+  // Count forced XI by position
+  const forcedByPos = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  forcedXI.forEach(p => forcedByPos[p.element_type]++);
 
   // Determine best formation by trying valid combos
   const formations = [
@@ -824,27 +988,65 @@ function optimiseXI(squadWithXp, objective = null) {
 
   let bestXI = null;
   let bestXp = -1;
+  let bestFormation = null;
 
   for (const [dCount, mCount, fCount] of formations) {
-    if (byPos[2].length < dCount || byPos[3].length < mCount || byPos[4].length < fCount) continue;
+    const neededByPos = {
+      1: 1 - forcedByPos[1],
+      2: dCount - forcedByPos[2],
+      3: mCount - forcedByPos[3],
+      4: fCount - forcedByPos[4],
+    };
+
+    // Skip if we can't satisfy formation with available free players
+    const freeByPos = { 1: [], 2: [], 3: [], 4: [] };
+    freePool.forEach(p => {
+      if (!pinnedBenchSet.has(p.id)) {
+        freeByPos[p.element_type]?.push(p);
+      }
+    });
+
+    // Sort free pool by xP
+    Object.values(freeByPos).forEach(arr => arr.sort((a, b) => b.xp - a.xp));
+
+    // Check if formation is possible
+    let valid = true;
+    for (const pos of [1, 2, 3, 4]) {
+      if (neededByPos[pos] < 0 || freeByPos[pos].length < neededByPos[pos]) {
+        valid = false;
+        break;
+      }
+    }
+    if (!valid) continue;
 
     const testXI = [
-      byPos[1][0],
-      ...byPos[2].slice(0, dCount),
-      ...byPos[3].slice(0, mCount),
-      ...byPos[4].slice(0, fCount),
+      ...forcedXI,
+      ...freeByPos[1].slice(0, Math.max(0, neededByPos[1])),
+      ...freeByPos[2].slice(0, Math.max(0, neededByPos[2])),
+      ...freeByPos[3].slice(0, Math.max(0, neededByPos[3])),
+      ...freeByPos[4].slice(0, Math.max(0, neededByPos[4])),
     ];
 
     const totalXp = testXI.reduce((s, p) => s + (p?.xp || 0), 0);
     if (totalXp > bestXp) {
       bestXp = totalXp;
       bestXI = testXI;
+      bestFormation = [1, dCount, mCount, fCount];
     }
   }
 
-  // Build bench from remaining
+  // Build bench from remaining (forced bench + leftover free pool)
   const xiIds = new Set((bestXI || []).map((p) => p?.id));
-  const benchPlayers = squadWithXp.filter((p) => !xiIds.has(p.id)).sort((a, b) => b.xp - a.xp);
+  const benchPlayers = [
+    ...forcedBench,
+    ...squadWithXp.filter((p) => !xiIds.has(p.id) && !pinnedBenchSet.has(p.id))
+  ].sort((a, b) => b.xp - a.xp);
+
+  // Generate benching reasons for all bench players
+  const benchReasons = {};
+  benchPlayers.forEach(p => {
+    benchReasons[p.id] = getBenchingReason(p, bestXI || [], objective);
+  });
 
   // Rank captain candidates (top 5 by xP in XI)
   const captainCandidates = [...(bestXI || [])].filter((p) => p).sort((a, b) => b.xp - a.xp).slice(0, 5);
@@ -853,6 +1055,8 @@ function optimiseXI(squadWithXp, objective = null) {
     xi: bestXI || [],
     bench: benchPlayers,
     totalXp: bestXp,
+    formation: bestFormation,
+    benchReasons,
     captainCandidates,
     recommendedCaptain: captainCandidates[0],
     recommendedVice: captainCandidates[1],
@@ -1230,6 +1434,22 @@ function formatTime(date) {
 }
 
 /**
+ * Get saved captain mode from localStorage or default
+ */
+function getSavedCaptainMode() {
+  const saved = getJSON(STORAGE_KEY_CAPTAIN_MODE);
+  return saved || CAPTAIN_MODES.CONSERVATIVE.id;
+}
+
+/**
+ * Get saved manual overrides from localStorage or default
+ */
+function getSavedManualOverrides() {
+  const saved = getJSON(STORAGE_KEY_MANUAL_OVERRIDES);
+  return saved || { pinnedToXI: [], pinnedToBench: [] };
+}
+
+/**
  * Main dashboard state - tracks loaded context, current settings, and recalc time
  */
 let dashboardState = {
@@ -1237,6 +1457,8 @@ let dashboardState = {
   dependencyStatus: {},
   horizon: null,
   objective: null,
+  captainMode: null,
+  manualOverrides: { pinnedToXI: [], pinnedToBench: [] },
   lastRecalculated: null,
   optimisedData: null,
 };
@@ -1245,9 +1467,13 @@ async function renderDashboard(container) {
   // Load saved preferences
   const savedHorizon = getSavedHorizon();
   const savedObjective = getSavedObjective();
+  const savedCaptainMode = getSavedCaptainMode();
+  const savedManualOverrides = getSavedManualOverrides();
 
   dashboardState.horizon = savedHorizon;
   dashboardState.objective = savedObjective;
+  dashboardState.captainMode = savedCaptainMode;
+  dashboardState.manualOverrides = savedManualOverrides;
 
   container.innerHTML = `
     <div class="sp-header">
@@ -1272,6 +1498,7 @@ async function renderDashboard(container) {
         <button id="lockBtn" class="sp-btn sp-btn-danger" title="Lock stat picker">Lock</button>
       </div>
     </div>
+    <div id="spSnapshotCard" class="sp-snapshot-container"></div>
     <div id="spRecalcBanner" class="sp-recalc-banner" style="display:none;"></div>
     <div class="sp-grid" id="spContent">
       <div class="sp-loading">
@@ -1556,7 +1783,7 @@ function renderDegradedMode(container, result, parentContainer) {
 
 /**
  * Render the optimised dashboard with current horizon/objective settings
- * This is the main render function for the Phase 5 architecture
+ * This is the main render function for the Phase 5 + 6 architecture
  */
 async function renderOptimisedDashboard(container, recalcBanner) {
   try {
@@ -1581,6 +1808,13 @@ async function renderOptimisedDashboard(container, recalcBanner) {
     const objectiveId = dashboardState.objective || OBJECTIVES.MAX_POINTS.id;
     const objectiveConfig = Object.values(OBJECTIVES).find(o => o.id === objectiveId) || OBJECTIVES.MAX_POINTS;
 
+    // Get captain mode settings
+    const captainModeId = dashboardState.captainMode || CAPTAIN_MODES.CONSERVATIVE.id;
+    const captainModeConfig = Object.values(CAPTAIN_MODES).find(m => m.id === captainModeId) || CAPTAIN_MODES.CONSERVATIVE;
+
+    // Get manual overrides
+    const manualOverrides = dashboardState.manualOverrides || { pinnedToXI: [], pinnedToBench: [] };
+
     // Check if predictions are available
     const predictionsAvailable = context.predictionsAvailable !== false;
 
@@ -1591,15 +1825,17 @@ async function renderOptimisedDashboard(container, recalcBanner) {
         const xp = await calculateExpectedPoints(p, horizonGwCount, bs);
         // Apply objective modifiers
         const adjustedXp = applyObjectiveModifiers(xp, p, objectiveConfig);
-        squadWithXp.push({ ...p, xp: adjustedXp.total, xpData: adjustedXp, rawXp: xp.total });
+        // Calculate adjusted xP and verdict
+        const { adjXp, verdict } = calculateAdjustedXpAndVerdict({ ...p, xp: adjustedXp.total, xpData: adjustedXp, rawXp: xp.total }, horizonGwCount);
+        squadWithXp.push({ ...p, xp: adjustedXp.total, xpData: adjustedXp, rawXp: xp.total, adjXp, verdict });
       } else {
         // Fallback: use points from bootstrap
-        squadWithXp.push({ ...p, xp: 0, xpData: null, rawXp: 0 });
+        squadWithXp.push({ ...p, xp: 0, xpData: null, rawXp: 0, adjXp: 0, verdict: VERDICTS.START });
       }
     }
 
-    // Optimise XI with objective in mind
-    const optimised = optimiseXI(squadWithXp, objectiveConfig);
+    // Optimise XI with objective and manual overrides
+    const optimised = optimiseXI(squadWithXp, objectiveConfig, manualOverrides);
 
     // Get transfer recommendations (only if predictions available)
     let transfers = null;
@@ -1613,9 +1849,18 @@ async function renderOptimisedDashboard(container, recalcBanner) {
       chipRec = await getChipRecommendation(context, horizonGwCount, bs, squadWithXp, optimised);
     }
 
+    // Calculate captain candidates with mode-specific scoring
+    const captainData = calculateCaptainCandidates(optimised.xi, captainModeConfig, objectiveConfig);
+
     // Update recalculation timestamp
     dashboardState.lastRecalculated = new Date();
-    dashboardState.optimisedData = { squadWithXp, optimised, transfers, chipRec };
+    dashboardState.optimisedData = { squadWithXp, optimised, transfers, chipRec, captainData };
+
+    // Render snapshot card (6.1)
+    const snapshotContainer = document.getElementById("spSnapshotCard");
+    if (snapshotContainer && predictionsAvailable) {
+      snapshotContainer.innerHTML = renderGameweekSnapshot(context, optimised, captainData, chipRec, dashboardState);
+    }
 
     // Show recalc banner
     if (recalcBanner) {
@@ -1643,8 +1888,8 @@ async function renderOptimisedDashboard(container, recalcBanner) {
         ${chipRec ? renderChipPanel(chipRec, context) : renderChipPanelUnavailable()}
       </div>
       <div class="sp-col sp-col-center">
-        ${renderSquadPanel(optimised, horizonGwCount, objectiveConfig)}
-        ${renderCaptainPanel(optimised, objectiveConfig)}
+        ${renderSquadRankingPanel(squadWithXp, optimised, horizonGwCount, objectiveConfig, manualOverrides, context)}
+        ${renderCaptainDecisionPanel(captainData, optimised, captainModeConfig, objectiveConfig)}
       </div>
       <div class="sp-col sp-col-right">
         ${transfers ? renderTransferPanel(transfers) : renderTransferPanelUnavailable()}
@@ -1653,12 +1898,520 @@ async function renderOptimisedDashboard(container, recalcBanner) {
       </div>
     `;
 
+    // Wire up interactive elements
+    wireUpSquadInteractions(container, squadWithXp, horizonGwCount, objectiveConfig);
+    wireUpCaptainModeToggle(container);
+    wireUpSnapshotRefresh();
+
     // Update page timestamp
     setPageUpdated("stat-picker");
 
   } catch (err) {
     log.error("Stat Picker: Dashboard error", err);
     container.innerHTML = `<div class="sp-error-full"><h3>Error</h3><p>${err.message}</p></div>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 6.1: GAMEWEEK SNAPSHOT CARD
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Generate headline stance based on current state
+ */
+function generateHeadlineStance(context, optimised, captainData, chipRec, transfers) {
+  const flaggedCount = context.flaggedPlayers?.length || 0;
+  const freeTransfers = context.freeTransfers || 0;
+  const overrideDelta = optimised.overrideDelta || 0;
+
+  // Priority order for headline
+  if (flaggedCount >= 3) {
+    return { text: "Squad in crisis - consider Free Hit or multiple transfers", severity: "danger" };
+  }
+  if (chipRec?.chip === "bboost" && chipRec.confidence === "High") {
+    return { text: `Strong Bench Boost opportunity (+${chipRec.expectedGain.toFixed(1)} xP)`, severity: "success" };
+  }
+  if (chipRec?.chip === "3xc" && chipRec.confidence === "High") {
+    return { text: `Triple Captain ${captainData.recommended?.web_name || ""} looks promising`, severity: "success" };
+  }
+  if (flaggedCount > 0 && freeTransfers === 0) {
+    return { text: `${flaggedCount} flagged but 0 FT - monitor news closely`, severity: "warning" };
+  }
+  if (transfers?.action === "Make 1 Free Transfer") {
+    return { text: `Transfer recommended: ${transfers.transfers[0]?.out.web_name} → ${transfers.transfers[0]?.in.web_name}`, severity: "info" };
+  }
+  if (overrideDelta > 2) {
+    return { text: `Manual overrides costing -${overrideDelta.toFixed(1)} xP vs optimal`, severity: "warning" };
+  }
+  if (flaggedCount === 0 && freeTransfers >= 1) {
+    return { text: "Squad looks good - hold transfers or bank for future GWs", severity: "success" };
+  }
+  return { text: "Review squad and make decisions before deadline", severity: "neutral" };
+}
+
+/**
+ * Render the Gameweek Snapshot card (6.1)
+ */
+function renderGameweekSnapshot(context, optimised, captainData, chipRec, dashboardState) {
+  const xiXp = optimised.totalXp || 0;
+  const benchXp = optimised.bench.reduce((s, p) => s + (p?.xp || 0), 0);
+
+  // Captain gain calculation
+  const recCaptain = captainData.recommended;
+  const safeCaptain = captainData.candidates.find(c =>
+    (c.xpData?.minutesReliability?.score || 0) >= 90
+  ) || captainData.candidates[0];
+  const captainGain = recCaptain && safeCaptain && recCaptain.id !== safeCaptain.id
+    ? (recCaptain.xp - safeCaptain.xp).toFixed(1)
+    : "0.0";
+
+  // Chips display
+  const chipsAvail = (context.chipsAvailable || []).map(formatChipName).join(", ") || "None";
+
+  // Headline stance
+  const transfers = dashboardState.optimisedData?.transfers;
+  const headline = generateHeadlineStance(context, optimised, captainData, chipRec, transfers);
+
+  // Last updated time
+  const lastUpdated = dashboardState.lastRecalculated
+    ? formatTime(dashboardState.lastRecalculated)
+    : "Never";
+
+  // Override warning
+  const overrideWarning = optimised.hasOverrides && optimised.overrideDelta > 0
+    ? `<div class="sp-snap-override-warn">Manual overrides: -${optimised.overrideDelta.toFixed(1)} xP vs optimal</div>`
+    : "";
+
+  return `
+    <div class="sp-snapshot-card">
+      <div class="sp-snap-header">
+        <div class="sp-snap-title">GW${context.nextGw || context.currentGw} Snapshot</div>
+        <div class="sp-snap-actions">
+          <span class="sp-snap-updated">Updated ${lastUpdated}</span>
+          <button id="snapRefreshBtn" class="sp-btn sp-btn-small" title="Refresh data">Refresh</button>
+        </div>
+      </div>
+      <div class="sp-snap-metrics">
+        <div class="sp-snap-metric">
+          <span class="sp-snap-metric-val">${xiXp.toFixed(1)}</span>
+          <span class="sp-snap-metric-lbl">XI xP</span>
+        </div>
+        <div class="sp-snap-metric">
+          <span class="sp-snap-metric-val">${benchXp.toFixed(1)}</span>
+          <span class="sp-snap-metric-lbl">Bench xP</span>
+        </div>
+        <div class="sp-snap-metric ${parseFloat(captainGain) > 0 ? 'sp-snap-metric-gain' : ''}">
+          <span class="sp-snap-metric-val">${parseFloat(captainGain) > 0 ? '+' : ''}${captainGain}</span>
+          <span class="sp-snap-metric-lbl">C Gain</span>
+        </div>
+        <div class="sp-snap-metric">
+          <span class="sp-snap-metric-val">${context.freeTransfers}</span>
+          <span class="sp-snap-metric-lbl">FT</span>
+        </div>
+        <div class="sp-snap-metric">
+          <span class="sp-snap-metric-val">${context.bankFormatted}</span>
+          <span class="sp-snap-metric-lbl">ITB</span>
+        </div>
+      </div>
+      <div class="sp-snap-chips">
+        <span class="sp-snap-chips-lbl">Chips:</span>
+        <span class="sp-snap-chips-val">${chipsAvail}</span>
+      </div>
+      ${overrideWarning}
+      <div class="sp-snap-headline sp-snap-headline-${headline.severity}">
+        ${headline.text}
+      </div>
+    </div>
+  `;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 6.2: SQUAD RANKING PANEL WITH MANUAL OVERRIDES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Build fixture strip for a player
+ */
+function buildFixtureStrip(player, context, horizonGwCount) {
+  if (!player.xpData?.perGw || player.xpData.perGw.length === 0) {
+    return '<span class="sp-fx-strip-empty">-</span>';
+  }
+  return player.xpData.perGw.slice(0, Math.min(horizonGwCount, 5)).map(f =>
+    `<span class="sp-fdr sp-fdr-${f.fdr}" title="GW${f.gw}: ${f.isHome ? '' : '@'}${f.opponent}">${f.opponent.slice(0, 3)}</span>`
+  ).join('');
+}
+
+/**
+ * Render the Squad Ranking panel (6.2)
+ */
+function renderSquadRankingPanel(squadWithXp, optimised, horizonGwCount, objectiveConfig, manualOverrides, context) {
+  const pinnedXISet = new Set(manualOverrides.pinnedToXI || []);
+  const pinnedBenchSet = new Set(manualOverrides.pinnedToBench || []);
+  const xiIds = new Set(optimised.xi.map(p => p?.id));
+
+  // Sort all players by adjusted xP
+  const sorted = [...squadWithXp].sort((a, b) => (b.adjXp || b.xp) - (a.adjXp || a.xp));
+
+  // Build player rows
+  const playerRows = sorted.map((p, idx) => {
+    const isInXI = xiIds.has(p.id);
+    const isPinnedXI = pinnedXISet.has(p.id);
+    const isPinnedBench = pinnedBenchSet.has(p.id);
+    const minsScore = p.xpData?.minutesReliability?.score || 0;
+    const posName = ({ 1: "G", 2: "D", 3: "M", 4: "F" })[p.element_type] || "?";
+
+    // Determine risk indicator
+    let riskClass = "sp-risk-ok";
+    let riskLabel = "";
+    if (p.status === 'i' || p.status === 's') {
+      riskClass = "sp-risk-high";
+      riskLabel = p.status === 'i' ? "INJ" : "SUS";
+    } else if (p.status === 'd' || minsScore < 50) {
+      riskClass = "sp-risk-med";
+      riskLabel = p.status === 'd' ? "?" : "ROT";
+    } else if (minsScore < 70) {
+      riskClass = "sp-risk-low";
+      riskLabel = "~";
+    }
+
+    // Get benching reason if benched
+    const benchReason = !isInXI && optimised.benchReasons?.[p.id]
+      ? optimised.benchReasons[p.id]
+      : "";
+
+    // Build fixture strip
+    const fixtureStrip = buildFixtureStrip(p, context, horizonGwCount);
+
+    return `
+      <div class="sp-rank-row ${isInXI ? 'sp-rank-row-xi' : 'sp-rank-row-bench'} ${isPinnedXI || isPinnedBench ? 'sp-rank-row-pinned' : ''}"
+           data-player-id="${p.id}">
+        <span class="sp-rank-num">${idx + 1}</span>
+        <span class="sp-rank-pos ${posName.toLowerCase()}">${posName}</span>
+        <span class="sp-rank-name" title="${p.first_name} ${p.second_name}">
+          ${p.web_name}
+          ${isPinnedXI ? '<span class="sp-pin-badge" title="Pinned to XI">📌</span>' : ''}
+          ${isPinnedBench ? '<span class="sp-pin-badge" title="Pinned to Bench">🪑</span>' : ''}
+        </span>
+        <span class="sp-rank-team">${p.teamName || ''}</span>
+        <span class="sp-rank-fixtures">${fixtureStrip}</span>
+        <span class="sp-rank-xp" title="Raw xP: ${(p.rawXp || 0).toFixed(1)}">${(p.xp || 0).toFixed(1)}</span>
+        <span class="sp-rank-adjxp" title="xP × mins probability">${(p.adjXp || 0).toFixed(1)}</span>
+        <span class="sp-rank-mins ${minsScore < 70 ? 'sp-mins-warn' : ''}">${minsScore}%</span>
+        <span class="sp-rank-risk ${riskClass}" title="${riskLabel}">${riskLabel || '✓'}</span>
+        <span class="sp-rank-verdict ${p.verdict?.class || ''}" title="${p.verdict?.description || ''}">${p.verdict?.label || 'START'}</span>
+        <span class="sp-rank-actions">
+          <button class="sp-pin-btn ${isPinnedXI ? 'active' : ''}" data-action="pin-xi" data-player-id="${p.id}" title="Pin to XI">XI</button>
+          <button class="sp-pin-btn ${isPinnedBench ? 'active' : ''}" data-action="pin-bench" data-player-id="${p.id}" title="Pin to Bench">B</button>
+        </span>
+      </div>
+      ${benchReason && !isInXI ? `<div class="sp-rank-bench-reason" title="Why benched">${benchReason}</div>` : ''}
+    `;
+  }).join('');
+
+  // Override delta warning
+  const deltaWarning = optimised.hasOverrides && optimised.overrideDelta !== 0
+    ? `<div class="sp-rank-delta ${optimised.overrideDelta > 0 ? 'sp-rank-delta-neg' : 'sp-rank-delta-pos'}">
+         Override delta: ${optimised.overrideDelta > 0 ? '-' : '+'}${Math.abs(optimised.overrideDelta).toFixed(1)} xP vs optimal
+       </div>`
+    : '';
+
+  // Formation display
+  const formation = optimised.formation
+    ? `${optimised.formation[1]}-${optimised.formation[2]}-${optimised.formation[3]}`
+    : '?-?-?';
+
+  return `
+    <div class="sp-card sp-card-squad sp-card-ranking">
+      <div class="sp-card-header">
+        Squad Ranking
+        <span class="sp-xp-total">${optimised.totalXp.toFixed(1)} xP</span>
+        <span class="sp-formation">${formation}</span>
+        ${optimised.hasOverrides ? '<button id="clearOverridesBtn" class="sp-btn sp-btn-small sp-btn-link">Clear Pins</button>' : ''}
+      </div>
+      ${deltaWarning}
+      <div class="sp-rank-header">
+        <span class="sp-rank-num">#</span>
+        <span class="sp-rank-pos">Pos</span>
+        <span class="sp-rank-name">Player</span>
+        <span class="sp-rank-team">Team</span>
+        <span class="sp-rank-fixtures">Fixtures</span>
+        <span class="sp-rank-xp">xP</span>
+        <span class="sp-rank-adjxp">Adj</span>
+        <span class="sp-rank-mins">Mins</span>
+        <span class="sp-rank-risk">Risk</span>
+        <span class="sp-rank-verdict">Verdict</span>
+        <span class="sp-rank-actions">Pin</span>
+      </div>
+      <div class="sp-rank-list">
+        ${playerRows}
+      </div>
+      <div class="sp-rank-legend">
+        <span class="sp-legend-item"><span class="sp-rank-row-xi-dot"></span> In XI</span>
+        <span class="sp-legend-item"><span class="sp-rank-row-bench-dot"></span> Bench</span>
+        <span class="sp-legend-item"><span class="sp-verdict-lock">LOCK</span> Nailed starter</span>
+        <span class="sp-legend-item"><span class="sp-verdict-sell">SELL</span> Transfer out</span>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Wire up squad interactions (pin buttons, clear overrides)
+ */
+function wireUpSquadInteractions(container, squadWithXp, horizonGwCount, objectiveConfig) {
+  // Pin buttons
+  container.querySelectorAll('.sp-pin-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const playerId = parseInt(btn.dataset.playerId);
+      const action = btn.dataset.action;
+
+      const overrides = dashboardState.manualOverrides;
+
+      if (action === 'pin-xi') {
+        // Toggle pin to XI
+        const idx = overrides.pinnedToXI.indexOf(playerId);
+        if (idx >= 0) {
+          overrides.pinnedToXI.splice(idx, 1);
+        } else {
+          overrides.pinnedToXI.push(playerId);
+          // Remove from bench if was pinned there
+          const benchIdx = overrides.pinnedToBench.indexOf(playerId);
+          if (benchIdx >= 0) overrides.pinnedToBench.splice(benchIdx, 1);
+        }
+      } else if (action === 'pin-bench') {
+        // Toggle pin to bench
+        const idx = overrides.pinnedToBench.indexOf(playerId);
+        if (idx >= 0) {
+          overrides.pinnedToBench.splice(idx, 1);
+        } else {
+          overrides.pinnedToBench.push(playerId);
+          // Remove from XI if was pinned there
+          const xiIdx = overrides.pinnedToXI.indexOf(playerId);
+          if (xiIdx >= 0) overrides.pinnedToXI.splice(xiIdx, 1);
+        }
+      }
+
+      // Save to localStorage
+      setJSON(STORAGE_KEY_MANUAL_OVERRIDES, overrides);
+      dashboardState.manualOverrides = overrides;
+
+      // Re-render
+      const content = document.getElementById('spContent');
+      const recalcBanner = document.getElementById('spRecalcBanner');
+      if (content) {
+        await renderOptimisedDashboard(content, recalcBanner);
+      }
+    };
+  });
+
+  // Clear overrides button
+  const clearBtn = container.querySelector('#clearOverridesBtn');
+  if (clearBtn) {
+    clearBtn.onclick = async () => {
+      dashboardState.manualOverrides = { pinnedToXI: [], pinnedToBench: [] };
+      setJSON(STORAGE_KEY_MANUAL_OVERRIDES, dashboardState.manualOverrides);
+
+      const content = document.getElementById('spContent');
+      const recalcBanner = document.getElementById('spRecalcBanner');
+      if (content) {
+        await renderOptimisedDashboard(content, recalcBanner);
+      }
+    };
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 6.4: CAPTAIN DECISION COMPONENT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Calculate captain candidates with mode-specific scoring
+ */
+function calculateCaptainCandidates(xiPlayers, captainMode, objectiveConfig) {
+  const candidates = xiPlayers.filter(p => p).map(p => {
+    const minsScore = p.xpData?.minutesReliability?.score || 0;
+    const ownership = parseFloat(p.selected_by_percent) || 0;
+    const rawXp = p.rawXp || p.xp || 0;
+
+    // Calculate mode-specific score
+    let modeScore = rawXp;
+    let modeExplanation = "";
+
+    if (captainMode.id === CAPTAIN_MODES.CONSERVATIVE.id) {
+      // Conservative: heavily weight minutes certainty
+      const minsWeight = minsScore >= 95 ? 1.2 : minsScore >= 85 ? 1.0 : minsScore >= 70 ? 0.8 : 0.5;
+      modeScore = rawXp * minsWeight;
+      modeExplanation = minsScore >= 95
+        ? "Nailed starter, safe pick"
+        : minsScore >= 85
+          ? "Likely to play, moderate risk"
+          : "Rotation concern, risky choice";
+    } else if (captainMode.id === CAPTAIN_MODES.AGGRESSIVE.id) {
+      // Aggressive: boost high ceiling, accept variance
+      const ceilingBoost = rawXp > 6 ? 1.15 : rawXp > 4 ? 1.05 : 1.0;
+      const diffBoost = ownership < 15 ? 1.1 : 1.0;
+      modeScore = rawXp * ceilingBoost * diffBoost;
+      modeExplanation = ownership < 15
+        ? `Differential pick (${ownership.toFixed(1)}% owned)`
+        : rawXp > 6
+          ? "High ceiling, premium pick"
+          : "Standard option";
+    }
+
+    // Calculate confidence score (0-100)
+    let confidence = 50;
+    confidence += Math.min(25, rawXp * 3); // Up to +25 for xP
+    confidence += Math.min(25, minsScore / 4); // Up to +25 for mins reliability
+    if (captainMode.id === CAPTAIN_MODES.CONSERVATIVE.id && minsScore >= 90) {
+      confidence += 10;
+    }
+    if (captainMode.id === CAPTAIN_MODES.AGGRESSIVE.id && rawXp > 6) {
+      confidence += 10;
+    }
+    confidence = Math.min(100, Math.round(confidence));
+
+    return {
+      ...p,
+      modeScore,
+      modeExplanation,
+      confidence,
+      ownership,
+    };
+  });
+
+  // Sort by mode score
+  candidates.sort((a, b) => b.modeScore - a.modeScore);
+
+  return {
+    candidates: candidates.slice(0, 5),
+    recommended: candidates[0],
+    vice: candidates[1],
+    mode: captainMode,
+  };
+}
+
+/**
+ * Render Captain Decision Panel (6.4)
+ */
+function renderCaptainDecisionPanel(captainData, optimised, captainModeConfig, objectiveConfig) {
+  const modeId = captainModeConfig.id;
+  const otherMode = modeId === CAPTAIN_MODES.CONSERVATIVE.id
+    ? CAPTAIN_MODES.AGGRESSIVE
+    : CAPTAIN_MODES.CONSERVATIVE;
+
+  const candidateRows = captainData.candidates.map((p, i) => {
+    const minsScore = p.xpData?.minutesReliability?.score || 0;
+    const isRec = i === 0;
+    const isVice = i === 1;
+
+    // Fixture info
+    const nextFx = p.xpData?.perGw?.[0];
+    const fxInfo = nextFx
+      ? `${nextFx.isHome ? '' : '@'}${nextFx.opponent} (FDR${nextFx.fdr})`
+      : '-';
+
+    return `
+      <div class="sp-cap-row ${isRec ? 'sp-cap-best' : ''}" data-player-id="${p.id}">
+        <span class="sp-cap-rank">${isRec ? 'C' : isVice ? 'VC' : i + 1}</span>
+        <span class="sp-cap-name">${p.web_name || '?'}</span>
+        <span class="sp-cap-xp">${(p.xp || 0).toFixed(1)}</span>
+        <span class="sp-cap-fixture" title="Next fixture">${fxInfo}</span>
+        <span class="sp-cap-mins ${minsScore < 80 ? 'sp-mins-warn' : ''}">${minsScore}%</span>
+        <span class="sp-cap-eo" title="Effective ownership">${(p.ownership || 0).toFixed(1)}%</span>
+        <span class="sp-cap-conf" title="Confidence score">
+          <span class="sp-conf-bar" style="width: ${p.confidence}%"></span>
+          <span class="sp-conf-val">${p.confidence}</span>
+        </span>
+      </div>
+      ${isRec ? `<div class="sp-cap-explanation">${p.modeExplanation}</div>` : ''}
+    `;
+  }).join('');
+
+  return `
+    <div class="sp-card sp-card-captain">
+      <div class="sp-card-header">
+        Captain Decision
+        <div class="sp-cap-mode-toggle">
+          <button class="sp-cap-mode-btn ${modeId === CAPTAIN_MODES.CONSERVATIVE.id ? 'active' : ''}"
+                  data-mode="${CAPTAIN_MODES.CONSERVATIVE.id}"
+                  title="${CAPTAIN_MODES.CONSERVATIVE.description}">
+            ${CAPTAIN_MODES.CONSERVATIVE.icon} ${CAPTAIN_MODES.CONSERVATIVE.label}
+          </button>
+          <button class="sp-cap-mode-btn ${modeId === CAPTAIN_MODES.AGGRESSIVE.id ? 'active' : ''}"
+                  data-mode="${CAPTAIN_MODES.AGGRESSIVE.id}"
+                  title="${CAPTAIN_MODES.AGGRESSIVE.description}">
+            ${CAPTAIN_MODES.AGGRESSIVE.icon} ${CAPTAIN_MODES.AGGRESSIVE.label}
+          </button>
+        </div>
+      </div>
+      <div class="sp-cap-rec-summary">
+        <span class="sp-cap-rec-label">Recommended:</span>
+        <span class="sp-cap-rec-name">${captainData.recommended?.web_name || '?'}</span>
+        <span class="sp-cap-rec-conf">(${captainData.recommended?.confidence || 0}% confidence)</span>
+      </div>
+      <div class="sp-cap-header">
+        <span class="sp-cap-rank">#</span>
+        <span class="sp-cap-name">Player</span>
+        <span class="sp-cap-xp">xP</span>
+        <span class="sp-cap-fixture">Fixture</span>
+        <span class="sp-cap-mins">Mins</span>
+        <span class="sp-cap-eo">EO</span>
+        <span class="sp-cap-conf">Conf</span>
+      </div>
+      <div class="sp-cap-list">
+        ${candidateRows}
+      </div>
+      <div class="sp-cap-mode-hint">
+        <strong>${captainModeConfig.icon} ${captainModeConfig.label}:</strong> ${captainModeConfig.description}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Wire up captain mode toggle
+ */
+function wireUpCaptainModeToggle(container) {
+  container.querySelectorAll('.sp-cap-mode-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const newMode = btn.dataset.mode;
+      dashboardState.captainMode = newMode;
+      setJSON(STORAGE_KEY_CAPTAIN_MODE, newMode);
+
+      const content = document.getElementById('spContent');
+      const recalcBanner = document.getElementById('spRecalcBanner');
+      if (content) {
+        await renderOptimisedDashboard(content, recalcBanner);
+      }
+    };
+  });
+}
+
+/**
+ * Wire up snapshot card refresh button
+ */
+function wireUpSnapshotRefresh() {
+  const refreshBtn = document.getElementById('snapRefreshBtn');
+  if (refreshBtn) {
+    refreshBtn.onclick = async () => {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Refreshing...';
+
+      // Force refresh context
+      const result = await loadContext({ forceRefresh: true });
+      dashboardState.context = result.context;
+      dashboardState.dependencyStatus = result.dependencyStatus;
+
+      const content = document.getElementById('spContent');
+      const recalcBanner = document.getElementById('spRecalcBanner');
+      if (result.ok && content) {
+        await renderOptimisedDashboard(content, recalcBanner);
+      }
+
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = 'Refresh';
+    };
   }
 }
 

@@ -9905,3 +9905,628 @@ body:hover .dev-toggle-hint {
   transition: opacity 0.2s, transform 0.2s;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 6: UI COMPOSITION STYLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 6.1 GAMEWEEK SNAPSHOT CARD ─────────────────────────────────────────── */
+.sp-snapshot-container {
+  padding: 0 var(--gap-sm);
+  margin-bottom: var(--gap-sm);
+}
+
+.sp-snapshot-card {
+  background: linear-gradient(135deg, var(--card) 0%, rgba(16, 185, 129, 0.1) 100%);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius);
+  padding: var(--gap-sm) var(--gap-md);
+}
+
+.sp-snap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--gap-sm);
+}
+
+.sp-snap-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sp-snap-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+}
+
+.sp-snap-updated {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.sp-snap-metrics {
+  display: flex;
+  gap: var(--gap-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--gap-sm);
+}
+
+.sp-snap-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--gap-xs) var(--gap-sm);
+  background: var(--surface-1);
+  border-radius: var(--radius-sm);
+  min-width: 60px;
+}
+
+.sp-snap-metric-val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.sp-snap-metric-lbl {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+.sp-snap-metric-gain .sp-snap-metric-val {
+  color: var(--green);
+}
+
+.sp-snap-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  margin-bottom: var(--gap-sm);
+  font-size: 11px;
+}
+
+.sp-snap-chips-lbl {
+  color: var(--muted);
+}
+
+.sp-snap-chips-val {
+  color: var(--green);
+  font-weight: 500;
+}
+
+.sp-snap-override-warn {
+  font-size: 11px;
+  color: var(--amber);
+  background: rgba(251, 191, 36, 0.1);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--gap-sm);
+}
+
+.sp-snap-headline {
+  font-size: 12px;
+  font-weight: 600;
+  padding: var(--gap-xs) var(--gap-sm);
+  border-radius: var(--radius-sm);
+}
+
+.sp-snap-headline-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--green);
+}
+
+.sp-snap-headline-warning {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--amber);
+}
+
+.sp-snap-headline-danger {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--red);
+}
+
+.sp-snap-headline-info {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent);
+}
+
+.sp-snap-headline-neutral {
+  background: var(--surface-1);
+  color: var(--muted);
+}
+
+/* ─── 6.2 SQUAD RANKING PANEL ────────────────────────────────────────────── */
+.sp-card-ranking {
+  font-size: 11px;
+}
+
+.sp-rank-header {
+  display: grid;
+  grid-template-columns: 24px 24px 1fr 40px 1fr 42px 42px 38px 36px 70px 50px;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.sp-rank-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.sp-rank-row {
+  display: grid;
+  grid-template-columns: 24px 24px 1fr 40px 1fr 42px 42px 38px 36px 70px 50px;
+  gap: 4px;
+  padding: 5px 6px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+.sp-rank-row:hover {
+  background: var(--surface-1);
+}
+
+.sp-rank-row-xi {
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.sp-rank-row-xi:hover {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.sp-rank-row-bench {
+  opacity: 0.7;
+}
+
+.sp-rank-row-pinned {
+  border-left: 3px solid var(--accent);
+}
+
+.sp-rank-num {
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+}
+
+.sp-rank-pos {
+  font-weight: 700;
+  text-align: center;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 9px;
+}
+
+.sp-rank-pos.g { background: var(--amber); color: #000; }
+.sp-rank-pos.d { background: var(--green); color: #000; }
+.sp-rank-pos.m { background: var(--accent); color: #fff; }
+.sp-rank-pos.f { background: var(--red); color: #fff; }
+
+.sp-rank-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-pin-badge {
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.sp-rank-team {
+  font-size: 9px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.sp-rank-fixtures {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.sp-rank-xp, .sp-rank-adjxp {
+  font-weight: 600;
+  text-align: right;
+  color: var(--accent);
+}
+
+.sp-rank-adjxp {
+  color: var(--green);
+  font-size: 10px;
+}
+
+.sp-rank-mins {
+  text-align: center;
+  font-size: 10px;
+}
+
+.sp-mins-warn {
+  color: var(--amber) !important;
+}
+
+.sp-rank-risk {
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.sp-risk-ok { color: var(--green); }
+.sp-risk-low { color: var(--amber); background: rgba(251, 191, 36, 0.1); }
+.sp-risk-med { color: #ff8c00; background: rgba(255, 140, 0, 0.1); }
+.sp-risk-high { color: var(--red); background: rgba(244, 63, 94, 0.15); }
+
+.sp-rank-verdict {
+  font-size: 8px;
+  font-weight: 700;
+  text-align: center;
+  padding: 2px 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.sp-verdict-lock { background: var(--green); color: #000; }
+.sp-verdict-start { background: var(--accent); color: #fff; }
+.sp-verdict-bench { background: var(--surface-2); color: var(--muted); }
+.sp-verdict-sell-watch { background: var(--amber); color: #000; }
+.sp-verdict-sell { background: var(--red); color: #fff; }
+
+.sp-rank-actions {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+}
+
+.sp-pin-btn {
+  font-size: 8px;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sp-pin-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sp-pin-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.sp-rank-bench-reason {
+  font-size: 9px;
+  color: var(--muted);
+  padding: 2px 6px 6px 54px;
+  font-style: italic;
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-rank-delta {
+  font-size: 11px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+.sp-rank-delta-neg {
+  background: rgba(244, 63, 94, 0.1);
+  color: var(--red);
+}
+
+.sp-rank-delta-pos {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--green);
+}
+
+.sp-formation {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-left: 8px;
+  padding: 2px 6px;
+  background: var(--surface-1);
+  border-radius: 3px;
+}
+
+.sp-rank-legend {
+  display: flex;
+  gap: var(--gap-sm);
+  padding: 6px;
+  font-size: 9px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.sp-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sp-rank-row-xi-dot {
+  width: 8px;
+  height: 8px;
+  background: rgba(16, 185, 129, 0.5);
+  border-radius: 2px;
+}
+
+.sp-rank-row-bench-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 2px;
+}
+
+/* ─── 6.4 CAPTAIN DECISION PANEL ─────────────────────────────────────────── */
+.sp-card-captain .sp-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sp-cap-mode-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.sp-cap-mode-btn {
+  font-size: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sp-cap-mode-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.sp-cap-mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.sp-cap-rec-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+
+.sp-cap-rec-label {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.sp-cap-rec-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.sp-cap-rec-conf {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.sp-cap-header {
+  display: grid;
+  grid-template-columns: 28px 1fr 36px 80px 40px 40px 50px;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.sp-cap-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 36px 80px 40px 40px 50px;
+  gap: 4px;
+  padding: 5px 6px;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+.sp-cap-row:nth-child(odd) {
+  background: var(--surface-1);
+}
+
+.sp-cap-best {
+  background: var(--accent) !important;
+  color: #fff;
+}
+
+.sp-cap-best .sp-cap-xp,
+.sp-cap-best .sp-cap-mins,
+.sp-cap-best .sp-cap-eo {
+  color: #fff !important;
+}
+
+.sp-cap-rank {
+  font-weight: 700;
+  text-align: center;
+}
+
+.sp-cap-fixture {
+  font-size: 9px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-cap-eo {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.sp-cap-conf {
+  position: relative;
+  height: 16px;
+  background: var(--surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.sp-conf-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green) 0%, var(--accent) 100%);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.sp-conf-val {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sp-cap-explanation {
+  font-size: 10px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 2px 6px 6px 34px;
+}
+
+.sp-cap-mode-hint {
+  font-size: 10px;
+  color: var(--muted);
+  padding: 6px 8px;
+  background: var(--surface-1);
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+}
+
+.sp-cap-note {
+  font-size: 9px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ─── SMALL BUTTON VARIANT ───────────────────────────────────────────────── */
+.sp-btn-small {
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+/* ─── FX STRIP EMPTY ─────────────────────────────────────────────────────── */
+.sp-fx-strip-empty {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* ─── RESPONSIVE ADJUSTMENTS FOR PHASE 6 ─────────────────────────────────── */
+@media (max-width: 1200px) {
+  .sp-rank-header,
+  .sp-rank-row {
+    grid-template-columns: 20px 20px 1fr 36px 80px 38px 38px 34px 32px 60px 46px;
+    font-size: 10px;
+  }
+
+  .sp-cap-header,
+  .sp-cap-row {
+    grid-template-columns: 24px 1fr 32px 70px 36px 36px 44px;
+  }
+}
+
+@media (max-width: 900px) {
+  .sp-snapshot-card {
+    padding: var(--gap-xs) var(--gap-sm);
+  }
+
+  .sp-snap-metrics {
+    gap: var(--gap-sm);
+  }
+
+  .sp-snap-metric {
+    min-width: 50px;
+    padding: var(--gap-xs);
+  }
+
+  .sp-snap-metric-val {
+    font-size: 1rem;
+  }
+
+  .sp-rank-header,
+  .sp-rank-row {
+    grid-template-columns: 18px 18px 1fr 60px 36px 36px 56px 44px;
+  }
+
+  .sp-rank-team,
+  .sp-rank-fixtures {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .sp-rank-header,
+  .sp-rank-row {
+    grid-template-columns: 16px 16px 1fr 32px 32px 50px 40px;
+  }
+
+  .sp-rank-adjxp,
+  .sp-rank-risk {
+    display: none;
+  }
+
+  .sp-cap-header,
+  .sp-cap-row {
+    grid-template-columns: 22px 1fr 30px 34px 40px;
+  }
+
+  .sp-cap-fixture,
+  .sp-cap-eo {
+    display: none;
+  }
+}
+
