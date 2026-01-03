@@ -1,5 +1,8 @@
 // Point directly at your deployed Cloudflare Worker (works in dev & prod)
-const API_BASE = "https://fpl-proxy.myles-fpl-proxy.workers.dev/api";
+// Allow overrides via window.__FPL_API_BASE__ to avoid mismatched origins.
+export const API_BASE =
+  (typeof window !== "undefined" && window.__FPL_API_BASE__) ||
+  "https://fpl-proxy.myles-fpl-proxy.workers.dev/api";
 
 // Tiny in-memory cache for static-ish endpoints (bootstrap, elementSummary, etc.)
 const cache = new Map();

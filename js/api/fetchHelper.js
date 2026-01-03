@@ -74,7 +74,7 @@ const CACHE_POLICY = {
   [CacheKey.ENTRY_PICKS]: { persist: true, memory: true },
   // Persist element summary to provide cached fallbacks for player profile
   [CacheKey.ELEMENT_SUMMARY]: { persist: true, memory: true },
-  [CacheKey.EVENT_LIVE]: { persist: true, memory: true },
+  [CacheKey.EVENT_LIVE]: { persist: false, memory: true },
 };
 
 /**

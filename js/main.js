@@ -447,6 +447,95 @@ function updateLastUpdatedDisplay() {
 // Update display every 10 seconds
 setInterval(updateLastUpdatedDisplay, 10000);
 
+/* ---------- API Status + Offline Indicator ---------- */
+const ApiStatus = {
+  LIVE: "live",
+  UPDATING: "updating",
+  OFFLINE: "offline",
+};
+
+let apiStatus = ApiStatus.LIVE;
+
+function setApiStatus(status, detail = "") {
+  apiStatus = status;
+  const badge = document.getElementById("apiStatusBadge");
+  if (!badge) return;
+
+  const label =
+    status === ApiStatus.LIVE ? "Live" :
+    status === ApiStatus.UPDATING ? "Updating" :
+    "Offline (cached)";
+
+  badge.dataset.status = status;
+  badge.textContent = label;
+  badge.title = detail || label;
+}
+
+async function refreshApiStatus(reason = "") {
+  if (!navigator.onLine) {
+    setApiStatus(ApiStatus.OFFLINE, "Device offline");
+    return;
+  }
+
+  setApiStatus(ApiStatus.UPDATING, reason || "Checking API…");
+  try {
+    await api.up();
+    setApiStatus(ApiStatus.LIVE, "Connected to the FPL proxy");
+  } catch (err) {
+    log.warn("API health check failed", err);
+    setApiStatus(ApiStatus.OFFLINE, "API unreachable — showing cached data where possible");
+  }
+}
+
+function bindApiStatusEvents() {
+  window.addEventListener("online", () => refreshApiStatus("Back online"));
+  window.addEventListener("offline", () => setApiStatus(ApiStatus.OFFLINE, "Device offline"));
+}
+
+function handleServiceWorkerMessage(event) {
+  const data = event.data || {};
+  if (data.type !== "api-status" || !data.status) return;
+
+  if (data.status === "live") {
+    setApiStatus(ApiStatus.LIVE, data.detail || "Connected to the FPL proxy");
+  } else if (data.status === "updating") {
+    setApiStatus(ApiStatus.UPDATING, data.detail || "Updating offline cache…");
+  } else if (data.status === "offline") {
+    setApiStatus(ApiStatus.OFFLINE, data.detail || "Using cached responses");
+  }
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    refreshApiStatus();
+    return;
+  }
+
+  navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+
+  navigator.serviceWorker.register("./sw.js").then((registration) => {
+    setApiStatus(ApiStatus.UPDATING, "Preparing offline cache…");
+
+    if (registration.installing) {
+      setApiStatus(ApiStatus.UPDATING, "Downloading offline bundle…");
+    }
+
+    registration.addEventListener("updatefound", () => {
+      setApiStatus(ApiStatus.UPDATING, "Updating offline bundle…");
+    });
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      setApiStatus(ApiStatus.UPDATING, "Reloading to the latest offline bundle…");
+      refreshApiStatus();
+    });
+
+    refreshApiStatus();
+  }).catch((err) => {
+    log.warn("Service worker registration failed", err);
+    setApiStatus(ApiStatus.OFFLINE, "Offline caching unavailable");
+  });
+}
+
 /* ---------- Manual Refresh ---------- */
 function checkIfLiveGw() {
   const bs = state.bootstrap;
@@ -464,6 +553,7 @@ async function refreshData() {
   }
 
   log.info("Refreshing data...");
+  setApiStatus(ApiStatus.UPDATING, "Refreshing data…");
 
   try {
     // Clear cache and refetch
@@ -481,9 +571,11 @@ async function refreshData() {
     // Refresh current page
     navigate(location.hash);
 
+    setApiStatus(ApiStatus.LIVE, "Data refreshed");
     log.info("Data refresh complete");
   } catch (e) {
     log.error("Refresh failed:", e);
+    setApiStatus(ApiStatus.OFFLINE, "Refresh failed — using cached data");
   } finally {
     if (refreshBtn) {
       refreshBtn.disabled = false;
@@ -594,13 +686,20 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
                         player.status === 'i' ? 'Injured' :
                         player.status === 's' ? 'Suspended' : 'Unavailable';
 
-    // Load player summary (history + fixtures) with cache-based fallback
-    const summaryResult = await fplClient.elementSummary(player.id, { preferCache: true });
-    const summaryData = summaryResult.ok ? summaryResult.data : (summaryResult.data || null);
-    const summarySource = summaryResult.ok
-      ? (summaryResult.fromCache ? "Cached data" : "Live data")
-      : (summaryResult.data ? "Cached fallback" : null);
-    const summaryError = summaryResult.ok ? null : summaryResult.message || "Unavailable";
+    // Load player summary (history + fixtures) with cache-aware SW fallback
+    let summaryData = null;
+    let summarySource = null;
+    let summaryError = null;
+
+    try {
+      summaryData = await api.elementSummary(player.id);
+      summarySource = navigator.onLine ? "Live data" : "Offline cache";
+    } catch (err) {
+      log.warn("Player summary fetch failed", err);
+      summaryError = "Player summary unavailable. Please retry in a moment.";
+    }
+
+    if (!summaryData) summarySource = null;
 
     const recentHistory = summaryData?.history ? summaryData.history.slice(-5).reverse() : [];
     const upcomingFixtures = summaryData?.fixtures ? summaryData.fixtures.slice(0, 5) : [];
@@ -761,7 +860,15 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
     }
   } catch (e) {
     console.error("Player profile error:", e);
-    main.innerHTML = `<div class="card error-404"><h2>Error Loading Player</h2><p>${e.message}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
+    main.innerHTML = `
+      <div class="card error-404">
+        <h2>Error Loading Player</h2>
+        <p>We couldn't load this player right now. Check your connection and try again.</p>
+        <div class="error-actions">
+          <button class="btn-primary" onclick="location.hash='#/all-players'">Back to Players</button>
+          <button class="btn" onclick="history.back()">Go Back</button>
+        </div>
+      </div>`;
   }
 }
 
@@ -810,12 +917,17 @@ async function renderTeamProfile(main, teamId) {
     const clampFDR = (n) => Math.max(1, Math.min(5, Number(n) || 3));
 
     // Upcoming + recent fixtures
-    const fixturesResult = await fplClient.fixtures(null, { preferCache: true });
-    const allFixtures = fixturesResult.ok ? fixturesResult.data : (fixturesResult.data || []);
-    const fixturesSource = fixturesResult.ok
-      ? (fixturesResult.fromCache ? "Cached data" : "Live data")
-      : (fixturesResult.data ? "Cached fallback" : null);
-    const fixturesError = fixturesResult.ok ? null : fixturesResult.message || "Unavailable";
+    let allFixtures = [];
+    let fixturesSource = null;
+    let fixturesError = null;
+
+    try {
+      allFixtures = await api.fixtures();
+      fixturesSource = navigator.onLine ? "Live data" : "Offline cache";
+    } catch (err) {
+      log.warn("Fixtures fetch failed for team profile", err);
+      fixturesError = "Fixtures unavailable right now.";
+    }
 
     const teamFixtures = allFixtures.filter(f => f.team_h === teamId || f.team_a === teamId);
     const upcoming = teamFixtures
@@ -1106,7 +1218,15 @@ async function renderTeamProfile(main, teamId) {
     }
   } catch (e) {
     console.error("Team profile error:", e);
-    main.innerHTML = `<div class="card error-404"><h2>Error Loading Team</h2><p>${e.message}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
+    main.innerHTML = `
+      <div class="card error-404">
+        <h2>Error Loading Team</h2>
+        <p>We couldn't load this team right now. Please check your connection and retry.</p>
+        <div class="error-actions">
+          <button class="btn-primary" onclick="location.hash='#/fixtures'">See Fixtures</button>
+          <button class="btn" onclick="history.back()">Go Back</button>
+        </div>
+      </div>`;
   }
 }
 
@@ -1535,15 +1655,20 @@ async function init() {
   initTheme();
   bindThemeToggle();
   renderPinnedSidebar();
+  setApiStatus(ApiStatus.UPDATING, "Starting up…");
+  bindApiStatusEvents();
+  registerServiceWorker();
 
   // Prefetch bootstrap (non-fatal if it fails)
   try {
     log.info("Fetching bootstrap data...");
     state.bootstrap = await api.bootstrap();
     updateLastFetchTime();
+    setApiStatus(ApiStatus.LIVE, "Connected to FPL proxy");
     log.info("Bootstrap data loaded successfully");
   } catch (e) {
     log.warn("Bootstrap fetch failed - some features may be limited:", e);
+    setApiStatus(ApiStatus.OFFLINE, "Bootstrap fetch failed");
   }
 
   // Sidebar stats + header status

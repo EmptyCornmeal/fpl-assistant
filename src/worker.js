@@ -1,37 +1,53 @@
+const ALLOWED_ORIGINS = [
+  "https://emptycornmeal.github.io",
+  "https://emptycornmeal.github.io/fpl-assistant",
+  "http://localhost:4173",
+  "http://localhost:5173",
+  "http://127.0.0.1:4173",
+];
+
+function resolveOrigin(request) {
+  const origin = request.headers.get("Origin");
+  if (origin && ALLOWED_ORIGINS.includes(origin)) return origin;
+  return ALLOWED_ORIGINS[0];
+}
+
+function buildCorsHeaders(request, extra = {}) {
+  return {
+    "Access-Control-Allow-Origin": resolveOrigin(request),
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers") || "Content-Type",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
+    ...extra,
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     // ----- CORS preflight -----
     if (request.method === "OPTIONS") {
-      const allowHeaders = request.headers.get("Access-Control-Request-Headers") || "Content-Type";
       return new Response(null, {
         status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-          "Access-Control-Allow-Headers": allowHeaders,
-          "Access-Control-Max-Age": "86400",
-          "Vary": "Origin",
-        }
+        headers: buildCorsHeaders(request),
       });
     }
 
     // Health ping
     if (url.pathname === "/api/up") {
-      return json(200, { ok: true, ts: Date.now() });
+      return json(request, 200, { ok: true, ts: Date.now() });
     }
 
     // Non-API paths → simple OK
     if (!url.pathname.startsWith("/api/")) {
       return new Response("OK", {
         status: 200,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
+        headers: buildCorsHeaders(request, {
           "Cache-Control": "no-store",
           "CDN-Cache-Control": "no-store",
-          "Vary": "Origin"
-        }
+        })
       });
     }
 
@@ -39,7 +55,7 @@ export default {
     const sub = url.pathname.slice(5); // strip "/api/"
     const mapped = mapPath(sub);
     if (!mapped.ok) {
-      return json(404, { error: "Unknown API path", sub, hint: mapped.hint });
+      return json(request, 404, { error: "Unknown API path", sub, hint: mapped.hint });
     }
 
     // Build upstream URL and preserve querystring only if rule didn't add one
@@ -60,17 +76,16 @@ export default {
       });
 
       const h = new Headers(r.headers);
-      h.set("Access-Control-Allow-Origin", "*");
-      h.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-      h.set("Access-Control-Allow-Headers", "Content-Type");
-      h.set("Cache-Control", "no-store");
-      h.set("CDN-Cache-Control", "no-store");
-      h.set("Vary", "Origin");
+      const corsHeaders = buildCorsHeaders(request, {
+        "Cache-Control": "no-store",
+        "CDN-Cache-Control": "no-store",
+      });
+      Object.entries(corsHeaders).forEach(([k, v]) => h.set(k, v));
       if (!h.has("Content-Type")) h.set("Content-Type", "application/json; charset=utf-8");
 
       return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
     } catch (err) {
-      return json(502, {
+      return json(request, 502, {
         error: "Upstream fetch failed",
         details: String(err?.message || err),
         upstream: upstream.toString()
@@ -80,18 +95,14 @@ export default {
 };
 
 /* ---------------- helpers ---------------- */
-function json(status, obj) {
+function json(request, status, obj) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: {
+    headers: buildCorsHeaders(request, {
       "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
       "Cache-Control": "no-store",
       "CDN-Cache-Control": "no-store",
-      "Vary": "Origin"
-    }
+    })
   });
 }
 
