@@ -8,7 +8,7 @@ import { mapBootstrap, mapFixture } from "../api/fplMapping.js";
 import { fixtureEase, getMetricExplanations } from "../api/fplDerived.js";
 import { openModal } from "../components/modal.js";
 import { log } from "../logger.js";
-import { hasCachedData, loadFromCache, CacheKey, getCacheAge } from "../api/fetchHelper.js";
+import { hasCachedData, CacheKey, getCacheAge } from "../api/fetchHelper.js";
 
 /* ───────────────── Constants ───────────────── */
 const TEAM_BADGE_URL = (teamCode) =>
@@ -474,11 +474,12 @@ function buildTeamStatusTile(entryId) {
   return tile;
 }
 
-async function loadTeamStatus(tile, entryId) {
+async function loadTeamStatus(tile, entryId, options = {}) {
+  const { preferCache = false } = options;
   try {
     const [entryResult, historyResult] = await Promise.all([
-      fplClient.entry(entryId),
-      fplClient.entryHistory(entryId),
+      fplClient.entry(entryId, { preferCache }),
+      fplClient.entryHistory(entryId, { preferCache }),
     ]);
 
     // Check if we got valid data
@@ -523,7 +524,7 @@ async function loadTeamStatus(tile, entryId) {
     // Check if cached data is available
     const cachedEntry = hasCachedData(CacheKey.ENTRY, state.entryId);
     const cachedHistory = hasCachedData(CacheKey.ENTRY_HISTORY, state.entryId);
-    const hasCache = cachedEntry || cachedHistory;
+    const hasCache = cachedEntry && cachedHistory;
 
     const tileBody = tile.querySelector(".tile-body");
     tileBody.innerHTML = `
@@ -547,47 +548,7 @@ async function loadTeamStatus(tile, entryId) {
     // Wire up cache button
     tileBody.querySelector('[data-action="cache"]')?.addEventListener("click", async (e) => {
       e.stopPropagation();
-      try {
-        const cachedEntryData = loadFromCache(CacheKey.ENTRY, state.entryId);
-        const cachedHistoryData = loadFromCache(CacheKey.ENTRY_HISTORY, state.entryId);
-
-        if (cachedEntryData && cachedHistoryData) {
-          const entry = cachedEntryData.data;
-          const history = cachedHistoryData.data;
-          const lastGw = history.current[history.current.length - 1];
-          const rank = entry.summary_overall_rank;
-          const rankStr = rank > 999999 ? (rank / 1000000).toFixed(1) + 'M' :
-                          rank > 999 ? (rank / 1000).toFixed(0) + 'K' : rank;
-
-          tileBody.innerHTML = `
-            <div class="team-status-grid team-status-cached">
-              <div class="status-item">
-                <span class="status-value">${entry.summary_overall_points}</span>
-                <span class="status-label">Total Pts</span>
-              </div>
-              <div class="status-item">
-                <span class="status-value">${rankStr}</span>
-                <span class="status-label">Rank</span>
-              </div>
-              <div class="status-item">
-                <span class="status-value">${lastGw?.points || '—'}</span>
-                <span class="status-label">Last GW</span>
-              </div>
-              <div class="status-item">
-                <span class="status-value">£${((lastGw?.value || 0) / 10).toFixed(1)}m</span>
-                <span class="status-label">Value</span>
-              </div>
-            </div>
-            <div class="tile-cached-notice">📡 Using cached data</div>
-          `;
-
-          const footer = utils.el("div", { class: "tile-footer" });
-          footer.innerHTML = `<span class="tile-link">View team →</span>`;
-          tile.append(footer);
-        }
-      } catch (err) {
-        log.error("Failed to load cached team data", err);
-      }
+      loadTeamStatus(tile, entryId, { preferCache: true });
     });
   }
 }
@@ -633,10 +594,11 @@ function buildLeagueTile(leagueIds) {
   return tile;
 }
 
-async function loadLeagueStatus(tile, leagueIds) {
+async function loadLeagueStatus(tile, leagueIds, options = {}) {
+  const { preferCache = false } = options;
   try {
     const leagueResults = await Promise.all(
-      leagueIds.slice(0, 3).map(id => fplClient.leagueClassic(id, 1).catch(() => ({ ok: false, data: null })))
+      leagueIds.slice(0, 3).map(id => fplClient.leagueClassic(id, 1, { preferCache }).catch(() => ({ ok: false, data: null })))
     );
 
     const validLeagues = leagueResults.filter(r => r.ok && r.data);
@@ -666,7 +628,7 @@ async function loadLeagueStatus(tile, leagueIds) {
 
       tileBody.querySelector('[data-action="cache"]')?.addEventListener("click", (e) => {
         e.stopPropagation();
-        loadLeagueStatusFromCache(tile, leagueIds);
+        loadLeagueStatus(tile, leagueIds, { preferCache: true });
       });
       return;
     }
@@ -711,42 +673,6 @@ async function loadLeagueStatus(tile, leagueIds) {
       loadLeagueStatus(tile, leagueIds);
     });
   }
-}
-
-async function loadLeagueStatusFromCache(tile, leagueIds) {
-  const cachedLeagues = [];
-  for (const id of leagueIds.slice(0, 3)) {
-    const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, id, 1);
-    if (cached) {
-      cachedLeagues.push(cached.data);
-    }
-  }
-
-  if (cachedLeagues.length === 0) {
-    tile.querySelector(".tile-body").innerHTML = `
-      <p class="tile-error">No cached data available</p>
-    `;
-    return;
-  }
-
-  tile.querySelector(".tile-body").innerHTML = `
-    <div class="leagues-preview leagues-preview-cached">
-      ${cachedLeagues.map(league => {
-        const memberCount = league.league?.league_count || league.standings?.results?.length || 0;
-        return `
-          <div class="league-row">
-            <span class="league-name">${league.league?.name || 'League'}</span>
-            <span class="league-members">${memberCount} members</span>
-          </div>
-        `;
-      }).join('')}
-    </div>
-    <div class="tile-cached-notice">📡 Using cached data</div>
-  `;
-
-  const footer = utils.el("div", { class: "tile-footer" });
-  footer.innerHTML = `<span class="tile-link">View standings →</span>`;
-  tile.append(footer);
 }
 
 // Metrics Help Tile

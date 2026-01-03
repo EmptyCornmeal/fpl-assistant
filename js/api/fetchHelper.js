@@ -48,6 +48,7 @@ export const CacheKey = {
   ENTRY_PICKS: "entryPicks",
   LEAGUE_CLASSIC: "leagueClassic",
   ELEMENT_SUMMARY: "elementSummary",
+  EVENT_LIVE: "eventLive",
 };
 
 /**
@@ -68,9 +69,11 @@ const CACHE_POLICY = {
   [CacheKey.LEAGUE_CLASSIC]: { persist: true, memory: true },
 
   // These are dangerous if you store them per-param in localStorage:
-  [CacheKey.FIXTURES]: { persist: false, memory: true },
-  [CacheKey.ENTRY_PICKS]: { persist: false, memory: true },
+  // Persist fixtures + entry picks to enable offline fallbacks (cardinality is bounded: GW + entry)
+  [CacheKey.FIXTURES]: { persist: true, memory: true },
+  [CacheKey.ENTRY_PICKS]: { persist: true, memory: true },
   [CacheKey.ELEMENT_SUMMARY]: { persist: false, memory: true },
+  [CacheKey.EVENT_LIVE]: { persist: true, memory: true },
 };
 
 /**

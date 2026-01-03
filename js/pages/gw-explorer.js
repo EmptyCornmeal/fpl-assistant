@@ -1,5 +1,5 @@
 // js/pages/gw-explorer.js
-import { fplClient, legacyApi } from "../api/fplClient.js";
+import { fplClient } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
@@ -32,7 +32,8 @@ function ensureGwExplorerStyles(){
   document.head.appendChild(style);
 }
 
-export async function renderGwExplorer(main){
+export async function renderGwExplorer(main, options = {}){
+  const { preferCache = false } = options;
   ensureGwExplorerStyles();
 
   const wrap = utils.el("div");
@@ -40,10 +41,30 @@ export async function renderGwExplorer(main){
   ui.mount(main, wrap);
 
   try{
-    const bs = state.bootstrap || await legacyApi.bootstrap();
+    const bootstrapResult = state.bootstrap && !preferCache
+      ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
+      : await fplClient.bootstrap({ preferCache });
+
+    if (!bootstrapResult.ok) {
+      const cacheAge = fplClient.getBootstrapCacheAge();
+      const hasCache = fplClient.hasBootstrapCache();
+      ui.mount(main, ui.degradedCard({
+        title: "Failed to load GW Explorer",
+        message: bootstrapResult.message,
+        errorType: bootstrapResult.errorType,
+        cacheAge: hasCache ? cacheAge : null,
+        onRetry: () => renderGwExplorer(main),
+        onUseCached: hasCache ? () => renderGwExplorer(main, { preferCache: true }) : null,
+      }));
+      return;
+    }
+
+    const bs = bootstrapResult.data;
     state.bootstrap = bs;
 
     const { events, elements: players, teams, element_types: positions } = bs;
+    let usingCache = bootstrapResult.fromCache || false;
+    let maxCacheAge = bootstrapResult.cacheAge || 0;
 
     const teamById  = new Map(teams.map(t => [t.id, t]));
     const teamShort = new Map(teams.map(t => [t.id, t.short_name]));
@@ -183,25 +204,54 @@ export async function renderGwExplorer(main){
       return !!(evt && evt.is_current && !evt.data_checked);
     };
 
-    async function loadGw(gwId){
+    async function loadGw(gwId, useCached = preferCache){
       tableCard.innerHTML = "";
       tableCard.append(ui.spinner("Fetching gameweek data…"));
 
       liveChip.style.display = isLiveGw(gwId) ? "" : "none";
 
-      const live = await legacyApi.eventLive(+gwId);
+      const liveResult = await fplClient.eventLive(+gwId, { preferCache: useCached });
+      if (!liveResult.ok || !liveResult.data?.elements) {
+        const hasCache = fplClient.hasEventLiveCache(+gwId);
+        const cacheAge = hasCache ? fplClient.getEventLiveCacheAge(+gwId) : null;
+        const offlineCard = ui.degradedCard({
+          title: "Gameweek data unavailable",
+          message: liveResult.message || "We couldn't load the gameweek summary. The FPL API may be offline.",
+          errorType: liveResult.errorType,
+          cacheAge,
+          onRetry: () => loadGw(gwId, false),
+          onUseCached: hasCache ? () => loadGw(gwId, true) : null,
+        });
+        topGridCard.innerHTML = "";
+        tableCard.innerHTML = "";
+        tableCard.append(offlineCard);
+        return;
+      }
+
+      const live = liveResult.data;
+      usingCache = usingCache || liveResult.fromCache;
+      maxCacheAge = Math.max(maxCacheAge, liveResult.cacheAge || 0);
 
       // Mark your squad for that GW
       mySet = new Set(); myCaptainId = null; myViceId = null;
       if (state.entryId){
         try{
-          const picks = await legacyApi.entryPicks(state.entryId, +gwId);
+          const picksResult = await fplClient.entryPicks(state.entryId, +gwId, { preferCache: useCached });
+          const picks = picksResult.ok ? picksResult.data : { picks: [] };
           picks.picks.forEach(p=>{
             mySet.add(p.element);
             if (p.is_captain)     myCaptainId = p.element;
             if (p.is_vice_captain) myViceId   = p.element;
           });
         }catch{}
+      }
+
+      if (usingCache && !main.querySelector(".cached-banner")) {
+        const cacheAge = maxCacheAge || liveResult.cacheAge || 0;
+        main.prepend(ui.cachedBanner({
+          cacheAge,
+          onRefresh: () => renderGwExplorer(main),
+        }));
       }
 
       baseRows = live.elements.map(e=>{
