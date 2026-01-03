@@ -8,6 +8,7 @@ const _state = {
   entryId: null,
   leagueIds: [],
   watchlist: [],
+  pinnedTeams: [],
   bootstrap: null,
   // Per-page fetch timestamps
   pageLastUpdated: {},
@@ -23,6 +24,9 @@ try {
 
   const savedWatchlist = getJSON(STORAGE_KEYS.WATCHLIST);
   if (savedWatchlist) _state.watchlist = savedWatchlist;
+
+  const savedPinnedTeams = getJSON(STORAGE_KEYS.PINNED_TEAMS);
+  if (savedPinnedTeams) _state.pinnedTeams = savedPinnedTeams;
 } catch {}
 
 function persist(prop, value) {
@@ -33,6 +37,8 @@ function persist(prop, value) {
       setJSON(STORAGE_KEYS.LEAGUE_IDS, value || []);
     } else if (prop === "watchlist") {
       setJSON(STORAGE_KEYS.WATCHLIST, value || []);
+    } else if (prop === "pinnedTeams") {
+      setJSON(STORAGE_KEYS.PINNED_TEAMS, value || []);
     }
   } catch {}
 }
@@ -55,6 +61,11 @@ export const state = new Proxy({}, {
     if (prop === "watchlist") {
       _state.watchlist = Array.isArray(value) ? value : [];
       persist("watchlist", _state.watchlist);
+      return true;
+    }
+    if (prop === "pinnedTeams") {
+      _state.pinnedTeams = Array.isArray(value) ? value : [];
+      persist("pinnedTeams", _state.pinnedTeams);
       return true;
     }
     if (prop === "bootstrap") {
@@ -84,11 +95,37 @@ export function toggleWatchlist(playerId) {
     _state.watchlist = _state.watchlist.filter(id => id !== playerId);
   }
   persist("watchlist", _state.watchlist);
+  try {
+    window.dispatchEvent(new CustomEvent("watchlist-changed", { detail: { playerId, active: isInWatchlist(playerId) } }));
+  } catch {}
   return isInWatchlist(playerId);
 }
 
 export function getWatchlist() {
   return [..._state.watchlist];
+}
+
+// Pinned teams helper functions
+export function isTeamPinned(teamId) {
+  return _state.pinnedTeams.includes(teamId);
+}
+
+export function togglePinnedTeam(teamId) {
+  const idx = _state.pinnedTeams.indexOf(teamId);
+  if (idx === -1) {
+    _state.pinnedTeams = [..._state.pinnedTeams, teamId];
+  } else {
+    _state.pinnedTeams = _state.pinnedTeams.filter(id => id !== teamId);
+  }
+  persist("pinnedTeams", _state.pinnedTeams);
+  try {
+    window.dispatchEvent(new CustomEvent("pinned-teams-changed", { detail: { teamId, active: isTeamPinned(teamId) } }));
+  } catch {}
+  return isTeamPinned(teamId);
+}
+
+export function getPinnedTeams() {
+  return [..._state.pinnedTeams];
 }
 
 /**

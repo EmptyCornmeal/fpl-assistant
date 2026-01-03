@@ -9,7 +9,7 @@ import { renderHelp } from "./pages/help.js";
 import { renderStatPicker } from "./pages/stat-picker.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
-import { state, setPageUpdated } from "./state.js";
+import { state, setPageUpdated, isTeamPinned, togglePinnedTeam, getPinnedTeams, getWatchlist } from "./state.js";
 import { utils } from "./utils.js";
 import { log } from "./logger.js";
 
@@ -92,6 +92,31 @@ function bindCopyEntryId() {
     } catch (err) {
       console.error("Failed to copy:", err);
     }
+  });
+}
+
+function bindCopyExampleUrls() {
+  const buttons = document.querySelectorAll("[data-copy-url]");
+  if (!buttons.length) return;
+
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const url = btn.dataset.copyUrl;
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+        btn.classList.add("copied");
+        const orig = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          btn.textContent = orig;
+        }, 1800);
+      } catch (err) {
+        console.error("Failed to copy example URL", err);
+      }
+    });
   });
 }
 
@@ -272,6 +297,11 @@ const routes = {
   "help": renderHelp,
 };
 
+// Track navigation history to improve back navigation from player profiles
+let lastNonPlayerHash = "#/";
+let lastPlayersHash = "#/all-players";
+let lastHashValue = "#/";
+
 /* ---------- Refresh state ---------- */
 let lastFetchTime = null;
 let isLiveGw = false;
@@ -439,6 +469,7 @@ async function refreshData() {
     // Clear cache and refetch
     api.clearCache();
     state.bootstrap = await api.bootstrap();
+    renderPinnedSidebar();
     updateLastFetchTime();
 
     // Update live status
@@ -535,7 +566,7 @@ function highlightActiveNav(tab) {
 }
 
 /* ---------- Player Profile ---------- */
-async function renderPlayerProfile(main, playerId) {
+async function renderPlayerProfile(main, playerId, backNav = {}) {
   // Show loading
   main.innerHTML = `<div class="card"><div class="loading-spinner"></div><p style="text-align:center;color:var(--muted)">Loading player...</p></div>`;
 
@@ -563,6 +594,40 @@ async function renderPlayerProfile(main, playerId) {
                         player.status === 'i' ? 'Injured' :
                         player.status === 's' ? 'Suspended' : 'Unavailable';
 
+    // Load player summary (history + fixtures) with cache-based fallback
+    const summaryResult = await fplClient.elementSummary(player.id, { preferCache: true });
+    const summaryData = summaryResult.ok ? summaryResult.data : (summaryResult.data || null);
+    const summarySource = summaryResult.ok
+      ? (summaryResult.fromCache ? "Cached data" : "Live data")
+      : (summaryResult.data ? "Cached fallback" : null);
+    const summaryError = summaryResult.ok ? null : summaryResult.message || "Unavailable";
+
+    const recentHistory = summaryData?.history ? summaryData.history.slice(-5).reverse() : [];
+    const upcomingFixtures = summaryData?.fixtures ? summaryData.fixtures.slice(0, 5) : [];
+    const priceSnapshots = summaryData?.history ? summaryData.history.slice(-5) : [];
+
+    const backTarget = backNav.backTarget || "#/all-players";
+    const secondaryBackTarget = backNav.secondaryBackTarget;
+
+    const clampFDR = (n) => Math.max(1, Math.min(5, Number(n) || 3));
+    const toLocal = (dt, tz = "Europe/London") => {
+      if (!dt) return "—";
+      try {
+        const d = new Date(dt);
+        return d.toLocaleString("en-GB", {
+          timeZone: tz,
+          weekday: "short",
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      } catch {
+        return dt;
+      }
+    };
+
     // Calculate ICT index and value metrics
     const ictIndex = parseFloat(player.ict_index || 0).toFixed(1);
     const valueRatio = player.total_points > 0 ? (player.total_points / (player.now_cost / 10)).toFixed(1) : "0.0";
@@ -574,7 +639,7 @@ async function renderPlayerProfile(main, playerId) {
     main.innerHTML = `
       <div class="player-profile">
         <div class="profile-header">
-          <button class="back-btn" onclick="history.back()">← Back</button>
+          <button class="back-btn" data-back-target="${backTarget}">← Back</button>
           <div class="profile-info">
             ${photoUrl ? `<img class="profile-photo" src="${photoUrl}" alt="${player.web_name}" onerror="this.style.display='none'">` : '<div class="profile-photo-placeholder">👤</div>'}
             <div class="profile-details">
@@ -681,7 +746,19 @@ async function renderPlayerProfile(main, playerId) {
           </div>
         </div>
       </div>
+      ${secondaryBackTarget ? `<div class="back-fallback">Not coming from Players? <a href="${secondaryBackTarget}">Return to last page</a> or <a href="#/all-players">browse all players</a>.</div>` : ''}
     `;
+
+    const backBtn = main.querySelector(".back-btn");
+    if (backBtn) {
+      backBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        location.hash = backTarget || "#/all-players";
+      });
+      if (secondaryBackTarget) {
+        backBtn.setAttribute("aria-label", "Back to previous list");
+      }
+    }
   } catch (e) {
     console.error("Player profile error:", e);
     main.innerHTML = `<div class="card error-404"><h2>Error Loading Player</h2><p>${e.message}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
@@ -730,10 +807,46 @@ async function renderTeamProfile(main, teamId) {
     // Strength tooltip explanation
     const strengthTooltip = "FPL's 1-1250 scale measuring team quality. Higher = stronger. Used to calculate Fixture Difficulty Rating (FDR).";
 
+    const clampFDR = (n) => Math.max(1, Math.min(5, Number(n) || 3));
+
+    // Upcoming + recent fixtures
+    const fixturesResult = await fplClient.fixtures(null, { preferCache: true });
+    const allFixtures = fixturesResult.ok ? fixturesResult.data : (fixturesResult.data || []);
+    const fixturesSource = fixturesResult.ok
+      ? (fixturesResult.fromCache ? "Cached data" : "Live data")
+      : (fixturesResult.data ? "Cached fallback" : null);
+    const fixturesError = fixturesResult.ok ? null : fixturesResult.message || "Unavailable";
+
+    const teamFixtures = allFixtures.filter(f => f.team_h === teamId || f.team_a === teamId);
+    const upcoming = teamFixtures
+      .filter(f => !f.finished && !f.finished_provisional)
+      .sort((a, b) => new Date(a.kickoff_time || 0) - new Date(b.kickoff_time || 0))
+      .slice(0, 5);
+    const recent = teamFixtures
+      .filter(f => f.finished || f.finished_provisional)
+      .sort((a, b) => new Date(b.kickoff_time || 0) - new Date(a.kickoff_time || 0))
+      .slice(0, 5);
+
+    const formatResult = (fx) => {
+      if (!Number.isFinite(fx.team_h_score) || !Number.isFinite(fx.team_a_score)) return "FT";
+      const isHome = fx.team_h === teamId;
+      const gf = isHome ? fx.team_h_score : fx.team_a_score;
+      const ga = isHome ? fx.team_a_score : fx.team_h_score;
+      const outcome = gf > ga ? "W" : gf === ga ? "D" : "L";
+      return `${outcome} ${gf}-${ga}`;
+    };
+
+    const teamPinned = isTeamPinned(teamId);
+
     main.innerHTML = `
       <div class="team-profile">
         <div class="profile-header">
-          <button class="back-btn" onclick="history.back()">← Back</button>
+          <div class="profile-header-actions">
+            <button class="back-btn" onclick="history.back()">← Back</button>
+            <button class="pin-team-btn ${teamPinned ? "active" : ""}" data-team-id="${teamId}">
+              ${teamPinned ? "Unpin Team" : "Pin Team"}
+            </button>
+          </div>
           <div class="profile-info">
             <img class="team-badge-large" src="${badgeUrl}" alt="${team.name}">
             <div class="profile-details">
@@ -765,21 +878,87 @@ async function renderTeamProfile(main, teamId) {
           </div>
         </div>
 
-        <div class="profile-columns">
-          <div class="profile-column">
-            <div class="profile-section">
+        <div class="profile-insights-grid">
+          <div class="profile-section">
+            <div class="section-heading">
               <h3 data-tooltip="${strengthTooltip}">Strength Breakdown</h3>
-              <div class="stats-table stats-table--compact">
-                <div class="stat-row"><span>Overall Home</span><span>${strengthHome}</span></div>
-                <div class="stat-row"><span>Overall Away</span><span>${strengthAway}</span></div>
-                <div class="stat-row"><span>Attack Home</span><span>${strengthAttHome}</span></div>
-                <div class="stat-row"><span>Attack Away</span><span>${strengthAttAway}</span></div>
-                <div class="stat-row"><span>Defence Home</span><span>${strengthDefHome}</span></div>
-                <div class="stat-row"><span>Defence Away</span><span>${strengthDefAway}</span></div>
-              </div>
+              <span class="data-chip" title="${strengthTooltip}">Scale 1-1250</span>
             </div>
+            <div class="stats-table stats-table--compact">
+              <div class="stat-row" data-tooltip="${strengthTooltip}"><span>Overall Home</span><span>${strengthHome}</span></div>
+              <div class="stat-row" data-tooltip="${strengthTooltip}"><span>Overall Away</span><span>${strengthAway}</span></div>
+              <div class="stat-row" data-tooltip="${strengthTooltip}"><span>Attack Home</span><span>${strengthAttHome}</span></div>
+              <div class="stat-row" data-tooltip="${strengthTooltip}"><span>Attack Away</span><span>${strengthAttAway}</span></div>
+              <div class="stat-row" data-tooltip="${strengthTooltip}"><span>Defence Home</span><span>${strengthDefHome}</span></div>
+              <div class="stat-row" data-tooltip="${strengthTooltip}"><span>Defence Away</span><span>${strengthDefAway}</span></div>
+            </div>
+          </div>
 
-            ${topScorer ? `
+          <div class="profile-section">
+            <div class="section-heading">
+              <h3>Upcoming Fixtures</h3>
+              ${fixturesSource ? `<span class="data-chip">${fixturesSource}</span>` : ""}
+            </div>
+            ${upcoming.length ? `
+              <ul class="inline-fixture-list">
+                ${upcoming.map(f => {
+                  const isHome = f.team_h === teamId;
+                  const oppId = isHome ? f.team_a : f.team_h;
+                  const opp = teamById.get(oppId);
+                  const diff = clampFDR(isHome ? f.team_h_difficulty : f.team_a_difficulty);
+                  const date = f.kickoff_time ? new Date(f.kickoff_time).toLocaleDateString("en-GB", { month: "short", day: "numeric" }) : "TBC";
+                  return `
+                    <li class="inline-fixture-row">
+                      <span class="fixture-opp" title="${opp?.name || "Opponent"}">${isHome ? "H" : "A"} ${opp?.name || oppId}</span>
+                      <span class="fixture-meta">GW ${f.event ?? "?"} • ${date}</span>
+                      <span class="fdr fdr-${diff}" aria-label="Fixture difficulty ${diff}">FDR ${diff}</span>
+                    </li>
+                  `;
+                }).join("")}
+              </ul>
+            ` : `
+              <div class="empty-inline">
+                <span class="empty-icon">📆</span>
+                <div>
+                  <div class="empty-title">No upcoming fixtures</div>
+                  <div class="empty-sub">${fixturesError || "Fixtures could not be fetched."}</div>
+                </div>
+                <a href="#/fixtures" class="empty-link">Open fixtures</a>
+              </div>
+            `}
+          </div>
+
+          <div class="profile-section">
+            <div class="section-heading">
+              <h3>Recent Form</h3>
+              ${fixturesSource ? `<span class="data-chip">${fixturesSource}</span>` : ""}
+            </div>
+            ${recent.length ? `
+              <div class="stat-rows">
+                ${recent.map(f => {
+                  const isHome = f.team_h === teamId;
+                  const oppId = isHome ? f.team_a : f.team_h;
+                  const opp = teamById.get(oppId);
+                  return `
+                    <div class="stat-row">
+                      <span>${isHome ? "H" : "A"} ${opp?.short_name || oppId}</span>
+                      <span>${formatResult(f)}</span>
+                    </div>
+                  `;
+                }).join("")}
+              </div>
+            ` : `
+              <div class="empty-inline">
+                <span class="empty-icon">ℹ️</span>
+                <div>
+                  <div class="empty-title">Form unavailable</div>
+                  <div class="empty-sub">${fixturesError || "We couldn't load recent results."}</div>
+                </div>
+              </div>
+            `}
+          </div>
+
+          ${topScorer ? `
             <div class="profile-section">
               <h3>Top FPL Performer</h3>
               <a href="#/player/${topScorer.id}" class="top-performer-card">
@@ -793,44 +972,156 @@ async function renderTeamProfile(main, teamId) {
                 </div>
               </a>
             </div>
-            ` : ''}
+          ` : ''}
+
+          <div class="profile-section squad-full">
+            <div class="section-heading">
+              <h3>Squad (${players.length} players)</h3>
+              <span class="data-chip">Sorted by FPL pts</span>
+            </div>
+            ${positions.map(pos => {
+              const posPlayers = byPosition[pos.id] || [];
+              if (posPlayers.length === 0) return '';
+              return `
+                <div class="squad-position">
+                  <h4>${pos.plural_name || pos.singular_name}</h4>
+                  <div class="squad-grid">
+                    ${posPlayers.map(p => `
+                      <a href="#/player/${p.id}" class="squad-player">
+                        <span class="squad-player-name">${p.web_name}</span>
+                        <span class="squad-player-pts">${p.total_points} pts</span>
+                        <span class="squad-player-price">£${(p.now_cost / 10).toFixed(1)}m</span>
+                      </a>
+                    `).join('')}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="profile-insights-grid">
+          <div class="profile-section">
+            <div class="section-heading">
+              <h3>Upcoming Fixtures</h3>
+              ${summarySource ? `<span class="data-chip">${summarySource}</span>` : ""}
+            </div>
+            ${upcomingFixtures.length ? `
+              <ul class="inline-fixture-list">
+                ${upcomingFixtures.map(f => {
+                  const opp = (bs.teams || []).find(t => t.id === f.opponent_team);
+                  const oppName = opp ? opp.name : `Team ${f.opponent_team}`;
+                  const venue = f.is_home ? "H" : "A";
+                  const diff = clampFDR(f.difficulty || f.team_h_difficulty || f.team_a_difficulty || 3);
+                  const date = f.kickoff_time ? toLocal(f.kickoff_time).split(",").slice(0,2).join(", ") : "TBC";
+                  return `
+                    <li class="inline-fixture-row">
+                      <span class="fixture-opp" title="${oppName}">${venue} ${oppName}</span>
+                      <span class="fixture-meta">GW ${f.event ?? "?"} • ${date}</span>
+                      <span class="fdr fdr-${diff}" aria-label="Fixture difficulty ${diff}">FDR ${diff}</span>
+                    </li>
+                  `;
+                }).join("")}
+              </ul>
+            ` : `
+              <div class="empty-inline">
+                <span class="empty-icon">📅</span>
+                <div>
+                  <div class="empty-title">No fixture data</div>
+                  <div class="empty-sub">${summaryError ? summaryError : "Fixtures not available right now."}</div>
+                </div>
+                <a href="#/fixtures" class="empty-link">Open fixtures</a>
+              </div>
+            `}
           </div>
 
-          <div class="profile-column">
-            <div class="profile-section">
-              <h3>Squad (${players.length} players)</h3>
-              ${positions.map(pos => {
-                const posPlayers = byPosition[pos.id] || [];
-                if (posPlayers.length === 0) return '';
-                return `
-                  <div class="squad-position">
-                    <h4>${pos.plural_name || pos.singular_name}</h4>
-                    <div class="squad-grid">
-                      ${posPlayers.map(p => `
-                        <a href="#/player/${p.id}" class="squad-player">
-                          <span class="squad-player-name">${p.web_name}</span>
-                          <span class="squad-player-pts">${p.total_points} pts</span>
-                          <span class="squad-player-price">£${(p.now_cost / 10).toFixed(1)}m</span>
-                        </a>
-                      `).join('')}
-                    </div>
-                  </div>
-                `;
-              }).join('')}
+          <div class="profile-section">
+            <div class="section-heading">
+              <h3>Recent Points</h3>
+              ${summarySource ? `<span class="data-chip">${summarySource}</span>` : ""}
             </div>
+            ${recentHistory.length ? `
+              <div class="stat-rows">
+                ${recentHistory.map(h => `
+                  <div class="stat-row">
+                    <span>GW ${h.round}${h.was_home ? " (H)" : " (A)"}${h.opponent_team ? ` vs ${(bs.teams || []).find(t => t.id === h.opponent_team)?.short_name || ""}` : ""}</span>
+                    <span>${h.total_points} pts</span>
+                  </div>
+                `).join("")}
+              </div>
+            ` : `
+              <div class="empty-inline">
+                <span class="empty-icon">ℹ️</span>
+                <div>
+                  <div class="empty-title">Points history unavailable</div>
+                  <div class="empty-sub">${summaryError ? summaryError : "We couldn't load the recent gameweeks for this player."}</div>
+                </div>
+              </div>
+            `}
+          </div>
+
+          <div class="profile-section">
+            <div class="section-heading">
+              <h3>Price Tracker</h3>
+              ${summarySource ? `<span class="data-chip">${summarySource}</span>` : ""}
+            </div>
+            ${priceSnapshots.length ? (() => {
+              const latest = priceSnapshots[priceSnapshots.length - 1];
+              const first = priceSnapshots[0];
+              const latestValue = (latest?.value ?? player.now_cost) / 10;
+              const firstValue = (first?.value ?? latestValue * 10) / 10;
+              const latestPrice = latestValue.toFixed(1);
+              const change = (latestValue - firstValue).toFixed(1);
+              const changeClass = Number(change) >= 0 ? "text-good" : "text-bad";
+              return `
+                <div class="price-track">
+                  <div class="stat-row"><span>Current Price</span><span>£${latestPrice}m</span></div>
+                  <div class="stat-row"><span>Change (last 5)</span><span class="${changeClass}">${Number(change) >= 0 ? "+" : ""}${change}m</span></div>
+                  <div class="price-track-note">Prices from last ${priceSnapshots.length} gameweeks</div>
+                </div>
+              `;
+            })() : `
+              <div class="empty-inline">
+                <span class="empty-icon">£</span>
+                <div>
+                  <div class="empty-title">Price changes unavailable</div>
+                  <div class="empty-sub">${summaryError ? summaryError : "We couldn't fetch recent price movements. Try again later."}</div>
+                </div>
+              </div>
+            `}
           </div>
         </div>
       </div>
     `;
+
+    const pinBtn = main.querySelector(".pin-team-btn");
+    if (pinBtn) {
+      pinBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const pinned = togglePinnedTeam(teamId);
+        pinBtn.classList.toggle("active", pinned);
+        pinBtn.textContent = pinned ? "Unpin Team" : "Pin Team";
+        renderPinnedSidebar();
+      });
+    }
   } catch (e) {
     console.error("Team profile error:", e);
     main.innerHTML = `<div class="card error-404"><h2>Error Loading Team</h2><p>${e.message}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
   }
 }
 
-function navigate(hash) {
+function navigate(hash, previousHash = null) {
   const main = document.querySelector("main");
-  const result = getTabFromHash(hash);
+  const currentHash = hash || location.hash || "#/";
+  const result = getTabFromHash(currentHash);
+  const prev = previousHash ?? lastHashValue ?? "#/";
+
+  if (result.tab !== "player") {
+    lastNonPlayerHash = currentHash;
+    if (result.tab === "all-players") {
+      lastPlayersHash = currentHash;
+    }
+  }
 
   if (!result.valid) {
     render404(main, result.tab);
@@ -846,7 +1137,10 @@ function navigate(hash) {
 
   // Handle dynamic routes
   if (result.tab === "player" && result.params.playerId) {
-    renderPlayerProfile(main, result.params.playerId);
+    const cameFromPlayers = prev.includes("#/all-players");
+    const backTarget = cameFromPlayers ? prev : (lastPlayersHash || "#/all-players");
+    const secondaryBackTarget = cameFromPlayers ? null : (lastNonPlayerHash || "#/");
+    renderPlayerProfile(main, result.params.playerId, { backTarget, secondaryBackTarget });
     highlightActiveNav("all-players");
     setPageUpdated("player");
   } else if (result.tab === "team" && result.params.teamId) {
@@ -861,6 +1155,9 @@ function navigate(hash) {
   }
 
   initTooltips(main);
+
+  // Update last hash for future back-navigation
+  lastHashValue = currentHash;
 }
 
 function qsAny(...sel) {
@@ -874,6 +1171,63 @@ function qsAny(...sel) {
 function setStatePatch(patch) {
   if (typeof state.set === "function") state.set(patch);
   else Object.assign(state, patch);
+}
+
+function renderPinnedSidebar() {
+  const teamList = document.getElementById("pinnedTeamsList");
+  const playerList = document.getElementById("pinnedPlayersList");
+
+  if (teamList) {
+    teamList.innerHTML = "";
+    const pinned = getPinnedTeams();
+    const hasData = pinned.length > 0 && state.bootstrap?.teams?.length;
+    if (!hasData) {
+      teamList.classList.add("is-empty");
+      teamList.innerHTML = `
+        <li class="pin-placeholder">
+          <div class="empty-title">No pinned teams yet</div>
+          <div class="empty-sub">Open a team page and click <strong>Pin Team</strong>.</div>
+        </li>
+      `;
+    } else {
+      teamList.classList.remove("is-empty");
+      const teamById = new Map(state.bootstrap.teams.map(t => [t.id, t]));
+      pinned.forEach(id => {
+        const t = teamById.get(id);
+        const name = t?.name || `Team ${id}`;
+        const li = document.createElement("li");
+        li.className = "pin-row";
+        li.innerHTML = `<a href="#/team/${id}" class="pin-link">${name}</a>`;
+        teamList.append(li);
+      });
+    }
+  }
+
+  if (playerList) {
+    playerList.innerHTML = "";
+    const watchlist = getWatchlist();
+    const hasData = watchlist.length > 0 && state.bootstrap?.elements?.length;
+    if (!hasData) {
+      playerList.classList.add("is-empty");
+      playerList.innerHTML = `
+        <li class="pin-placeholder">
+          <div class="empty-title">No pinned players yet</div>
+          <div class="empty-sub">Use the ☆ button on player cards to pin them here.</div>
+        </li>
+      `;
+    } else {
+      playerList.classList.remove("is-empty");
+      const playerById = new Map(state.bootstrap.elements.map(p => [p.id, p]));
+      watchlist.forEach(id => {
+        const p = playerById.get(id);
+        const name = p ? `${p.first_name} ${p.second_name}` : `Player ${id}`;
+        const li = document.createElement("li");
+        li.className = "pin-row";
+        li.innerHTML = `<a href="#/player/${id}" class="pin-link">${name}</a>`;
+        playerList.append(li);
+      });
+    }
+  }
 }
 
 /* ---------- Smart-paste helpers ---------- */
@@ -1115,7 +1469,7 @@ function bindGlobalSearch() {
         item.innerHTML = `
           <span class="result-icon">🏟️</span>
           <span class="result-name">${t.name}</span>
-          <span class="result-meta">${t.short_name}</span>
+          <span class="result-meta" title="${t.name}">${t.short_name}</span>
         `;
         item.addEventListener("click", () => {
           // Route directly to team fixtures using ID
@@ -1180,6 +1534,7 @@ async function init() {
   // Initialize theme first (prevents flash)
   initTheme();
   bindThemeToggle();
+  renderPinnedSidebar();
 
   // Prefetch bootstrap (non-fatal if it fails)
   try {
@@ -1207,6 +1562,9 @@ async function init() {
     
     // Start deadline countdown
     startDeadlineCountdown();
+
+    // Populate pinned sections now that we have labels
+    renderPinnedSidebar();
   }
 
   // Top bar version with commit hash
@@ -1219,6 +1577,7 @@ async function init() {
 
   bindSidebar();
   bindCopyEntryId();
+  bindCopyExampleUrls();
   bindKeyboardShortcuts();
   bindRefreshButton();
   bindGlobalSearch();
@@ -1227,10 +1586,17 @@ async function init() {
   initTooltips(document.body);
   initTooltipPositioning();
   initNavScrollAffordance();
+  window.addEventListener("watchlist-changed", renderPinnedSidebar);
+  window.addEventListener("pinned-teams-changed", renderPinnedSidebar);
 
   if (!location.hash) location.hash = "#/";
-  navigate(location.hash);
-  window.addEventListener("hashchange", () => navigate(location.hash));
+  let lastHashSeen = location.hash || "#/";
+  navigate(location.hash, lastHashSeen);
+  window.addEventListener("hashchange", () => {
+    const newHash = location.hash || "#/";
+    navigate(newHash, lastHashSeen);
+    lastHashSeen = newHash;
+  });
 }
 
 /* ---------- Navigation Scroll Affordance ---------- */
