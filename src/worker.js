@@ -8,15 +8,18 @@ const ALLOWED_ORIGINS = [
 
 function resolveOrigin(request) {
   const origin = request.headers.get("Origin");
-  if (origin && ALLOWED_ORIGINS.includes(origin)) return origin;
-  return ALLOWED_ORIGINS[0];
+  if (!origin) return "*";
+  if (ALLOWED_ORIGINS.includes(origin)) return origin;
+  if (origin.endsWith(".github.io")) return origin;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+  return origin;
 }
 
 function buildCorsHeaders(request, extra = {}) {
   return {
     "Access-Control-Allow-Origin": resolveOrigin(request),
     "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-    "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers") || "Content-Type",
+    "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers") || "Content-Type, Authorization, Accept",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
     ...extra,

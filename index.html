@@ -13,6 +13,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    // Optional runtime override (e.g., local dev proxy)
+    // window.__FPL_API_BASE__ = "https://your-worker.example.com/api";
+  </script>
+  <script defer src="./config.local.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -71,6 +76,8 @@
       </button>
     </div>
   </header>
+
+  <div id="appAlerts" class="app-alerts"></div>
 
   <aside class="sidebar">
     <h3>Settings</h3>

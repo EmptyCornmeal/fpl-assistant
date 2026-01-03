@@ -9737,6 +9737,17 @@
   gap: 8px;
 }
 
+.app-alerts {
+  padding: 0 16px;
+}
+
+.cached-banner-global {
+  position: sticky;
+  top: 64px;
+  z-index: 12;
+  margin-top: 8px;
+}
+
 .btn-banner-refresh {
   background: var(--accent);
   color: white;

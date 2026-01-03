@@ -16,7 +16,7 @@ import {
   CacheKey,
   getErrorMessage,
 } from "./fetchHelper.js";
-import { API_BASE } from "../api.js";
+import { getApiBase } from "../config.js";
 
 // In-memory cache configuration (for fast repeated access within same session)
 const memoryCache = new Map();
@@ -27,6 +27,12 @@ const CACHE_TTL = {
   entry: 1 * 60 * 1000,           // 1 minute
   league: 2 * 60 * 1000,          // 2 minutes
 };
+
+function buildUrl(path = "") {
+  const base = getApiBase();
+  const cleanPath = path.replace(/^\/+/, "");
+  return `${base}/${cleanPath}`;
+}
 
 /**
  * FPL API Error with structured information
@@ -91,7 +97,8 @@ export const fplClient = {
   async bootstrap(options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = "bootstrap";
-    const url = `${API_BASE}/bs`;
+    const url = buildUrl("bs");
+    const apiBase = getApiBase();
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -109,7 +116,11 @@ export const fplClient = {
     }
 
     // Fetch with localStorage cache fallback
-    const result = await fetchWithCache(url, CacheKey.BOOTSTRAP, { preferCache });
+    const result = await fetchWithCache(url, CacheKey.BOOTSTRAP, {
+      preferCache,
+      forceRefresh,
+      metadata: { apiBase, timestamp: Date.now() },
+    });
 
     if (result.ok) {
       // Store in memory cache for fast repeated access
@@ -126,7 +137,7 @@ export const fplClient = {
   async fixtures(gwId = null, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = gwId ? `fixtures-${gwId}` : "fixtures-all";
-    const url = gwId ? `${API_BASE}/fx/${gwId}` : `${API_BASE}/fx`;
+    const url = gwId ? buildUrl(`fx/${gwId}`) : buildUrl("fx");
     const localCacheKey = gwId ? CacheKey.FIXTURES : CacheKey.FIXTURES;
     const cacheParams = gwId ? [gwId] : [];
 
@@ -146,7 +157,7 @@ export const fplClient = {
     }
 
     // Fetch with localStorage cache fallback
-    const result = await fetchWithCache(url, localCacheKey, { cacheParams, preferCache });
+    const result = await fetchWithCache(url, localCacheKey, { cacheParams, preferCache, forceRefresh });
 
     if (result.ok) {
       setMemoryCache(cacheKey, result.data);
@@ -162,7 +173,7 @@ export const fplClient = {
   async elementSummary(elementId, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = `element-${elementId}`;
-    const url = `${API_BASE}/es/${elementId}`;
+    const url = buildUrl(`es/${elementId}`);
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -180,7 +191,7 @@ export const fplClient = {
     }
 
     // Fetch with localStorage cache fallback
-    const result = await fetchWithCache(url, CacheKey.ELEMENT_SUMMARY, { cacheParams: [elementId], preferCache });
+    const result = await fetchWithCache(url, CacheKey.ELEMENT_SUMMARY, { cacheParams: [elementId], preferCache, forceRefresh });
 
     if (result.ok) {
       setMemoryCache(cacheKey, result.data);
@@ -196,7 +207,7 @@ export const fplClient = {
   async entry(entryId, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = `entry-${entryId}`;
-    const url = `${API_BASE}/en/${entryId}`;
+    const url = buildUrl(`en/${entryId}`);
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -214,7 +225,7 @@ export const fplClient = {
     }
 
     // Fetch with localStorage cache fallback
-    const result = await fetchWithCache(url, CacheKey.ENTRY, { cacheParams: [entryId], preferCache });
+    const result = await fetchWithCache(url, CacheKey.ENTRY, { cacheParams: [entryId], preferCache, forceRefresh });
 
     if (result.ok) {
       setMemoryCache(cacheKey, result.data);
@@ -230,7 +241,7 @@ export const fplClient = {
   async entryHistory(entryId, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = `entry-history-${entryId}`;
-    const url = `${API_BASE}/en/${entryId}/history`;
+    const url = buildUrl(`en/${entryId}/history`);
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -248,7 +259,7 @@ export const fplClient = {
     }
 
     // Fetch with localStorage cache fallback
-    const result = await fetchWithCache(url, CacheKey.ENTRY_HISTORY, { cacheParams: [entryId], preferCache });
+    const result = await fetchWithCache(url, CacheKey.ENTRY_HISTORY, { cacheParams: [entryId], preferCache, forceRefresh });
 
     if (result.ok) {
       setMemoryCache(cacheKey, result.data);
@@ -263,7 +274,7 @@ export const fplClient = {
    */
   async entryPicks(entryId, gwId, options = {}) {
     const { preferCache } = normalizeOptions(options);
-    const url = `${API_BASE}/ep/${entryId}/${gwId}/picks`;
+    const url = buildUrl(`ep/${entryId}/${gwId}/picks`);
 
     // Entry picks should be cached per entry+gw
     const result = await fetchWithCache(url, CacheKey.ENTRY_PICKS, {
@@ -281,7 +292,7 @@ export const fplClient = {
    */
   async eventLive(gwId, options = {}) {
     const { preferCache } = normalizeOptions(options);
-    const url = `${API_BASE}/ev/${gwId}/live`;
+    const url = buildUrl(`ev/${gwId}/live`);
 
     // Live data should be fresh but allow cached fallback when offline
     return await fetchWithCache(url, CacheKey.EVENT_LIVE, {
@@ -297,7 +308,7 @@ export const fplClient = {
    * Note: Always fresh, no cache
    */
   async eventStatus() {
-    const url = `${API_BASE}/ev/status`;
+    const url = buildUrl("ev/status");
 
     // Status should always be fresh
     const result = await fetchWithTimeout(url, { live: true });
@@ -312,7 +323,7 @@ export const fplClient = {
   async leagueClassic(leagueId, page = 1, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = `league-${leagueId}-${page}`;
-    const url = `${API_BASE}/lc/${leagueId}/${page}`;
+    const url = buildUrl(`lc/${leagueId}/${page}`);
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -333,6 +344,7 @@ export const fplClient = {
     const result = await fetchWithCache(url, CacheKey.LEAGUE_CLASSIC, {
       cacheParams: [leagueId, page],
       preferCache,
+      forceRefresh,
     });
 
     if (result.ok) {
@@ -406,6 +418,8 @@ export const fplClient = {
         message: "Loaded from cache",
         fromCache: true,
         cacheAge: Date.now() - cached.timestamp,
+        cacheTimestamp: cached.timestamp || null,
+        meta: cached.meta || null,
       };
     }
     return {
@@ -429,6 +443,8 @@ export const fplClient = {
         message: "Loaded fixtures from cache",
         fromCache: true,
         cacheAge: Date.now() - cached.timestamp,
+        cacheTimestamp: cached.timestamp || null,
+        meta: cached.meta || null,
       };
     }
     return {
@@ -451,6 +467,8 @@ export const fplClient = {
         message: "Loaded live data from cache",
         fromCache: true,
         cacheAge: Date.now() - cached.timestamp,
+        cacheTimestamp: cached.timestamp || null,
+        meta: cached.meta || null,
       };
     }
     return {
@@ -475,7 +493,7 @@ export const fplClient = {
    * Health check
    */
   async healthCheck() {
-    const result = await fetchWithTimeout(`${API_BASE}/up?live=true`, { timeout: 5000 });
+    const result = await fetchWithTimeout(buildUrl("up?live=true"), { timeout: 5000 });
 
     if (result.ok) {
       return { ok: true, ...result.data };
