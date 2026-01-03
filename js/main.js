@@ -1002,6 +1002,11 @@ function bindGlobalSearch() {
   let searchActive = -1;
   let searchItems = [];
 
+  const setActiveIndex = (idx) => {
+    searchActive = idx;
+    searchItems.forEach((item, i) => item.classList.toggle("active", i === searchActive));
+  };
+
   function hideResults() {
     results.classList.remove("active");
     results.innerHTML = "";
@@ -1063,6 +1068,7 @@ function bindGlobalSearch() {
           hideResults();
           input.value = "";
         });
+        item.addEventListener("mouseenter", () => setActiveIndex(searchItems.indexOf(item)));
         results.appendChild(item);
         searchItems.push(item);
       });
@@ -1090,6 +1096,7 @@ function bindGlobalSearch() {
           hideResults();
           input.value = "";
         });
+        item.addEventListener("mouseenter", () => setActiveIndex(searchItems.indexOf(item)));
         results.appendChild(item);
         searchItems.push(item);
       });
@@ -1116,6 +1123,7 @@ function bindGlobalSearch() {
           hideResults();
           input.value = "";
         });
+        item.addEventListener("mouseenter", () => setActiveIndex(searchItems.indexOf(item)));
         results.appendChild(item);
         searchItems.push(item);
       });
@@ -1137,16 +1145,15 @@ function bindGlobalSearch() {
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      searchActive = Math.min(searchActive + 1, searchItems.length - 1);
-      searchItems.forEach((item, i) => item.classList.toggle("active", i === searchActive));
+      setActiveIndex(Math.min(searchActive + 1, searchItems.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      searchActive = Math.max(searchActive - 1, 0);
-      searchItems.forEach((item, i) => item.classList.toggle("active", i === searchActive));
+      setActiveIndex(Math.max(searchActive - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (searchActive >= 0 && searchItems[searchActive]) {
-        searchItems[searchActive].click();
+      if (searchItems.length) {
+        const target = searchActive >= 0 ? searchItems[searchActive] : searchItems[0];
+        target?.click();
       }
     } else if (e.key === "Escape") {
       hideResults();
@@ -1233,6 +1240,63 @@ function initNavScrollAffordance() {
 
   if (!container || !nav) return;
 
+  // Overflow handler - move excess links into a "More" menu
+  const moreWrap = document.createElement("div");
+  moreWrap.className = "nav-more";
+  const moreBtn = document.createElement("button");
+  moreBtn.className = "nav-more-btn";
+  moreBtn.type = "button";
+  moreBtn.setAttribute("aria-haspopup", "true");
+  moreBtn.setAttribute("aria-expanded", "false");
+  moreBtn.textContent = "More…";
+  const moreMenu = document.createElement("div");
+  moreMenu.className = "nav-more-menu";
+  moreWrap.append(moreBtn, moreMenu);
+  nav.appendChild(moreWrap);
+
+  const closeMore = () => {
+    moreWrap.classList.remove("open");
+    moreBtn.setAttribute("aria-expanded", "false");
+  };
+
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const nextState = !moreWrap.classList.contains("open");
+    moreWrap.classList.toggle("open", nextState);
+    moreBtn.setAttribute("aria-expanded", String(nextState));
+  });
+
+  document.addEventListener("click", (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (target && target.closest(".nav-more")) return;
+    closeMore();
+  });
+
+  function redistributeNav() {
+    // Move any overflowed links back into the main nav before recalculating
+    Array.from(moreMenu.children).forEach(link => {
+      nav.insertBefore(link, moreWrap);
+    });
+
+    const navLinks = Array.from(nav.querySelectorAll(".nav-link")).filter((link) => link.closest(".nav") === nav);
+    const availableWidth = nav.clientWidth - moreWrap.offsetWidth - 8; // gap padding
+    let used = 0;
+    let overflowStarted = false;
+
+    for (const link of navLinks) {
+      const linkWidth = link.getBoundingClientRect().width + 6; // include gap
+      if (!overflowStarted && used + linkWidth <= availableWidth) {
+        used += linkWidth;
+        continue;
+      }
+      overflowStarted = true;
+      moreMenu.appendChild(link);
+    }
+
+    moreWrap.classList.toggle("has-items", moreMenu.children.length > 0);
+    if (!moreMenu.children.length) closeMore();
+  }
+
   function updateScrollAffordance() {
     const scrollLeft = nav.scrollLeft;
     const scrollWidth = nav.scrollWidth;
@@ -1248,10 +1312,14 @@ function initNavScrollAffordance() {
   // Update on scroll
   nav.addEventListener("scroll", updateScrollAffordance, { passive: true });
 
-  // Update on resize
-  window.addEventListener("resize", updateScrollAffordance, { passive: true });
+  // Update on resize (layout + overflow redistribution)
+  window.addEventListener("resize", () => {
+    redistributeNav();
+    updateScrollAffordance();
+  }, { passive: true });
 
   // Initial check
+  redistributeNav();
   updateScrollAffordance();
 }
 

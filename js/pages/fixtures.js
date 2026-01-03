@@ -250,6 +250,17 @@ export async function renderFixtures(main, options = {}){
     const onlyDoubles = onlyDoublesToggle.wrap;
     const showSwings = showSwingsToggle.wrap;
 
+    const hasMyTeam = myTeamIds.size > 0;
+    if (!hasMyTeam) {
+      fixtureToggleState.pinMine = false;
+      pinMineToggle.checkbox.checked = false;
+      pinMineToggle.checkbox.disabled = true;
+      pinMineToggle.wrap.classList.add("disabled");
+      pinMineToggle.wrap.title = "Load your team from the sidebar to pin your clubs to the top.";
+      pinMineToggle.wrap.dataset.tooltip = "Load your team from the sidebar to pin your clubs to the top.";
+      pinMineToggle.wrap.querySelector(".fx-toggle-indicator")?.classList.remove("active");
+    }
+
     // Compact toolbar
     const toolbar = utils.el("div",{class:"toolbar-compact"},[
       utils.el("span",{class:"chip chip-dim"},"Window:"), windowSel.el,
@@ -282,13 +293,33 @@ export async function renderFixtures(main, options = {}){
 
     let sortKey = "team"; // 'team' | 'avg' | 'home' | 'doubles' | 'top6'
     let sortDir = "asc";
+    let renderToken = 0;
 
     async function render(){
+      const token = ++renderToken;
+      const loadingState = utils.el("div", { class: "fx-loading" }, [
+        utils.el("div", { class: "loading-spinner" }),
+        utils.el("p", { class: "fx-loading-text" }, "Updating fixtures…"),
+      ]);
+      matrixCard.classList.add("is-loading");
+      chartCard.classList.add("is-loading");
+      matrixCard.innerHTML = "";
+      chartCard.innerHTML = "";
+      matrixCard.append(loadingState.cloneNode(true));
+      chartCard.append(loadingState.cloneNode(true));
+
+      const finishLoading = () => {
+        matrixCard.classList.remove("is-loading");
+        chartCard.classList.remove("is-loading");
+      };
+
       const n = +windowSel.value;
       const useModel = (viewSel.value === "XMODEL") || (viewPos !== "ALL");
       const windowEvents = events.filter(e=>e.id>=nextGw).slice(0,n);
       const windowIds = windowEvents.map(e=>e.id);
       const { fixtures, hadError } = await getFixturesForEvents(windowIds, { preferCache });
+
+      if (token !== renderToken) return;
 
       if (fixtures.length === 0) {
         matrixCard.innerHTML = "";
@@ -316,6 +347,7 @@ export async function renderFixtures(main, options = {}){
         chartCard.append(utils.el("div", { class: "fx-empty-state" }, [
           utils.el("p", {}, "No data to display. Try again when you're back online.")
         ]));
+        finishLoading();
         return;
       }
 
@@ -513,6 +545,7 @@ export async function renderFixtures(main, options = {}){
         chartCard.append(utils.el("div", { class: "fx-empty-state" }, [
           utils.el("p", {}, "No data to display. Clear the filter to see all teams.")
         ]));
+        finishLoading();
         return;
       }
 
@@ -692,6 +725,7 @@ const cfg = {
 
 await ui.chart(canvas, cfg);
 
+      finishLoading();
     }
 
 // sorting toggles (sortKey/sortDir are already declared above)

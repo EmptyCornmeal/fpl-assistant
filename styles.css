@@ -473,6 +473,7 @@
     min-width:0;
     scroll-behavior:smooth;
     -webkit-overflow-scrolling:touch;
+    position:relative;
   }
   .nav::-webkit-scrollbar{height:6px}
   .nav::-webkit-scrollbar-thumb{background:var(--surface-2);border-radius:99px}
@@ -500,6 +501,52 @@
     border-color:var(--accent);
     color:var(--accent-light);
     font-weight:600;
+  }
+  .nav-more{
+    position:relative;
+    flex-shrink:0;
+    display:none;
+  }
+  .nav-more.has-items{
+    display:block;
+  }
+  .nav-more-btn{
+    padding:9px 14px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background:var(--surface-1);
+    color:var(--text);
+    cursor:pointer;
+    font-weight:600;
+    min-width:88px;
+    transition:all 0.2s ease;
+  }
+  .nav-more-btn:hover{
+    background:var(--accent-weak);
+    border-color:var(--accent);
+    color:var(--accent-light);
+  }
+  .nav-more-menu{
+    display:none;
+    position:absolute;
+    top:110%;
+    right:0;
+    min-width:180px;
+    padding:8px;
+    background:var(--surface-2);
+    border:1px solid var(--border-strong);
+    border-radius:12px;
+    box-shadow:var(--shadow-lg);
+    z-index:5;
+  }
+  .nav-more.open .nav-more-menu{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .nav-more.open .nav-more-btn{
+    background:var(--accent-weak);
+    border-color:var(--accent);
   }
 
   /* Responsive: On smaller screens, nav wraps to new line */
@@ -2389,10 +2436,10 @@
     background:transparent;
     border:none;
     color:var(--muted);
-    font-size:24px;
+    font-size:28px;
     cursor:pointer;
-    width:32px;
-    height:32px;
+    width:40px;
+    height:40px;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -8724,6 +8771,15 @@
   color: var(--text);
   white-space: nowrap;
 }
+.fx-toggle.disabled{
+  opacity:0.45;
+  cursor:not-allowed;
+  border-style:dashed;
+}
+.fx-toggle.disabled:hover{
+  background: var(--surface-1);
+  border-color: var(--border);
+}
 
 /* Fixtures Legend */
 .fx-legend {
@@ -8769,6 +8825,18 @@
   color: var(--muted);
   font-size: 10px;
   font-style: italic;
+}
+.fx-loading{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  padding:24px 8px;
+  color:var(--muted);
+}
+.fx-loading-text{
+  font-size:12px;
+  color:var(--muted);
 }
 .fx-legend .swing-up {
   color: var(--ok);
@@ -9909,16 +9977,18 @@ body:hover .dev-toggle-hint {
 }
 
 .sp-dep-error {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   background: var(--red);
   color: white;
-  border-radius: 50%;
-  font-size: 10px;
-  display: flex;
+  border-radius: 8px;
+  font-size: 11px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: help;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 /* Degraded mode */
@@ -9964,7 +10034,7 @@ body:hover .dev-toggle-hint {
 
 .sp-failure-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 10px 12px;
   background: rgba(239, 68, 68, 0.1);
@@ -9986,8 +10056,9 @@ body:hover .dev-toggle-hint {
 }
 
 .sp-btn-small {
-  padding: 4px 10px;
-  font-size: 11px;
+  padding: 6px 12px;
+  font-size: 12px;
+  min-width: 88px;
 }
 
 .sp-btn-primary {
