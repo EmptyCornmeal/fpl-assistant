@@ -1,5 +1,6 @@
 // js/lib/transferOptimizer.js
 // Phase 7: Transfer Optimisation Engine
+// Phase 10: Performance guardrails with memoization and dev timing
 // - Constrained simulation for transfer recommendations
 // - Weakest link identification with explicit reasons
 // - Legal replacement simulation (budget, position, club limit, FT/hit rules)
@@ -7,6 +8,69 @@
 import { state } from "../state.js";
 import { xPWindow, xPWindowBatch, estimateXMinsForPlayer, statusMultiplier, clamp } from "./xp.js";
 import { getJSON, setJSON } from "../storage.js";
+import { memoizeAsync } from "./memoize.js";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 10: DEV-ONLY PERFORMANCE TIMING
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const isDev = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+function perfLog(label, startTime) {
+  if (isDev) {
+    const elapsed = performance.now() - startTime;
+    console.log(`[Perf] ${label}: ${elapsed.toFixed(1)}ms`);
+  }
+}
+
+function perfStart() {
+  return isDev ? performance.now() : 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 10: MEMOIZED FUNCTIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Memoize weakest link analysis per player (cache for 2 minutes)
+const memoizedAnalyzeExpendability = memoizeAsync(
+  async (playerId, gwIds, contextKey, bsVersion) => {
+    const bs = state.bootstrap;
+    const player = (bs?.elements || []).find(p => p.id === playerId);
+    if (!player) return null;
+    return analyzePlayerExpendabilityCore(player, gwIds, null, bs);
+  },
+  {
+    keyFn: (playerId, gwIds, contextKey, bsVersion) =>
+      `${playerId}:${gwIds.join(",")}:${contextKey}:${bsVersion}`,
+    ttl: 2 * 60 * 1000, // 2 minutes
+    maxSize: 200,
+  }
+);
+
+// Memoize player pool building (cache for 1 minute)
+const memoizedBuildPlayerPool = memoizeAsync(
+  async (squadIds, excludedTeamIds, excludedPlayerIds, gwIds, bsVersion) => {
+    const bs = state.bootstrap;
+    return buildPlayerPoolCore(
+      bs?.elements || [],
+      squadIds,
+      excludedTeamIds,
+      excludedPlayerIds,
+      gwIds,
+      bs
+    );
+  },
+  {
+    keyFn: (squadIds, excludedTeamIds, excludedPlayerIds, gwIds, bsVersion) =>
+      `pool:${[...squadIds].sort().join(",")}:${excludedTeamIds.join(",")}:${excludedPlayerIds.join(",")}:${gwIds.join(",")}:${bsVersion}`,
+    ttl: 60 * 1000, // 1 minute
+    maxSize: 10,
+  }
+);
+
+// Track last optimization params to prevent unnecessary recompute
+let lastOptimizationKey = null;
+let lastOptimizationResult = null;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    STORAGE KEYS FOR TRANSFER OPTIMIZER
@@ -973,35 +1037,49 @@ export function resetTransferSettings() {
 
 /**
  * Run the complete transfer optimization pipeline
+ * Phase 10: With smart recompute detection and perf timing
  *
  * @param {Object} context - The squad context from loadContext()
  * @param {Object} options - Configuration options
  * @returns {Promise<Object>} - Complete transfer analysis
  */
 export async function runTransferOptimization(context, options = {}) {
+  const totalStart = perfStart();
+
   const settings = loadTransferSettings();
   const mergedOptions = { ...settings, ...options };
 
+  // Phase 10: Generate optimization key to detect if recompute is needed
+  const optimizationKey = generateOptimizationKey(context, mergedOptions);
+  if (optimizationKey === lastOptimizationKey && lastOptimizationResult) {
+    if (isDev) console.log("[Perf] Returning cached optimization result");
+    return lastOptimizationResult;
+  }
+
   // Step 1: Identify weakest links
+  const step1Start = perfStart();
   const weakestLinksResult = await identifyWeakestLinks(context, mergedOptions);
+  perfLog("Step 1: Identify weakest links", step1Start);
 
   if (!weakestLinksResult.ok) {
     return { ok: false, error: weakestLinksResult.error };
   }
 
   // Step 2: Simulate replacements
+  const step2Start = perfStart();
   const replacementsResult = await simulateReplacements(
     context,
     weakestLinksResult,
     mergedOptions
   );
+  perfLog("Step 2: Simulate replacements", step2Start);
 
   if (!replacementsResult.ok) {
     return { ok: false, error: replacementsResult.error };
   }
 
   // Combine results
-  return {
+  const result = {
     ok: true,
     weakestLinks: weakestLinksResult.weakestLinks,
     lockedPlayers: weakestLinksResult.lockedPlayers,
@@ -1015,6 +1093,36 @@ export async function runTransferOptimization(context, options = {}) {
     gwIds: weakestLinksResult.gwIds,
     settings: mergedOptions,
   };
+
+  // Cache for smart recompute detection
+  lastOptimizationKey = optimizationKey;
+  lastOptimizationResult = result;
+
+  perfLog("Total optimization time", totalStart);
+
+  return result;
+}
+
+/**
+ * Phase 10: Generate key for smart recompute detection
+ * Only recompute if horizon, objective, locked players, or settings change
+ */
+function generateOptimizationKey(context, options) {
+  const squad = context.squad || [];
+  const squadIds = squad.map(p => p.id).sort().join(",");
+  const bsTimestamp = state.bootstrap?.timestamp || 0;
+
+  return [
+    squadIds,
+    context.freeTransfers,
+    context.bank,
+    options.horizonGwCount,
+    options.hitEnabled,
+    options.hitThreshold,
+    (options.lockedPlayerIds || []).sort().join(","),
+    (options.excludedTeamIds || []).sort().join(","),
+    bsTimestamp,
+  ].join("|");
 }
 
 export default {

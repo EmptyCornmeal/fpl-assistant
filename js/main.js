@@ -226,10 +226,12 @@ function initSidebar() {
   }
 
   // Create toggle button (fixed position, append to body)
+  // Phase 10: Enhanced tooltip with keyboard shortcut hint
   const toggle = document.createElement("button");
   toggle.className = "sidebar-toggle";
   toggle.innerHTML = `<span class="toggle-icon">◀</span>`;
-  toggle.title = "Toggle sidebar (S)";
+  toggle.title = collapsed ? "Expand sidebar (S)" : "Collapse sidebar (S)";
+  toggle.setAttribute("aria-label", "Toggle sidebar");
   toggle.addEventListener("click", toggleSidebar);
 
   document.body.appendChild(toggle);
@@ -244,10 +246,14 @@ function toggleSidebar() {
   const isCollapsed = document.body.classList.toggle("sidebar-collapsed");
   localStorage.setItem("fpl.sidebarCollapsed", isCollapsed);
 
-  // Update toggle icon
-  const toggleIcon = document.querySelector(".sidebar-toggle .toggle-icon");
+  // Update toggle icon and tooltip
+  const toggle = document.querySelector(".sidebar-toggle");
+  const toggleIcon = toggle?.querySelector(".toggle-icon");
   if (toggleIcon) {
     toggleIcon.textContent = isCollapsed ? "▶" : "◀";
+  }
+  if (toggle) {
+    toggle.title = isCollapsed ? "Expand sidebar (S)" : "Collapse sidebar (S)";
   }
 }
 

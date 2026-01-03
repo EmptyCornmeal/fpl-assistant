@@ -217,11 +217,12 @@ export const ui = {
 
   /**
    * Loading state with timeout warning
-   * Shows a spinner initially, then adds a warning after timeout threshold
+   * Phase 10: Shows spinner initially, transitions to skeleton after 300ms
    * @param {string} message - Loading message
+   * @param {number} skeletonAfterMs - Show skeleton after this many ms (default: 300)
    * @param {number} warnAfterMs - Show warning after this many ms (default: 5000)
    */
-  loadingWithTimeout(message = "Loading...", warnAfterMs = 5000) {
+  loadingWithTimeout(message = "Loading...", skeletonAfterMs = 300, warnAfterMs = 5000) {
     const wrap = utils.el("div", { class: "loading-state" });
 
     const spinner = utils.el("div", { class: "loading-spinner-large" });
@@ -230,17 +231,36 @@ export const ui = {
     const msg = utils.el("div", { class: "loading-message" }, message);
     wrap.append(msg);
 
+    // Skeleton placeholder (hidden initially)
+    const skeleton = utils.el("div", { class: "loading-skeleton hidden" });
+    skeleton.innerHTML = `
+      <div class="skeleton-line skeleton-line-wide"></div>
+      <div class="skeleton-line skeleton-line-medium"></div>
+      <div class="skeleton-line skeleton-line-medium"></div>
+      <div class="skeleton-line skeleton-line-short"></div>
+    `;
+    wrap.append(skeleton);
+
     const warning = utils.el("div", { class: "loading-warning hidden" });
     warning.textContent = "This is taking longer than expected...";
     wrap.append(warning);
 
-    // Show warning after timeout
-    const timeoutId = setTimeout(() => {
+    // Show skeleton after initial delay
+    const skeletonTimeoutId = setTimeout(() => {
+      spinner.classList.add("hidden");
+      skeleton.classList.remove("hidden");
+    }, skeletonAfterMs);
+
+    // Show warning after longer timeout
+    const warnTimeoutId = setTimeout(() => {
       warning.classList.remove("hidden");
     }, warnAfterMs);
 
-    // Clean up timeout when element is removed
-    wrap._cleanupTimeout = () => clearTimeout(timeoutId);
+    // Clean up timeouts when element is removed
+    wrap._cleanupTimeout = () => {
+      clearTimeout(skeletonTimeoutId);
+      clearTimeout(warnTimeoutId);
+    };
 
     return wrap;
   },
@@ -481,6 +501,25 @@ export const ui = {
       });
     }
     renderBody();
+
+    // Phase 10: Detect horizontal overflow and add scroll indicator
+    function checkOverflow() {
+      const hasOverflow = wrapper.scrollWidth > wrapper.clientWidth;
+      wrapper.classList.toggle("has-overflow", hasOverflow);
+
+      // Check if scrolled to right
+      const scrolledRight = wrapper.scrollLeft + wrapper.clientWidth >= wrapper.scrollWidth - 5;
+      wrapper.classList.toggle("scrolled-right", scrolledRight);
+    }
+    // Delayed check after render
+    requestAnimationFrame(checkOverflow);
+    wrapper.addEventListener("scroll", checkOverflow);
+    // Also check on resize
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(checkOverflow);
+      ro.observe(wrapper);
+    }
+
     return wrapper;
   },
 

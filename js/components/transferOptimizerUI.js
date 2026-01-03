@@ -58,20 +58,28 @@ export async function renderTransferOptimizer(context, options = {}) {
       return renderError(result.error);
     }
 
+    const hitEnabled = result.settings?.hitEnabled !== false;
+
+    // Phase 10: Enhanced horizon clarity
+    const horizonTooltip = `Transfer suggestions optimise over ${horizonGwCount} gameweeks.\nXI and Captain selections are for the current GW only.`;
+
     return `
       <div class="sp-card sp-card-transfers sp-transfer-optimizer" id="transferOptimizer">
         <div class="sp-card-header">
-          Transfer Optimizer
-          <span class="sp-horizon-badge">${horizonGwCount} GW horizon</span>
+          Transfers (Next ${horizonGwCount} GWs)
+          <span class="sp-horizon-badge sp-horizon-tooltip" title="${horizonTooltip}">
+            <span class="sp-horizon-info">ℹ️</span>
+            ${horizonGwCount} GW horizon
+          </span>
         </div>
 
         ${renderUserControls(result.settings)}
 
-        ${renderActionSummary(result.recommendations, result.freeTransfers, result.bankFormatted)}
+        ${renderActionSummary(result.recommendations, result.freeTransfers, result.bankFormatted, hitEnabled)}
 
         ${renderWeakestLinks(result.weakestLinks, result.settings.lockedPlayerIds || [])}
 
-        ${renderRecommendedTransfers(result.recommendations, result)}
+        ${renderRecommendedTransfers(result.recommendations, result, hitEnabled)}
 
         ${renderAlternativeOptions(result)}
 
@@ -94,6 +102,22 @@ function renderUserControls(settings) {
   const lockedCount = (settings.lockedPlayerIds || []).length;
   const excludedTeamsCount = (settings.excludedTeamIds || []).length;
 
+  // Phase 10: Hide hit threshold slider when hits are disabled
+  const hitThresholdSection = hitEnabled ? `
+        <div class="sp-control-group" id="hitThresholdGroup">
+          <label class="sp-control-label sp-control-inline">
+            Hit threshold:
+            <input type="range" id="hitThresholdSlider" min="0" max="12" step="1" value="${hitThreshold}">
+            <span id="hitThresholdValue">${hitThreshold} pts</span>
+          </label>
+        </div>
+  ` : "";
+
+  // Phase 10: Clear all pins button (only show if there are locked players)
+  const clearPinsBtn = lockedCount > 0
+    ? `<button class="sp-btn-small sp-btn-clear-pins" id="clearAllPins" title="Remove all locked players">Clear pins</button>`
+    : "";
+
   return `
     <div class="sp-transfer-controls" id="transferControls">
       <div class="sp-control-row">
@@ -101,19 +125,13 @@ function renderUserControls(settings) {
           <input type="checkbox" id="hitEnabledToggle" ${hitEnabled ? "checked" : ""}>
           Allow hits
         </label>
-
-        <div class="sp-control-group">
-          <label class="sp-control-label sp-control-inline">
-            Hit threshold:
-            <input type="range" id="hitThresholdSlider" min="0" max="12" step="1" value="${hitThreshold}">
-            <span id="hitThresholdValue">${hitThreshold} pts</span>
-          </label>
-        </div>
+        ${hitThresholdSection}
       </div>
 
       <div class="sp-control-row sp-control-summary">
-        <span class="sp-control-stat" title="Players exempt from transfer out suggestions">
-          <span class="sp-lock-icon">🔒</span> ${lockedCount} locked
+        <span class="sp-control-stat sp-control-stat-pins" title="Players exempt from transfer out suggestions">
+          <span class="sp-lock-icon">🔒</span> ${lockedCount} pinned
+          ${clearPinsBtn}
         </span>
         <span class="sp-control-stat" title="Teams excluded from transfer targets">
           <span class="sp-exclude-icon">🚫</span> ${excludedTeamsCount} teams excluded
@@ -128,15 +146,35 @@ function renderUserControls(settings) {
    ACTION SUMMARY
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function renderActionSummary(recommendations, freeTransfers, bankFormatted) {
+function renderActionSummary(recommendations, freeTransfers, bankFormatted, hitEnabled = true) {
   const action = recommendations.action;
-  const actionClass = ACTION_CLASSES[action] || "";
-  const actionLabel = ACTION_LABELS[action] || action;
   const best = recommendations.best;
+
+  // Phase 10: If FT = 0 and hits disabled, show "No legal transfers" state
+  if (freeTransfers === 0 && !hitEnabled) {
+    return `
+      <div class="sp-action-summary sp-action-no-transfers">
+        <div class="sp-action-header">
+          <span class="sp-action-badge sp-action-blocked">No Legal Transfers</span>
+          <span class="sp-ft-badge">0 FT</span>
+          <span class="sp-bank-badge">${bankFormatted} ITB</span>
+        </div>
+        <div class="sp-action-detail sp-no-transfer-msg">
+          <span class="sp-no-transfer-icon">ℹ️</span>
+          <span>No free transfers available and hits are disabled. Enable "Allow hits" to see transfer options.</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // Phase 10: Don't show hit action if hits are disabled (shouldn't happen but safety check)
+  const effectiveAction = (!hitEnabled && action === "hit") ? "hold" : action;
+  const actionClass = ACTION_CLASSES[effectiveAction] || "";
+  const actionLabel = ACTION_LABELS[effectiveAction] || effectiveAction;
 
   let summaryContent = "";
 
-  if (action === "transfer" && best) {
+  if (effectiveAction === "transfer" && best) {
     const transfer = best.transfers[0];
     summaryContent = `
       <div class="sp-action-detail">
@@ -146,7 +184,7 @@ function renderActionSummary(recommendations, freeTransfers, bankFormatted) {
       </div>
       <div class="sp-action-gain">+${best.netGain?.toFixed(1) || 0} xP net gain</div>
     `;
-  } else if (action === "hit" && best) {
+  } else if (effectiveAction === "hit" && best && hitEnabled) {
     summaryContent = `
       <div class="sp-action-detail">
         ${best.transfers.map(t =>
@@ -158,7 +196,7 @@ function renderActionSummary(recommendations, freeTransfers, bankFormatted) {
         <span class="sp-net-gain">+${best.netGain?.toFixed(1)} net xP</span>
       </div>
     `;
-  } else if (action === "roll") {
+  } else if (effectiveAction === "roll") {
     summaryContent = `
       <div class="sp-action-detail">${recommendations.actionReason}</div>
       <div class="sp-action-ft-note">FT will roll to ${Math.min(5, freeTransfers + 1)} next GW</div>
@@ -281,10 +319,15 @@ function getStatusIcon(status) {
    RECOMMENDED TRANSFERS SECTION (7.2)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function renderRecommendedTransfers(recommendations, result) {
+function renderRecommendedTransfers(recommendations, result, hitEnabled = true) {
   const best = recommendations.best;
 
   if (!best || best.type === "roll" || best.type === "hold") {
+    return "";
+  }
+
+  // Phase 10: Don't show hit transfers if hits are disabled
+  if (best.type === "hit" && !hitEnabled) {
     return "";
   }
 
@@ -371,12 +414,13 @@ function getTeamName(teamId) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function renderAlternativeOptions(result) {
-  const { recommendations, singleTransfers } = result;
+  const { recommendations, singleTransfers, settings } = result;
+  const hitEnabled = settings?.hitEnabled !== false;
 
   // Show alternative single transfers (skip the first if it's the recommended one)
   const alternatives = singleTransfers.filter(t => t !== recommendations.best).slice(0, 3);
 
-  if (alternatives.length === 0) {
+  if (alternatives.length === 0 && (!hitEnabled || !recommendations.hitOptions?.length)) {
     return "";
   }
 
@@ -401,9 +445,9 @@ function renderAlternativeOptions(result) {
     `;
   }).join("");
 
-  // Also show hit options if any
+  // Phase 10: Only show hit options if hitEnabled is true
   let hitSection = "";
-  if (recommendations.hitOptions && recommendations.hitOptions.length > 0) {
+  if (hitEnabled && recommendations.hitOptions && recommendations.hitOptions.length > 0) {
     const hitRows = recommendations.hitOptions.slice(0, 2).map(scenario => {
       const moves = scenario.transfers.map(t =>
         `${t.out?.player?.web_name} → ${t.in?.player?.web_name}`
@@ -427,6 +471,10 @@ function renderAlternativeOptions(result) {
         ${hitRows}
       </div>
     `;
+  }
+
+  if (!rows && !hitSection) {
+    return "";
   }
 
   return `
@@ -484,6 +532,46 @@ function renderError(message) {
    EVENT HANDLERS
    ═══════════════════════════════════════════════════════════════════════════ */
 
+// Phase 10: Storage key for tracking first pin toast
+const FIRST_PIN_TOAST_SHOWN_KEY = "fpl.transfer.firstPinToastShown";
+
+/**
+ * Show a temporary toast notification
+ */
+function showToast(message, duration = 3000) {
+  // Remove any existing toast
+  const existingToast = document.querySelector(".sp-toast");
+  if (existingToast) existingToast.remove();
+
+  const toast = document.createElement("div");
+  toast.className = "sp-toast";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  // Trigger animation
+  requestAnimationFrame(() => {
+    toast.classList.add("sp-toast-visible");
+  });
+
+  // Remove after duration
+  setTimeout(() => {
+    toast.classList.remove("sp-toast-visible");
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+/**
+ * Clear all locked players
+ */
+function clearAllLockedPlayers() {
+  const { setJSON } = window.fplStorage || {};
+  if (setJSON) {
+    setJSON("fpl.transfer.lockedPlayers", []);
+  } else {
+    localStorage.setItem("fpl.transfer.lockedPlayers", "[]");
+  }
+}
+
 /**
  * Wire up all interactive elements in the Transfer Optimizer
  */
@@ -521,6 +609,16 @@ export function wireUpTransferOptimizer(container, context, onRefresh) {
     });
   }
 
+  // Phase 10: Clear all pins button
+  const clearPinsBtn = container.querySelector("#clearAllPins");
+  if (clearPinsBtn) {
+    clearPinsBtn.addEventListener("click", async () => {
+      clearAllLockedPlayers();
+      showToast("All pins cleared");
+      if (onRefresh) await onRefresh();
+    });
+  }
+
   // Lock/unlock buttons
   container.querySelectorAll(".sp-btn-lock").forEach(btn => {
     btn.addEventListener("click", async () => {
@@ -531,6 +629,13 @@ export function wireUpTransferOptimizer(container, context, onRefresh) {
         unlockPlayer(playerId);
       } else {
         lockPlayer(playerId);
+
+        // Phase 10: Show one-time toast on first pin
+        const hasSeenToast = localStorage.getItem(FIRST_PIN_TOAST_SHOWN_KEY);
+        if (!hasSeenToast) {
+          showToast("Player pinned — optimiser will respect this");
+          localStorage.setItem(FIRST_PIN_TOAST_SHOWN_KEY, "true");
+        }
       }
 
       if (onRefresh) await onRefresh();

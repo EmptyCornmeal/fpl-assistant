@@ -278,30 +278,33 @@ export async function renderGwExplorer(main){
       rows.forEach(r => posGroups[r.pos]?.push(r.pts));
       const posAvg = Object.entries(posGroups).map(([k,v])=>[k, v.length ? +(v.reduce((a,b)=>a+b,0)/v.length).toFixed(2) : 0]);
 
-      const left = utils.el("div",{},[
-        utils.el("h3",{},`GW ${gwId} — ${live ? "Summary (live)" : "Summary"}`),
-        hauls.length ? utils.el("ul",{}, hauls.map(r=>utils.el("li",{},`${r.name} (${r.team}) — ${r.pts} pts (G${r.g}, A${r.a}, BPS ${r.bps})`))) :
-          utils.el("div",{class:"tag"},"No 10+ pointers in current filter."),
-        utils.el("div",{class:"mt-8 legend small"},[
-          utils.el("span",{class:"chip"} ,`Braces: ${braces}`),
-          utils.el("span",{class:"chip"} ,`Hattricks: ${hatties}`),
-          utils.el("span",{class:"chip"} ,`Red cards: ${reds}`),
-          live ? utils.el("span",{class:"chip chip-accent"},"LIVE — provisional") : ""
-        ]),
-        utils.el("h4",{class:"mt-8"},"Team totals (top)"),
-        utils.el("ul",{}, teamArr.map(([t,p])=>utils.el("li",{},`${t}: ${p} pts`))),
-        utils.el("h4",{class:"mt-8"},"Avg points by position"),
-        utils.el("ul",{}, posAvg.map(([k,v])=> utils.el("li",{}, `${k}: ${v}`)))
+      // Phase 10: Wrapped in proper cards for consistent styling
+      const left = utils.el("div",{class:"card card-compact gw-summary-card"},[
+        utils.el("h3",{class:"card-title"},`GW ${gwId} Summary${live ? " (live)" : ""}`),
+        utils.el("div",{class:"gw-summary-content"},[
+          utils.el("h4",{class:"gw-summary-section-title"},"Top Performers"),
+          hauls.length ? utils.el("ul",{class:"gw-hauls-list"}, hauls.map(r=>utils.el("li",{},`${r.name} (${r.team}) — ${r.pts} pts`))) :
+            utils.el("div",{class:"tag"},"No 10+ pointers in current filter."),
+          utils.el("div",{class:"gw-stats-chips"},[
+            utils.el("span",{class:"chip chip-sm"} ,`Braces: ${braces}`),
+            utils.el("span",{class:"chip chip-sm"} ,`Hattricks: ${hatties}`),
+            utils.el("span",{class:"chip chip-sm"} ,`Red cards: ${reds}`)
+          ]),
+          utils.el("h4",{class:"gw-summary-section-title mt-8"},"Team Points"),
+          utils.el("div",{class:"gw-team-stats"}, teamArr.slice(0,5).map(([t,p])=>utils.el("div",{class:"gw-team-stat"},`${t}: ${p}`))),
+          utils.el("h4",{class:"gw-summary-section-title mt-8"},"Position Averages"),
+          utils.el("div",{class:"gw-pos-stats"}, posAvg.map(([k,v])=> utils.el("span",{class:"chip chip-sm"}, `${k}: ${v}`)))
+        ])
       ]);
 
       // Right: Team of the Week
       const totw = pickTotw(rows);
-      const right = utils.el("div",{},[
-        utils.el("h3",{},`Team of the Week — GW ${gwId}${live?" (live)":""}`),
-        totw ? utils.el("div",{},[
-          utils.el("div",{class:"chips"},[
-            utils.el("span",{class:"chip"} ,`Formation: ${totw.formation}`),
-            utils.el("span",{class:"chip chip-accent"} ,`Total points: ${totw.total}`)
+      const right = utils.el("div",{class:"card card-compact gw-totw-card"},[
+        utils.el("h3",{class:"card-title"},`Team of the Week${live?" (live)":""}`),
+        totw ? utils.el("div",{class:"gw-totw-content"},[
+          utils.el("div",{class:"gw-totw-header"},[
+            utils.el("span",{class:"chip chip-sm"} ,`${totw.formation}`),
+            utils.el("span",{class:"chip chip-accent chip-sm"} ,`${totw.total} pts`)
           ]),
           ui.table([
             { header:"Name",  cell:nameCell,            sortBy:r=>r.name },
@@ -310,13 +313,13 @@ export async function renderGwExplorer(main){
             { header:"Pts",   accessor:r=>r.pts,        sortBy:r=>r.pts, tdClass:r=> r.pts>=10?"points-high":"" },
             { header:"G",     accessor:r=>r.g,          sortBy:r=>r.g },
             { header:"A",     accessor:r=>r.a,          sortBy:r=>r.a },
-            { header:utils.abbr("BPS","Bonus Point System"), accessor:r=>r.bps, sortBy:r=>r.bps }
+            { header:"BPS", accessor:r=>r.bps, sortBy:r=>r.bps }
           ], totw.xi)
-        ]) : utils.el("div",{class:"tag"},"Not enough players for a valid XI in current filter.")
+        ]) : utils.el("div",{class:"gw-totw-empty"},"Not enough players for a valid XI.")
       ]);
 
       topGridCard.innerHTML = "";
-      topGridCard.append(utils.el("div",{class:"grid cols-2"},[left,right]));
+      topGridCard.append(left, right);
     }
 
     function pickTotw(rows){
