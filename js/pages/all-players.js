@@ -1,12 +1,12 @@
 // js/pages/all-players.js
-import { fplClient, legacyApi } from "../api/fplClient.js";
+import { fplClient } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
-import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
+import { getCacheAge, CacheKey, hasCachedData } from "../api/fetchHelper.js";
 
 /* ========= LocalStorage keys ========= */
 const LS_AP_FILTERS = "fpl.ap.filters";
@@ -314,7 +314,8 @@ function showCompareModal(playerById, posShortById, teamShortById) {
 }
 
 /* ========= Render ========= */
-export async function renderAllPlayers(main){
+export async function renderAllPlayers(main, options = {}){
+  const { preferCache = false } = options;
   // Reset compare selection when entering the page
   compareSelection = [];
   if (selectionBar) {
@@ -326,9 +327,9 @@ export async function renderAllPlayers(main){
   ui.mount(main, ui.loadingWithTimeout("Loading players..."));
 
   // Fetch bootstrap
-  const bootstrapResult = state.bootstrap
+  const bootstrapResult = state.bootstrap && !preferCache
     ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
-    : await fplClient.bootstrap();
+    : await fplClient.bootstrap({ preferCache });
 
   if (!bootstrapResult.ok) {
     const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
@@ -342,7 +343,7 @@ export async function renderAllPlayers(main){
       onRetry: () => renderAllPlayers(main),
       onUseCached: hasCache ? async () => {
         state.bootstrap = fplClient.loadBootstrapFromCache().data;
-        await renderAllPlayers(main);
+        await renderAllPlayers(main, { preferCache: true });
       } : null,
     }));
     return;
@@ -357,11 +358,31 @@ export async function renderAllPlayers(main){
     state.bootstrap = bs;
     const { elements: players, teams, element_types: positions, events } = bs;
 
-    const fixturesResult = await fplClient.fixtures();
-    const fixturesAll = fixturesResult.ok ? fixturesResult.data : [];
+    const fixturesResult = await fplClient.fixtures(null, { preferCache });
+    let fixturesAll = fixturesResult.ok ? fixturesResult.data : [];
+    if (!fixturesResult.ok && fixturesAll.length === 0) {
+      const cachedFixtures = fplClient.loadFixturesFromCache();
+      if (cachedFixtures.ok) {
+        fixturesAll = cachedFixtures.data;
+        usingCache = true;
+        maxCacheAge = Math.max(maxCacheAge, cachedFixtures.cacheAge);
+      }
+    }
     if (fixturesResult.fromCache) {
       usingCache = true;
       maxCacheAge = Math.max(maxCacheAge, fixturesResult.cacheAge);
+    }
+    if (fixturesAll.length === 0) {
+      const hasCache = hasCachedData(CacheKey.FIXTURES);
+      const cacheAge = hasCache ? getCacheAge(CacheKey.FIXTURES) : null;
+      ui.mount(main, ui.degradedCard({
+        title: "Fixture data unavailable",
+        message: "We couldn't load fixtures to power the player explorer. This can happen when the FPL API is down.",
+        cacheAge,
+        onRetry: () => renderAllPlayers(main),
+        onUseCached: hasCache ? () => renderAllPlayers(main, { preferCache: true }) : null,
+      }));
+      return;
     }
     const fixturesByEvent = new Map();
     for (const f of fixturesAll){

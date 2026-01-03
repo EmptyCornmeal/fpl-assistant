@@ -1,11 +1,11 @@
 // js/pages/fixtures.js
-import { fplClient, legacyApi } from "../api/fplClient.js";
+import { fplClient } from "../api/fplClient.js";
 import { state, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { makeSelect } from "../components/select.js";
 import { log } from "../logger.js";
-import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
+import { getCacheAge, CacheKey, hasCachedData } from "../api/fetchHelper.js";
 
 /* ───────── helpers ───────── */
 
@@ -20,16 +20,21 @@ const toLocal = (dt, tz="Europe/London")=>{
   }catch{ return dt; }
 };
 
-async function getFixturesForEvents(eventIds){
+async function getFixturesForEvents(eventIds, { preferCache = false } = {}){
   const out = [];
+  let hadError = false;
   for (const id of eventIds){
-    const result = await fplClient.fixtures(id);
+    const result = await fplClient.fixtures(id, { preferCache });
     if (result.ok) {
       out.push(...result.data);
+    } else if (result.fromCache && result.data) {
+      out.push(...result.data);
+    } else {
+      hadError = true;
     }
     await utils.sleep(60);
   }
-  return out;
+  return { fixtures: out, hadError };
 }
 
 /* xFDR model */
@@ -114,16 +119,17 @@ function ensureFixtureStyles(){
 
 /* ───────── page ───────── */
 
-export async function renderFixtures(main){
+export async function renderFixtures(main, options = {}){
+  const { preferCache = false } = options;
   ensureFixtureStyles();
 
   // Show loading state
   ui.mount(main, ui.loadingWithTimeout("Loading fixtures & difficulty..."));
 
   // Fetch bootstrap
-  const bootstrapResult = state.bootstrap
+  const bootstrapResult = state.bootstrap && !preferCache
     ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
-    : await fplClient.bootstrap();
+    : await fplClient.bootstrap({ preferCache });
 
   if (!bootstrapResult.ok) {
     const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
@@ -137,7 +143,7 @@ export async function renderFixtures(main){
       onRetry: () => renderFixtures(main),
       onUseCached: hasCache ? async () => {
         state.bootstrap = fplClient.loadBootstrapFromCache().data;
-        await renderFixtures(main);
+        await renderFixtures(main, { preferCache: true });
       } : null,
     }));
     return;
@@ -282,7 +288,36 @@ export async function renderFixtures(main){
       const useModel = (viewSel.value === "XMODEL") || (viewPos !== "ALL");
       const windowEvents = events.filter(e=>e.id>=nextGw).slice(0,n);
       const windowIds = windowEvents.map(e=>e.id);
-      const fixtures = await getFixturesForEvents(windowIds);
+      const { fixtures, hadError } = await getFixturesForEvents(windowIds, { preferCache });
+
+      if (fixtures.length === 0) {
+        matrixCard.innerHTML = "";
+        matrixCard.append(
+          utils.el("div", { class: "fx-empty-state" }, [
+            utils.el("div", { class: "fx-empty-icon" }, "📡"),
+            utils.el("h4", {}, "Fixtures unavailable"),
+            utils.el("p", {}, "We couldn't load fixture data. The FPL API may be offline."),
+            (() => {
+              const actions = utils.el("div", { class: "fx-empty-actions" });
+              const retry = utils.el("button", { class: "btn-primary" }, "Retry");
+              retry.addEventListener("click", () => renderFixtures(main));
+              actions.append(retry);
+              const cacheAvailable = windowIds.some(id => hasCachedData(CacheKey.FIXTURES, id));
+              if (cacheAvailable) {
+                const cacheBtn = utils.el("button", { class: "btn-use-cached" }, "Use Cached Fixtures");
+                cacheBtn.addEventListener("click", () => renderFixtures(main, { preferCache: true }));
+                actions.append(cacheBtn);
+              }
+              return actions;
+            })()
+          ])
+        );
+        chartCard.innerHTML = "";
+        chartCard.append(utils.el("div", { class: "fx-empty-state" }, [
+          utils.el("p", {}, "No data to display. Try again when you're back online.")
+        ]));
+        return;
+      }
 
       const ranked = teams.slice().sort((a,b)=> (b.strength||0)-(a.strength||0));
       const top6Ids = new Set(ranked.slice(0,6).map(t=>t.id));
@@ -417,6 +452,15 @@ export async function renderFixtures(main){
       matrixCard.append(
         utils.el("h3",{},`Matrix — GW${windowIds[0]}–${windowIds.slice(-1)[0]}`)
       );
+
+      if (hadError) {
+        const warn = utils.el("div", { class: "fx-notice fx-notice-warning" });
+        warn.innerHTML = `
+          <span class="fx-notice-icon">⚠️</span>
+          <span>Showing partial data — some fixtures could not be fetched. Retry when you're back online.</span>
+        `;
+        matrixCard.append(warn);
+      }
 
       // Legend explaining FDR types and features
       const legend = utils.el("div", { class: "fx-legend" });

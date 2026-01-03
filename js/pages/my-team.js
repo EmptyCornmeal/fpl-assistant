@@ -1,12 +1,12 @@
 // js/pages/my-team.js
-import { fplClient, legacyApi } from "../api/fplClient.js";
+import { fplClient } from "../api/fplClient.js";
 import { state, isInWatchlist, toggleWatchlist, validateState, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
-import { hasCachedData, getCacheAge, CacheKey } from "../api/fetchHelper.js";
+import { hasCachedData, CacheKey } from "../api/fetchHelper.js";
 
 /* ───────────────── constants ───────────────── */
 const STATUS_MAP = {
@@ -365,7 +365,8 @@ const EMPTY_TEAM_SVG = `
 </svg>`;
 
 /* ───────────────── page ───────────────── */
-export async function renderMyTeam(main){
+export async function renderMyTeam(main, options = {}){
+  const { preferCache = false } = options;
   // Validate state - require entryId
   const validation = validateState({ requireEntryId: true });
   if (!validation.ok) {
@@ -393,29 +394,30 @@ export async function renderMyTeam(main){
   ui.mount(main, ui.loadingWithTimeout("Loading your team..."));
 
   // Fetch bootstrap data
-  const bootstrapResult = state.bootstrap
+  const bootstrapResult = state.bootstrap && !preferCache
     ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
-    : await fplClient.bootstrap();
+    : await fplClient.bootstrap({ preferCache });
+
+  const hasTeamCache =
+    fplClient.hasBootstrapCache() &&
+    hasCachedData(CacheKey.ENTRY, state.entryId) &&
+    hasCachedData(CacheKey.ENTRY_HISTORY, state.entryId);
+  const cacheAge = hasTeamCache ? fplClient.getBootstrapCacheAge() : null;
 
   // Handle complete failure with degraded state options
   if (!bootstrapResult.ok) {
     log.error("My Team: Bootstrap fetch failed", bootstrapResult.message);
 
-    // Check if cached data is available
-    const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
-    const hasCache = cacheAge !== null;
-
     const degradedCard = ui.degradedCard({
       title: "Failed to Load Team Data",
       errorType: bootstrapResult.errorType,
       message: bootstrapResult.message,
-      cacheAge: hasCache ? cacheAge : null,
+      cacheAge: hasTeamCache ? cacheAge : null,
       onRetry: async () => {
         await renderMyTeam(main);
       },
-      onUseCached: hasCache ? async () => {
-        state.bootstrap = fplClient.loadBootstrapFromCache().data;
-        await renderMyTeam(main);
+      onUseCached: hasTeamCache ? async () => {
+        await renderMyTeam(main, { preferCache: true });
       } : null,
     });
 
@@ -424,13 +426,14 @@ export async function renderMyTeam(main){
   }
 
   // Render with data
-  await renderMyTeamWithData(main, bootstrapResult);
+  await renderMyTeamWithData(main, bootstrapResult, { preferCache });
 }
 
 /**
  * Render my team page with bootstrap data
  */
-async function renderMyTeamWithData(main, bootstrapResult) {
+async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
+  const { preferCache = false } = options;
   const bs = bootstrapResult.data;
   state.bootstrap = bs;
 
@@ -468,9 +471,9 @@ async function renderMyTeamWithData(main, bootstrapResult) {
 
     // Core pulls using new API with standardized results
     const [profileResult, histResult, fixturesResult] = await Promise.all([
-      fplClient.entry(state.entryId),
-      fplClient.entryHistory(state.entryId),
-      fplClient.fixtures()
+      fplClient.entry(state.entryId, { preferCache }),
+      fplClient.entryHistory(state.entryId, { preferCache }),
+      fplClient.fixtures(null, { preferCache })
     ]);
 
     // Check for failures
@@ -503,9 +506,9 @@ async function renderMyTeamWithData(main, bootstrapResult) {
 
     // Picks & live using new API
     const [picksPrevResult, livePrevResult, picksUpcResult] = await Promise.all([
-      prevGw ? fplClient.entryPicks(state.entryId, prevGw) : Promise.resolve({ ok: true, data: null }),
-      prevGw ? fplClient.eventLive(prevGw) : Promise.resolve({ ok: true, data: { elements: [] } }),
-      upcGw  ? fplClient.entryPicks(state.entryId, upcGw) : Promise.resolve({ ok: true, data: null }),
+      prevGw ? fplClient.entryPicks(state.entryId, prevGw, { preferCache }) : Promise.resolve({ ok: true, data: null }),
+      prevGw ? fplClient.eventLive(prevGw, { preferCache }) : Promise.resolve({ ok: true, data: { elements: [] } }),
+      upcGw  ? fplClient.entryPicks(state.entryId, upcGw, { preferCache }) : Promise.resolve({ ok: true, data: null }),
     ]);
 
     const picksPrev = picksPrevResult.ok ? picksPrevResult.data : null;
@@ -516,7 +519,7 @@ async function renderMyTeamWithData(main, bootstrapResult) {
     if (picksPrevResult.fromCache) { usingCache = true; maxCacheAge = Math.max(maxCacheAge, picksPrevResult.cacheAge); }
 
     // Live map (if any)
-    const liveResult = liveGw ? await fplClient.eventLive(liveGw) : { ok: true, data: { elements: [] } };
+    const liveResult = liveGw ? await fplClient.eventLive(liveGw, { preferCache }) : { ok: true, data: { elements: [] } };
     const liveMap = liveGw && liveResult.ok ? toMap(liveResult.data.elements || []) : new Map();
 
     // Roster preference: UPCOMING > PREVIOUS
@@ -1143,8 +1146,11 @@ async function renderMyTeamWithData(main, bootstrapResult) {
     log.error("My Team: Failed to load", e);
 
     // Check if cached data is available for degraded state
-    const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
-    const hasCache = cacheAge !== null;
+    const hasCache =
+      fplClient.hasBootstrapCache() &&
+      hasCachedData(CacheKey.ENTRY, state.entryId) &&
+      hasCachedData(CacheKey.ENTRY_HISTORY, state.entryId);
+    const cacheAge = hasCache ? fplClient.getBootstrapCacheAge() : null;
 
     if (hasCache) {
       // Show degraded card with cache option
@@ -1156,8 +1162,7 @@ async function renderMyTeamWithData(main, bootstrapResult) {
           await renderMyTeam(main);
         },
         onUseCached: async () => {
-          state.bootstrap = fplClient.loadBootstrapFromCache().data;
-          await renderMyTeam(main);
+          await renderMyTeam(main, { preferCache: true });
         },
       });
       ui.mount(main, degradedCard);
