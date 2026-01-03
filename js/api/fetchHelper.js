@@ -72,7 +72,8 @@ const CACHE_POLICY = {
   // Persist fixtures + entry picks to enable offline fallbacks (cardinality is bounded: GW + entry)
   [CacheKey.FIXTURES]: { persist: true, memory: true },
   [CacheKey.ENTRY_PICKS]: { persist: true, memory: true },
-  [CacheKey.ELEMENT_SUMMARY]: { persist: false, memory: true },
+  // Persist element summary to provide cached fallbacks for player profile
+  [CacheKey.ELEMENT_SUMMARY]: { persist: true, memory: true },
   [CacheKey.EVENT_LIVE]: { persist: true, memory: true },
 };
 

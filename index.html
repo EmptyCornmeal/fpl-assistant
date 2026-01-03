@@ -98,27 +98,51 @@
     <details class="help-ids">
       <summary><strong>How to find your IDs</strong></summary>
       <div class="help-steps">
-        <p><strong>Your FPL Entry ID</strong></p>
-        <ol>
+        <p class="help-title">Find your Entry ID</p>
+        <ol class="help-steps-list">
           <li>Open your team on the FPL website.</li>
-          <li>Go to your <em>Points</em> or <em>History</em> page. The URL looks like:</li>
+          <li>Click <em>Points</em> or <em>History</em> — look at the URL.</li>
+          <li>The number in <strong class="hl-id">red</strong> is your Entry ID.</li>
         </ol>
-        <code>https://fantasy.premierleague.com/entry/<span class="hl-id">1234567</span>/history</code>
-        <ol start="3">
-          <li>The number in <strong style="font-weight:inherit;color:#ff5a5a;">red</strong> is your Entry ID. You can paste the full URL here — we'll auto-extract it.</li>
-        </ol>
+        <div class="help-example">
+          <code>https://fantasy.premierleague.com/entry/<span class="hl-id">1234567</span>/history</code>
+          <button class="copy-url-btn" data-copy-url="https://fantasy.premierleague.com/entry/1234567/history" aria-label="Copy Entry ID example URL">Copy example</button>
+        </div>
+        <p class="help-note">Tip: paste the full URL above — we'll extract the ID for you.</p>
 
-        <p style="margin-top:8px;"><strong>Classic League ID</strong></p>
-        <ol>
-          <li>Open the league table on the FPL website.</li>
-          <li>The URL looks like:</li>
+        <p class="help-title">Find a Classic League ID</p>
+        <ol class="help-steps-list">
+          <li>Open your league table.</li>
+          <li>The URL shows the league number in red.</li>
         </ol>
-        <code>https://fantasy.premierleague.com/leagues/classic/<span class="hl-id">987654</span>/standings</code>
-        <ol start="3">
-          <li>The number in <strong style="font-weight:inherit;color:#ff5a5a;">red</strong> is the League ID. You can paste multiple URLs or IDs, comma-separated.</li>
-        </ol>
+        <div class="help-example">
+          <code>https://fantasy.premierleague.com/leagues/classic/<span class="hl-id">987654</span>/standings</code>
+          <button class="copy-url-btn" data-copy-url="https://fantasy.premierleague.com/leagues/classic/987654/standings" aria-label="Copy League ID example URL">Copy example</button>
+        </div>
+        <p class="help-note">You can paste multiple IDs or URLs, separated by commas.</p>
       </div>
     </details>
+
+    <div class="sidebar-pins">
+      <div class="pin-section">
+        <div class="pin-header">Pinned teams</div>
+        <ul id="pinnedTeamsList" class="pin-list">
+          <li class="pin-placeholder">
+            <div class="empty-title">No pinned teams yet</div>
+            <div class="empty-sub">Pin a team from its page to save it here.</div>
+          </li>
+        </ul>
+      </div>
+      <div class="pin-section">
+        <div class="pin-header">Pinned players</div>
+        <ul id="pinnedPlayersList" class="pin-list">
+          <li class="pin-placeholder">
+            <div class="empty-title">No pinned players yet</div>
+            <div class="empty-sub">Use the ☆ button on player cards to pin them.</div>
+          </li>
+        </ul>
+      </div>
+    </div>
   </aside>
 
   <main id="app" class="app"></main>

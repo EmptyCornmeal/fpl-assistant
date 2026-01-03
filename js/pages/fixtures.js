@@ -219,25 +219,38 @@ export async function renderFixtures(main, options = {}){
     const fixtureToggleState = {
       pinMine: true,
       onlyDoubles: false,
-      showSwings: false
+      showSwings: false,
+      fullNames: false
     };
 
     // Helper to create controlled fixture toggle with clearer labels
     function createFixtureToggle(key, label, tooltip) {
-      const wrap = utils.el("label", { class: "fx-toggle", title: tooltip });
+      const wrap = utils.el("label", { class: "fx-toggle", title: tooltip, role: "checkbox", tabindex: "0" });
       const checkbox = utils.el("input", { type: "checkbox", checked: fixtureToggleState[key] });
       const labelSpan = utils.el("span", { class: "fx-toggle-label" }, label);
       const indicator = utils.el("span", { class: "fx-toggle-indicator" });
 
       wrap.append(checkbox, indicator, labelSpan);
 
+      const syncAria = () => wrap.setAttribute("aria-checked", checkbox.checked ? "true" : "false");
+
       checkbox.addEventListener("change", () => {
         fixtureToggleState[key] = checkbox.checked;
         indicator.classList.toggle("active", checkbox.checked);
         render();
+        syncAria();
+      });
+
+      wrap.addEventListener("keydown", (e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          checkbox.checked = !checkbox.checked;
+          checkbox.dispatchEvent(new Event("change"));
+        }
       });
 
       indicator.classList.toggle("active", fixtureToggleState[key]);
+      syncAria();
 
       return { wrap, checkbox, getState: () => fixtureToggleState[key] };
     }
@@ -245,6 +258,7 @@ export async function renderFixtures(main, options = {}){
     const pinMineToggle = createFixtureToggle("pinMine", "Pin my teams", "Keep your owned teams at the top of the matrix");
     const onlyDoublesToggle = createFixtureToggle("onlyDoubles", "Only doubles", "Show only teams with double gameweeks in the selected window");
     const showSwingsToggle = createFixtureToggle("showSwings", "Show swings", "Show difficulty direction arrows (▲easier ▼harder) between consecutive GWs");
+    const fullNamesToggle = createFixtureToggle("fullNames", "Full names", "Show full club names instead of abbreviations");
 
     const pinMine = pinMineToggle.wrap;
     const onlyDoubles = onlyDoublesToggle.wrap;
@@ -266,7 +280,7 @@ export async function renderFixtures(main, options = {}){
       utils.el("span",{class:"chip chip-dim"},"Window:"), windowSel.el,
       utils.el("span",{class:"chip chip-dim"},"View:"),   viewSel.el,
       utils.el("span",{class:"chip chip-dim"},"Pos:"), seg,
-      pinMine, onlyDoubles, showSwings
+      pinMine, onlyDoubles, showSwings, fullNamesToggle.wrap
     ]);
 
     /* Dashboard layout: toolbar + 2-column content */
@@ -354,6 +368,7 @@ export async function renderFixtures(main, options = {}){
       const ranked = teams.slice().sort((a,b)=> (b.strength||0)-(a.strength||0));
       const top6Ids = new Set(ranked.slice(0,6).map(t=>t.id));
       const showSwingArrows = fixtureToggleState.showSwings === true;
+      const useFullNames = fixtureToggleState.fullNames === true;
 
       const rows = teams.map(t=>{
         const cells = [];
@@ -432,7 +447,7 @@ export async function renderFixtures(main, options = {}){
 
         return {
           teamId: t.id,
-          team: t.short_name,
+          team: useFullNames ? t.name : t.short_name,
           cells,
           summary: { avg: avgAll ?? 99, home: homeCount, doubles: doublesCount, top6: top6Count }
         };
@@ -594,7 +609,9 @@ export async function renderFixtures(main, options = {}){
         const tr = utils.el("tr");
 
         const teamCell = utils.el("div",{style:"display:flex;align-items:center;gap:6px"});
-        teamCell.append(utils.el("span",{}, r.team));
+        const fullName = teamById.get(r.teamId)?.name;
+        const nameLabel = utils.el("span", { title: fullName || "" }, r.team);
+        teamCell.append(nameLabel);
         const owned = ownedByTeam.get(r.teamId);
         if (owned && owned.length){
           const chip = utils.el("span",{class:"team-owned-chip"}, `🧍×${owned.length}`);
