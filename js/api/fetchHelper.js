@@ -64,7 +64,7 @@ export const CacheKey = {
  */
 const CACHE_POLICY = {
   // Large payloads stay memory-only to avoid localStorage quota churn
-  [CacheKey.BOOTSTRAP]: { persist: false, memory: true },
+  [CacheKey.BOOTSTRAP]: { persist: true, memory: true },
 
   [CacheKey.ENTRY]: { persist: true, memory: true },
   [CacheKey.ENTRY_HISTORY]: { persist: true, memory: true },
@@ -243,6 +243,7 @@ export async function fetchWithTimeout(url, options = {}) {
         status: 200,
         durationMs: 0,
         attempt: 0,
+        url,
       };
     }
   }
@@ -295,6 +296,7 @@ export async function fetchWithTimeout(url, options = {}) {
             status: response.status,
             durationMs: Date.now() - started,
             attempt,
+            url,
           };
         }
         continue;
@@ -312,6 +314,7 @@ export async function fetchWithTimeout(url, options = {}) {
           status: response.status,
           durationMs: Date.now() - started,
           attempt,
+          url,
         };
       }
 
@@ -336,6 +339,7 @@ export async function fetchWithTimeout(url, options = {}) {
           status: response.status,
           durationMs: Date.now() - started,
           attempt,
+          url,
         };
       }
 
@@ -352,6 +356,7 @@ export async function fetchWithTimeout(url, options = {}) {
         status: response.status,
         durationMs: Date.now() - started,
         attempt,
+        url,
       };
     } catch (error) {
       clearTimeout(timeoutId);
@@ -374,6 +379,7 @@ export async function fetchWithTimeout(url, options = {}) {
     status: lastStatus || 0,
     durationMs: 0,
     attempt: retries,
+    url,
   };
 }
 
@@ -435,9 +441,19 @@ function evictOldestCacheEntries(count = CONFIG.evictionBatch) {
  * Save data to localStorage cache with timestamp
  */
 export function saveToCache(cacheKey, data, ...params) {
+  let meta = null;
+  if (
+    params.length &&
+    params[params.length - 1] &&
+    typeof params[params.length - 1] === "object" &&
+    params[params.length - 1].__cacheMeta === true
+  ) {
+    const metaArg = params.pop();
+    meta = metaArg?.meta || null;
+  }
   try {
     const storageKey = getCacheStorageKey(cacheKey, ...params);
-    const entry = { data, timestamp: Date.now() };
+    const entry = { data, timestamp: Date.now(), meta };
     localStorage.setItem(storageKey, JSON.stringify(entry));
     log.debug(`Cached ${cacheKey}`, params);
     return true;
@@ -489,7 +505,7 @@ export function loadFromCache(cacheKey, ...params) {
     if (!entry || typeof entry !== "object") return null;
     if (!Object.prototype.hasOwnProperty.call(entry, "data")) return null;
 
-    return { data: entry.data, timestamp: entry.timestamp || 0 };
+    return { data: entry.data, timestamp: entry.timestamp || 0, meta: entry.meta || null };
   } catch (e) {
     warnOnce(`cache.load.${cacheKey}`, `Failed to load cache ${cacheKey}:`, e?.message || e);
     return null;
@@ -591,11 +607,13 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
     // overrides
     persist = undefined, // override CACHE_POLICY.persist
     memory = undefined,  // override CACHE_POLICY.memory
+    metadata = null,
   } = options;
 
   const policy = CACHE_POLICY[cacheKey] || { persist: true, memory: true };
   const shouldPersist = persist ?? policy.persist;
   const shouldMemory = memory ?? policy.memory;
+  const targetUrl = url;
 
   // Optional: instant paint from localStorage (ONLY if this key is allowed to persist)
   if (preferCache && shouldPersist) {
@@ -615,6 +633,9 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
           status: 200,
           durationMs: 0,
           attempt: 0,
+          url: targetUrl,
+          meta: cached.meta || null,
+          cacheTimestamp: cached.timestamp || null,
         };
       }
     }
@@ -630,8 +651,12 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
 
   if (result.ok) {
     // Persist to localStorage if allowed
-    if (shouldPersist) saveToCache(cacheKey, result.data, ...cacheParams);
-    return result;
+    if (shouldPersist) {
+      const metaArg = metadata ? [{ __cacheMeta: true, meta: { ...metadata, cachedAt: Date.now(), url: targetUrl } }] : [];
+      saveToCache(cacheKey, result.data, ...cacheParams, ...metaArg);
+    }
+    const cacheTimestamp = metadata?.timestamp ?? Date.now();
+    return { ...result, url: result.url || targetUrl, meta: metadata || null, cacheTimestamp };
   }
 
   // If failed, localStorage fallback ONLY if allowed
@@ -654,12 +679,15 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
           status: result.status || 0,
           durationMs: result.durationMs || 0,
           attempt: result.attempt ?? 0,
+          url: targetUrl,
+          meta: cached.meta || null,
+          cacheTimestamp: cached.timestamp || null,
         };
       }
     }
   }
 
-  return result;
+  return { ...result, url: result.url || targetUrl, meta: metadata || null };
 }
 
 export default {

@@ -9,9 +9,12 @@ import { renderHelp } from "./pages/help.js";
 import { renderStatPicker } from "./pages/stat-picker.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
+import { fplClient } from "./api/fplClient.js";
 import { state, setPageUpdated, isTeamPinned, togglePinnedTeam, getPinnedTeams, getWatchlist } from "./state.js";
 import { utils } from "./utils.js";
 import { log } from "./logger.js";
+import { getApiBase } from "./config.js";
+import { formatCacheAge } from "./api/fetchHelper.js";
 
 const APP_VERSION = "1.2.0";
 const COMMIT_HASH = "b0868d2"; // Auto-updated during build/deploy
@@ -305,6 +308,8 @@ let lastHashValue = "#/";
 /* ---------- Refresh state ---------- */
 let lastFetchTime = null;
 let isLiveGw = false;
+let bootstrapMeta = null;
+let bootstrapBannerDismissed = false;
 
 /* ---------- Deadline Countdown ---------- */
 let deadlineInterval = null;
@@ -408,8 +413,8 @@ function bindThemeToggle() {
 }
 
 /* ---------- Last Updated Timestamp ---------- */
-function updateLastFetchTime() {
-  lastFetchTime = Date.now();
+function updateLastFetchTime(timestamp = Date.now()) {
+  lastFetchTime = timestamp;
   updateLastUpdatedDisplay();
 }
 
@@ -447,6 +452,46 @@ function updateLastUpdatedDisplay() {
 // Update display every 10 seconds
 setInterval(updateLastUpdatedDisplay, 10000);
 
+function renderBootstrapBanner() {
+  const host = document.getElementById("appAlerts");
+  if (!host) return;
+
+  host.innerHTML = "";
+  if (!bootstrapMeta || bootstrapBannerDismissed) return;
+
+  const { fromCache, stale, cacheAge, apiBase } = bootstrapMeta;
+  if (!fromCache && !stale) return;
+
+  const banner = document.createElement("div");
+  banner.className = "cached-banner cached-banner-global";
+
+  const ageText = cacheAge != null ? formatCacheAge(cacheAge) : "unknown age";
+  banner.innerHTML = `
+    <div class="cached-banner-content">
+      <span class="cached-banner-icon">📡</span>
+      <span class="cached-banner-text">
+        <strong>Using cached data</strong> — Last updated ${ageText}${apiBase ? ` · ${apiBase}` : ""}
+      </span>
+    </div>
+    <div class="cached-banner-actions">
+      <button class="btn-banner-refresh" type="button">Try Again</button>
+      <button class="btn-banner-dismiss" type="button" title="Dismiss">✕</button>
+    </div>
+  `;
+
+  banner.querySelector(".btn-banner-refresh")?.addEventListener("click", () => {
+    bootstrapBannerDismissed = false;
+    refreshData();
+  });
+
+  banner.querySelector(".btn-banner-dismiss")?.addEventListener("click", () => {
+    bootstrapBannerDismissed = true;
+    host.innerHTML = "";
+  });
+
+  host.appendChild(banner);
+}
+
 /* ---------- API Status + Offline Indicator ---------- */
 const ApiStatus = {
   LIVE: "live",
@@ -474,6 +519,7 @@ function setApiStatus(status, detail = "") {
   badge.dataset.status = status;
   badge.textContent = label;
   badge.title = detail || label;
+  badge.dataset.base = getApiBase();
 }
 
 async function refreshApiStatus(reason = "") {
@@ -491,8 +537,12 @@ async function refreshApiStatus(reason = "") {
   setApiStatus(ApiStatus.UPDATING, reason || "Checking API…");
   apiStatusPromise = (async () => {
     try {
-      await api.up();
-      setApiStatus(ApiStatus.LIVE, "Connected to the FPL proxy");
+      const res = await fplClient.healthCheck();
+      if (res.ok) {
+        setApiStatus(ApiStatus.LIVE, `Connected (${getApiBase()})`);
+      } else {
+        setApiStatus(ApiStatus.UNKNOWN, "Health endpoint unavailable");
+      }
     } catch (err) {
       const msg = `${err?.message || err}`;
       const isMissing = msg.includes("HTTP 404") || msg.toLowerCase().includes("not found");
@@ -579,22 +629,24 @@ async function refreshData() {
   setApiStatus(ApiStatus.UPDATING, "Refreshing data…");
 
   try {
-    // Clear cache and refetch
-    api.clearCache();
-    state.bootstrap = await api.bootstrap();
+    // Clear in-memory cache and refetch
+    fplClient.clearCache();
+    bootstrapBannerDismissed = false;
+    const result = await fetchBootstrap({ allowCacheFallback: true, forceRefresh: true });
+    if (!result.ok) throw new Error("Bootstrap refresh failed");
     renderPinnedSidebar();
-    updateLastFetchTime();
 
     // Update live status
     isLiveGw = checkIfLiveGw();
 
     // Update UI
-    setHeaderStatusFromBootstrap(state.bootstrap);
+    if (state.bootstrap) setHeaderStatusFromBootstrap(state.bootstrap);
 
     // Refresh current page
     navigate(location.hash);
 
-    setApiStatus(ApiStatus.LIVE, "Data refreshed");
+    const stale = result.meta?.stale || result.meta?.fromCache;
+    setApiStatus(stale ? ApiStatus.OFFLINE : ApiStatus.LIVE, stale ? "Data refreshed from cache" : "Data refreshed");
     log.info("Data refresh complete");
   } catch (e) {
     log.error("Refresh failed:", e);
@@ -686,7 +738,8 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
   main.innerHTML = `<div class="card"><div class="loading-spinner"></div><p style="text-align:center;color:var(--muted)">Loading player...</p></div>`;
 
   try {
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = await requireBootstrap();
+    if (!bs) throw new Error("Bootstrap not available");
     const player = (bs.elements || []).find(p => p.id === playerId);
 
     if (!player) {
@@ -901,7 +954,8 @@ async function renderTeamProfile(main, teamId) {
   main.innerHTML = `<div class="card"><div class="loading-spinner"></div><p style="text-align:center;color:var(--muted)">Loading team...</p></div>`;
 
   try {
-    const bs = state.bootstrap || await api.bootstrap();
+    const bs = await requireBootstrap();
+    if (!bs) throw new Error("Bootstrap not available");
     const teams = bs.teams || [];
     const teamIdNum = Number(teamId);
     const teamById = new Map(teams.map(t => [Number(t.id), t]));
@@ -1477,6 +1531,41 @@ function setHeaderStatusFromBootstrap(bs) {
   }
 }
 
+function updateSidebarStats() {
+  const bs = state.bootstrap;
+  if (!bs) return;
+
+  setText("teamsCount", (bs.teams?.length ?? "—").toString());
+  setText("playersCount", (bs.elements?.length ?? "—").toString());
+
+  const { lastFinished } = computeMarkers(bs.events || []);
+  setText("lastFinishedGw", lastFinished ? String(lastFinished.id) : "—");
+
+  const note = document.querySelector(".sidebar .sidebar-note");
+  if (note) note.textContent = "Live-aware: shows the current GW when it's in progress.";
+}
+
+function applyBootstrapData(bs, meta = {}) {
+  const cacheTimestamp =
+    meta.cacheTimestamp ?? meta.timestamp ??
+    (meta.cacheAge != null ? Date.now() - meta.cacheAge : Date.now());
+
+  const mergedMeta = { ...meta, cacheTimestamp };
+  state.bootstrap = bs;
+  state.bootstrapMeta = mergedMeta;
+  bootstrapMeta = mergedMeta;
+  if (!mergedMeta.fromCache && !mergedMeta.stale) {
+    bootstrapBannerDismissed = false;
+  }
+
+  updateLastFetchTime(cacheTimestamp);
+  setHeaderStatusFromBootstrap(bs);
+  startDeadlineCountdown();
+  updateSidebarStats();
+  renderPinnedSidebar();
+  renderBootstrapBanner();
+}
+
 /* ---------- Chart.js sensible defaults ---------- */
 function initChartDefaults() {
   if (!window.Chart) return;
@@ -1523,7 +1612,10 @@ function bindGlobalSearch() {
 
     const bs = state.bootstrap;
     if (!bs) {
-      hideResults();
+      results.innerHTML = '<div class="search-result-item"><span class="result-name" style="color:var(--muted)">Player search unavailable: bootstrap not loaded</span></div>';
+      results.classList.add("active");
+      searchItems = Array.from(results.querySelectorAll(".search-result-item"));
+      searchActive = -1;
       return;
     }
 
@@ -1675,6 +1767,70 @@ function bindGlobalSearch() {
   });
 }
 
+function primeBootstrapFromCache() {
+  if (state.bootstrap) return;
+  const cached = fplClient.loadBootstrapFromCache();
+  if (cached.ok) {
+    const meta = {
+      fromCache: true,
+      cacheAge: cached.cacheAge,
+      cacheTimestamp: cached.cacheTimestamp || (cached.cacheAge ? Date.now() - cached.cacheAge : Date.now()),
+      stale: true,
+      apiBase: cached.meta?.apiBase || getApiBase(),
+    };
+    applyBootstrapData(cached.data, meta);
+    setApiStatus(ApiStatus.OFFLINE, "Using cached bootstrap");
+  }
+}
+
+async function fetchBootstrap({ allowCacheFallback = true, forceRefresh = false } = {}) {
+  try {
+    const result = await fplClient.bootstrap({ forceRefresh });
+    if (result.ok) {
+      const meta = {
+        fromCache: !!result.fromCache,
+        cacheAge: result.cacheAge ?? 0,
+        cacheTimestamp: result.cacheTimestamp || (result.cacheAge ? Date.now() - result.cacheAge : Date.now()),
+        stale: !!result.stale,
+        apiBase: result.meta?.apiBase || getApiBase(),
+      };
+      applyBootstrapData(result.data, meta);
+      const detail = meta.stale || meta.fromCache
+        ? "Using cached bootstrap data"
+        : `Connected to API (${meta.apiBase})`;
+      setApiStatus(meta.stale ? ApiStatus.OFFLINE : ApiStatus.LIVE, detail);
+      return { ok: true, meta };
+    }
+  } catch (e) {
+    log.warn("Bootstrap fetch failed - some features may be limited:", e);
+  }
+
+  if (allowCacheFallback) {
+    const cached = fplClient.loadBootstrapFromCache();
+    if (cached.ok) {
+      const meta = {
+        fromCache: true,
+        cacheAge: cached.cacheAge,
+        cacheTimestamp: cached.cacheTimestamp || (cached.cacheAge ? Date.now() - cached.cacheAge : Date.now()),
+        stale: true,
+        apiBase: cached.meta?.apiBase || getApiBase(),
+      };
+      applyBootstrapData(cached.data, meta);
+      setApiStatus(ApiStatus.OFFLINE, "Using cached bootstrap (API unreachable)");
+      return { ok: true, meta, fallback: true };
+    }
+  }
+
+  setApiStatus(ApiStatus.OFFLINE, "Bootstrap not loaded — check API base");
+  return { ok: false };
+}
+
+async function requireBootstrap() {
+  if (state.bootstrap) return state.bootstrap;
+  await fetchBootstrap({ allowCacheFallback: true });
+  return state.bootstrap;
+}
+
 /* -------------------- INIT -------------------- */
 async function init() {
   // Initialize theme first (prevents flash)
@@ -1685,38 +1841,8 @@ async function init() {
   bindApiStatusEvents();
   registerServiceWorker();
 
-  // Prefetch bootstrap (non-fatal if it fails)
-  try {
-    log.info("Fetching bootstrap data...");
-    state.bootstrap = await api.bootstrap();
-    updateLastFetchTime();
-    setApiStatus(ApiStatus.LIVE, "Connected to FPL proxy");
-    log.info("Bootstrap data loaded successfully");
-  } catch (e) {
-    log.warn("Bootstrap fetch failed - some features may be limited:", e);
-    setApiStatus(ApiStatus.OFFLINE, "Bootstrap fetch failed");
-  }
-
-  // Sidebar stats + header status
-  if (state.bootstrap) {
-    const bs = state.bootstrap;
-    setText("teamsCount", (bs.teams?.length ?? "—").toString());
-    setText("playersCount", (bs.elements?.length ?? "—").toString());
-
-    // Use robust "last finished" based on data_checked
-    const { lastFinished } = computeMarkers(bs.events || []);
-    setText("lastFinishedGw", lastFinished ? String(lastFinished.id) : "—");
-
-    const note = document.querySelector(".sidebar .sidebar-note");
-    if (note) note.textContent = "Live-aware: shows the current GW when it's in progress.";
-    setHeaderStatusFromBootstrap(bs);
-    
-    // Start deadline countdown
-    startDeadlineCountdown();
-
-    // Populate pinned sections now that we have labels
-    renderPinnedSidebar();
-  }
+  primeBootstrapFromCache();
+  await fetchBootstrap({ allowCacheFallback: true });
 
   // Top bar version with commit hash
   const versionEl = document.getElementById("appVersion");

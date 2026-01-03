@@ -1,6 +1,6 @@
-const APP_VERSION = "1.2.0";
-const STATIC_CACHE = `cache-v${APP_VERSION}`;
-const DATA_CACHE = `data-v${APP_VERSION}`;
+const SW_VERSION = "2024.10.08";
+const STATIC_CACHE = `static-${SW_VERSION}`;
+const DATA_CACHE_PREFIX = `data-${SW_VERSION}-`;
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const CORE_ASSETS = [
   "./js/api.js",
   "./js/api/fplClient.js",
   "./js/api/fetchHelper.js",
+  "./js/config.js",
   "./js/state.js",
   "./js/utils.js",
   "./js/logger.js",
@@ -28,6 +29,24 @@ const CORE_ASSETS = [
 ];
 
 let lastBroadcastStatus = null;
+
+function dataCacheName(host) {
+  return `${DATA_CACHE_PREFIX}${host}`;
+}
+
+async function purgeOldCaches(currentApiHost = null) {
+  const keys = await caches.keys();
+  await Promise.all(
+    keys.map((key) => {
+      const isStatic = key === STATIC_CACHE;
+      const isDataCache = key.startsWith(DATA_CACHE_PREFIX);
+      const isCurrentData = isDataCache && currentApiHost && key === dataCacheName(currentApiHost);
+      if (isStatic || isCurrentData) return Promise.resolve();
+      if (isDataCache && !currentApiHost) return Promise.resolve();
+      return caches.delete(key);
+    })
+  );
+}
 
 async function broadcastStatus(status, detail = "") {
   if (status === lastBroadcastStatus && !detail) return;
@@ -55,37 +74,14 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      const keys = await caches.keys();
-      await Promise.all(
-        keys
-          .filter((key) => (key.startsWith("cache-v") || key.startsWith("data-v")) && key !== STATIC_CACHE && key !== DATA_CACHE)
-          .map((key) => caches.delete(key))
-      );
+      await purgeOldCaches();
       await broadcastStatus("live", "Offline cache ready");
       await self.clients.claim();
     })()
   );
 });
 
-async function cacheFirst(request) {
-  const cache = await caches.open(STATIC_CACHE);
-  const cached = await cache.match(request);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) {
-      cache.put(request, response.clone());
-      return response;
-    }
-    return response;
-  } catch (err) {
-    await broadcastStatus("offline", "Offline — asset unavailable");
-    return new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
-  }
-}
-
-async function networkFirst(request) {
+async function networkFirstDocument(request) {
   try {
     const response = await fetch(request);
     if (response && response.ok) {
@@ -94,8 +90,8 @@ async function networkFirst(request) {
       await broadcastStatus("live");
       return response;
     }
-  } catch (err) {
-    // fall through to cache
+  } catch {
+    // fall through
   }
 
   const cache = await caches.open(STATIC_CACHE);
@@ -111,39 +107,58 @@ async function networkFirst(request) {
   });
 }
 
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(DATA_CACHE);
+async function staleWhileRevalidateStatic(request) {
+  const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(request);
 
   const networkPromise = fetch(request)
     .then(async (response) => {
-      if (!response || !response.ok) {
-        throw new Error(`HTTP ${response?.status || "fail"}`);
+      if (response && response.ok) {
+        cache.put(request, response.clone());
+        await broadcastStatus("live");
       }
-      cache.put(request, response.clone());
-      await broadcastStatus("live");
       return response;
     })
-    .catch(async () => {
-      await broadcastStatus("offline", "API unreachable; using cache");
-      if (cached) return cached;
-      throw new Error("Network failure");
-    });
+    .catch(() => null);
 
   if (cached) {
-    // Update cache in background
     networkPromise.catch(() => null);
     return cached;
   }
 
+  const fresh = await networkPromise;
+  if (fresh) return fresh;
+
+  return new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
+}
+
+async function networkFirstApi(request) {
+  const url = new URL(request.url);
+  const apiHost = url.host;
+  await purgeOldCaches(apiHost);
+
+  const cache = await caches.open(dataCacheName(apiHost));
   try {
-    return await networkPromise;
+    const response = await fetch(request);
+    if (response && response.ok) {
+      cache.put(request, response.clone());
+      await broadcastStatus("live");
+      return response;
+    }
   } catch {
-    return new Response(JSON.stringify({ ok: false, message: "Offline" }), {
-      status: 503,
-      headers: { "Content-Type": "application/json" },
-    });
+    // fall through to cache
   }
+
+  const cached = await cache.match(request);
+  if (cached) {
+    await broadcastStatus("offline", "Serving cached API response");
+    return cached;
+  }
+
+  return new Response(JSON.stringify({ ok: false, message: "Offline" }), {
+    status: 503,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 self.addEventListener("fetch", (event) => {
@@ -151,19 +166,19 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  const accept = request.headers.get("accept") || "";
 
-  if (request.mode === "navigate" || request.destination === "document") {
-    event.respondWith(networkFirst(request));
+  // Only handle same-origin API requests
+  if (url.origin === self.location.origin && url.pathname.startsWith("/api/")) {
+    event.respondWith(networkFirstApi(request));
     return;
   }
 
-  if (accept.includes("application/json") || url.pathname.startsWith("/api/")) {
-    event.respondWith(staleWhileRevalidate(request));
+  if (request.mode === "navigate" || request.destination === "document") {
+    event.respondWith(networkFirstDocument(request));
     return;
   }
 
   if (url.origin === self.location.origin) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(staleWhileRevalidateStatic(request));
   }
 });

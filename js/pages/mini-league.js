@@ -24,8 +24,9 @@ export async function renderMiniLeague(main) {
   ui.mount(main, ui.loadingWithTimeout("Loading leagues..."));
 
   // Fetch bootstrap
+  const bootstrapMeta = state.bootstrapMeta || {};
   const bootstrapResult = state.bootstrap
-    ? { ok: true, data: state.bootstrap, fromCache: false, cacheAge: 0 }
+    ? { ok: true, data: state.bootstrap, fromCache: !!bootstrapMeta.fromCache, cacheAge: bootstrapMeta.cacheAge || 0, stale: !!bootstrapMeta.stale }
     : await fplClient.bootstrap();
 
   if (!bootstrapResult.ok) {
@@ -47,10 +48,16 @@ export async function renderMiniLeague(main) {
   }
 
   const page = utils.el("div", { class: "league-page" });
+  ui.mountWithCache(main, page, {
+    fromCache: !!(bootstrapResult.fromCache || bootstrapResult.stale || bootstrapMeta.fromCache),
+    cacheAge: bootstrapResult.cacheAge || bootstrapMeta.cacheAge || 0,
+    onRefresh: () => renderMiniLeague(main),
+  });
 
   try {
     const bs = bootstrapResult.data;
     state.bootstrap = bs;
+    state.bootstrapMeta = state.bootstrapMeta || { fromCache: bootstrapResult.fromCache, cacheAge: bootstrapResult.cacheAge };
     const { events, elements: players, teams, element_types: positions } = bs;
 
     // GW markers
@@ -171,6 +178,8 @@ export async function renderMiniLeague(main) {
             id: lid,
             name: `League ${lid}`,
             error: true,
+            errorStatus: leagueResult.status,
+            errorUrl: leagueResult.url,
             errorType: leagueResult.errorType,
             errorMessage: leagueResult.message
           };
@@ -201,7 +210,8 @@ export async function renderMiniLeague(main) {
           gwRef,
           isLive,
           fromCache: leagueResult.fromCache,
-          cacheAge: leagueResult.cacheAge || 0
+          cacheAge: leagueResult.cacheAge || 0,
+          stale: !!leagueResult.stale,
         };
 
         leagueDataCache.set(lid, summary);
@@ -242,9 +252,11 @@ export async function renderMiniLeague(main) {
       // Fetch all leagues in parallel with a global timeout to prevent infinite loading
       const LOAD_TIMEOUT = 20000; // 20 seconds max for all leagues to load
 
-      const summaries = (await Promise.allSettled(
-        leagues.map((lid) =>
-          Promise.race([
+      const summaries = [];
+      await Promise.allSettled(
+        leagues.map((lid, idx) => {
+          const cardEl = page.querySelector(`.league-card[data-lid="${lid}"]`);
+          return Promise.race([
             fetchLeagueSummary(lid),
             new Promise((resolve) =>
               setTimeout(
@@ -252,31 +264,38 @@ export async function renderMiniLeague(main) {
                 LOAD_TIMEOUT
               )
             ),
-          ]).catch((err) => ({
-            id: lid,
-            name: `League ${lid}`,
-            error: true,
-            errorMessage: err?.message || "Failed to load league",
-          }))
-        )
-      )).map((res, idx) => {
+          ])
+            .catch((err) => ({
+              id: lid,
+              name: `League ${lid}`,
+              error: true,
+              errorMessage: err?.message || "Failed to load league",
+            }))
+            .then((summary) => {
+              const resolved = summary?.error && buildCachedSummary(lid) ? buildCachedSummary(lid) : summary;
+              summaries[idx] = resolved;
+              if (cardEl && resolved) renderLeagueCard(cardEl, resolved);
+              return resolved;
+            });
+        })
+      );
+
+      const mergedSummaries = summaries.map((s, idx) => {
+        if (s) return s;
         const fallback = {
           id: leagues[idx],
           name: `League ${leagues[idx]}`,
           error: true,
-          errorMessage: res.reason?.message || "Failed to load league",
+          errorMessage: "Failed to load league",
         };
-        const summary = res.status === "fulfilled" ? res.value : fallback;
-        if (summary && !summary.error) return summary;
-
         const cached = buildCachedSummary(leagues[idx]);
-        return cached || summary || fallback;
+        return cached || fallback;
       });
 
       // Check for total failure (all leagues failed without cache)
-      const successfulLeagues = summaries.filter(s => !s.error);
-      const failedLeagues = summaries.filter(s => s.error);
-      const staleLeagues = summaries.filter(s => s.stale);
+      const successfulLeagues = mergedSummaries.filter(s => !s.error);
+      const failedLeagues = mergedSummaries.filter(s => s.error);
+      const staleLeagues = mergedSummaries.filter(s => s.stale);
 
       // If all leagues failed completely (no cache available), show error state
       if (successfulLeagues.length === 0 && failedLeagues.length === leagues.length) {
@@ -347,7 +366,7 @@ export async function renderMiniLeague(main) {
       }
 
       // Render each league card
-      for (const summary of summaries) {
+      for (const summary of mergedSummaries) {
         const cardEl = page.querySelector(`.league-card[data-lid="${summary.id}"]`);
         if (!cardEl) continue;
 
@@ -356,12 +375,17 @@ export async function renderMiniLeague(main) {
         if (summary.error) {
           // Failed league card with retry button
           cardEl.classList.add("league-card-error-state");
+          const detailPieces = [];
+          if (summary.errorMessage) detailPieces.push(summary.errorMessage);
+          if (summary.errorStatus) detailPieces.push(`HTTP ${summary.errorStatus}`);
+          if (summary.errorUrl) detailPieces.push(summary.errorUrl);
+          const detail = detailPieces.join(" · ");
           cardEl.innerHTML = `
             <div class="league-card-header"><h3>${summary.name}</h3></div>
             <div class="league-card-error-content">
               <span class="league-card-error-icon">⚠️</span>
               <span class="league-card-error-text">Failed to load</span>
-              ${summary.errorMessage ? `<span class="league-card-error-detail">${summary.errorMessage}</span>` : ""}
+              ${detail ? `<span class="league-card-error-detail">${detail}</span>` : ""}
             </div>
             <button class="league-card-retry-btn">Retry</button>
           `;
@@ -387,11 +411,17 @@ export async function renderMiniLeague(main) {
 
       if (summary.error) {
         cardEl.classList.add("league-card-error-state");
+        const detailPieces = [];
+        if (summary.errorMessage) detailPieces.push(summary.errorMessage);
+        if (summary.errorStatus) detailPieces.push(`HTTP ${summary.errorStatus}`);
+        if (summary.errorUrl) detailPieces.push(summary.errorUrl);
+        const detail = detailPieces.join(" · ");
         cardEl.innerHTML = `
           <div class="league-card-header"><h3>${summary.name}</h3></div>
           <div class="league-card-error-content">
             <span class="league-card-error-icon">⚠️</span>
             <span class="league-card-error-text">Failed to load</span>
+            ${detail ? `<span class="league-card-error-detail">${detail}</span>` : ""}
           </div>
           <button class="league-card-retry-btn">Retry</button>
         `;

@@ -10,6 +10,7 @@ const _state = {
   watchlist: [],
   pinnedTeams: [],
   bootstrap: null,
+  bootstrapMeta: null,
   // Per-page fetch timestamps
   pageLastUpdated: {},
 };
@@ -70,6 +71,10 @@ export const state = new Proxy({}, {
     }
     if (prop === "bootstrap") {
       _state.bootstrap = value;
+      return true;
+    }
+    if (prop === "bootstrapMeta") {
+      _state.bootstrapMeta = value;
       return true;
     }
     if (prop === "pageLastUpdated") {
