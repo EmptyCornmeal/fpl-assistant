@@ -1,11 +1,12 @@
 // js/pages/mini-league.js
 // PHASE 3: League page with Selector Grid + Detail View (no scrolling)
+// PHASE 10: Fix infinite loading - robust error handling with partial failure support
 import { fplClient, legacyApi } from "../api/fplClient.js";
 import { state, validateState, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { log } from "../logger.js";
-import { getCacheAge, CacheKey } from "../api/fetchHelper.js";
+import { getCacheAge, CacheKey, loadFromCache, formatCacheAge } from "../api/fetchHelper.js";
 
 /**
  * Mini-League - Two-view model:
@@ -123,12 +124,54 @@ export async function renderMiniLeague(main) {
     }
 
     // Fetch league summary for selector view
+    // Phase 10: Enhanced error handling with cache fallback
     async function fetchLeagueSummary(lid) {
       if (leagueDataCache.has(lid)) return leagueDataCache.get(lid);
 
       try {
         const leagueResult = await fplClient.leagueClassic(lid, 1);
-        if (!leagueResult.ok) return { id: lid, name: `League ${lid}`, error: true };
+
+        if (!leagueResult.ok) {
+          // Check for cached data
+          const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
+          if (cached) {
+            const cacheAge = Date.now() - cached.timestamp;
+            const data = cached.data;
+            const leagueName = data?.league?.name || `League ${lid}`;
+            const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
+            const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
+            const myRank = me ? results.indexOf(me) + 1 : null;
+            const leaderPts = results[0]?.total || 0;
+            const myPts = me?.total || 0;
+            const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
+
+            return {
+              id: lid,
+              name: leagueName,
+              teamCount: results.length,
+              myRank,
+              myPts,
+              myGwPts: me?.event_total || 0,
+              gapToLeader,
+              leader: results[0]?.entry_name || "—",
+              leaderPts,
+              results,
+              gwRef,
+              isLive,
+              fromCache: true,
+              cacheAge,
+              stale: true
+            };
+          }
+          return {
+            id: lid,
+            name: `League ${lid}`,
+            error: true,
+            errorType: leagueResult.errorType,
+            errorMessage: leagueResult.message
+          };
+        }
+
         const data = leagueResult.data;
         const leagueName = data?.league?.name || `League ${lid}`;
         const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
@@ -152,17 +195,57 @@ export async function renderMiniLeague(main) {
           leaderPts,
           results,
           gwRef,
-          isLive
+          isLive,
+          fromCache: leagueResult.fromCache,
+          cacheAge: leagueResult.cacheAge || 0
         };
 
         leagueDataCache.set(lid, summary);
         return summary;
       } catch (e) {
-        return { id: lid, name: `League ${lid}`, error: true };
+        log.error(`Failed to fetch league ${lid}:`, e);
+        // Check for cached data on error
+        const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
+        if (cached) {
+          const cacheAge = Date.now() - cached.timestamp;
+          const data = cached.data;
+          const leagueName = data?.league?.name || `League ${lid}`;
+          const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
+          const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
+          const myRank = me ? results.indexOf(me) + 1 : null;
+          const leaderPts = results[0]?.total || 0;
+          const myPts = me?.total || 0;
+          const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
+
+          return {
+            id: lid,
+            name: leagueName,
+            teamCount: results.length,
+            myRank,
+            myPts,
+            myGwPts: me?.event_total || 0,
+            gapToLeader,
+            leader: results[0]?.entry_name || "—",
+            leaderPts,
+            results,
+            gwRef,
+            isLive,
+            fromCache: true,
+            cacheAge,
+            stale: true
+          };
+        }
+        return {
+          id: lid,
+          name: `League ${lid}`,
+          error: true,
+          errorMessage: e?.message || "Failed to load"
+        };
       }
     }
 
     // Render selector view (grid of league cards)
+    // Phase 10: Parallel fetch with partial failure handling
     async function renderSelectorView() {
       currentView = "selector";
       selectedLeagueId = null;
@@ -181,59 +264,201 @@ export async function renderMiniLeague(main) {
         </div>
       `;
 
-      // Load each league summary
-      for (const lid of leagues) {
-        const summary = await fetchLeagueSummary(lid);
-        const cardEl = page.querySelector(`.league-card[data-lid="${lid}"]`);
+      // Fetch all leagues in parallel
+      const summaries = await Promise.all(leagues.map(lid => fetchLeagueSummary(lid)));
+
+      // Check for total failure (all leagues failed without cache)
+      const successfulLeagues = summaries.filter(s => !s.error);
+      const failedLeagues = summaries.filter(s => s.error);
+      const staleLeagues = summaries.filter(s => s.stale);
+
+      // If all leagues failed completely (no cache available), show error state
+      if (successfulLeagues.length === 0 && failedLeagues.length === leagues.length) {
+        // Check if any cached data is available
+        const anyCache = leagues.some(lid => {
+          const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
+          return cached !== null;
+        });
+
+        page.innerHTML = "";
+        const errorCard = utils.el("div", { class: "league-all-failed" });
+        errorCard.innerHTML = `
+          <div class="error-card">
+            <div class="error-card-header">
+              <span class="error-card-icon">⚠️</span>
+              <span class="error-card-title">Failed to Load Leagues</span>
+            </div>
+            <p class="error-card-message">
+              Unable to load your mini-league standings. This could be a network issue or the FPL API may be temporarily unavailable.
+            </p>
+            ${failedLeagues[0]?.errorMessage ? `<div class="error-card-details">${failedLeagues[0].errorMessage}</div>` : ""}
+            <div class="error-card-actions">
+              <button class="btn-retry" id="retryBtn">Retry</button>
+              ${anyCache ? `<button class="btn-use-cached" id="useCachedBtn">Use Cached Data</button>` : ""}
+            </div>
+          </div>
+        `;
+        page.appendChild(errorCard);
+
+        page.querySelector("#retryBtn")?.addEventListener("click", () => {
+          leagueDataCache.clear();
+          renderMiniLeague(main);
+        });
+
+        page.querySelector("#useCachedBtn")?.addEventListener("click", async () => {
+          // Force use of cached data
+          for (const lid of leagues) {
+            const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
+            if (cached) {
+              const cacheAge = Date.now() - cached.timestamp;
+              const data = cached.data;
+              const leagueName = data?.league?.name || `League ${lid}`;
+              const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
+              const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
+              const myRank = me ? results.indexOf(me) + 1 : null;
+              const leaderPts = results[0]?.total || 0;
+              const myPts = me?.total || 0;
+              const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
+
+              leagueDataCache.set(lid, {
+                id: lid,
+                name: leagueName,
+                teamCount: results.length,
+                myRank,
+                myPts,
+                myGwPts: me?.event_total || 0,
+                gapToLeader,
+                leader: results[0]?.entry_name || "—",
+                leaderPts,
+                results,
+                gwRef,
+                isLive,
+                fromCache: true,
+                cacheAge,
+                stale: true
+              });
+            }
+          }
+          await renderSelectorView();
+        });
+        return;
+      }
+
+      // Show stale data banner if using cached data
+      if (staleLeagues.length > 0) {
+        const oldestCache = Math.max(...staleLeagues.map(s => s.cacheAge || 0));
+        const banner = utils.el("div", { class: "cached-banner league-stale-banner" });
+        banner.innerHTML = `
+          <div class="cached-banner-content">
+            <span class="cached-banner-icon">📡</span>
+            <span class="cached-banner-text">
+              <strong>Using cached data</strong> — Some leagues may be outdated (${formatCacheAge(oldestCache)})
+            </span>
+          </div>
+          <div class="cached-banner-actions">
+            <button class="btn-banner-refresh" id="refreshBtn">Refresh</button>
+          </div>
+        `;
+        const header = page.querySelector(".league-header");
+        header?.after(banner);
+
+        banner.querySelector("#refreshBtn")?.addEventListener("click", () => {
+          leagueDataCache.clear();
+          renderMiniLeague(main);
+        });
+      }
+
+      // Render each league card
+      for (const summary of summaries) {
+        const cardEl = page.querySelector(`.league-card[data-lid="${summary.id}"]`);
         if (!cardEl) continue;
 
         cardEl.classList.remove("league-card-loading");
 
         if (summary.error) {
+          // Failed league card with retry button
+          cardEl.classList.add("league-card-error-state");
           cardEl.innerHTML = `
             <div class="league-card-header"><h3>${summary.name}</h3></div>
-            <div class="league-card-error">Failed to load</div>
+            <div class="league-card-error-content">
+              <span class="league-card-error-icon">⚠️</span>
+              <span class="league-card-error-text">Failed to load</span>
+              ${summary.errorMessage ? `<span class="league-card-error-detail">${summary.errorMessage}</span>` : ""}
+            </div>
+            <button class="league-card-retry-btn">Retry</button>
           `;
+          cardEl.querySelector(".league-card-retry-btn")?.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            cardEl.classList.add("league-card-loading");
+            cardEl.innerHTML = '<div class="league-card-skeleton">Loading...</div>';
+            leagueDataCache.delete(summary.id);
+            const newSummary = await fetchLeagueSummary(summary.id);
+            // Re-render just this card
+            renderLeagueCard(cardEl, newSummary);
+          });
           continue;
         }
 
-        cardEl.innerHTML = `
-          <div class="league-card-header">
-            <h3>${summary.name}</h3>
-            <span class="league-card-count">${summary.teamCount} teams</span>
-          </div>
-          <div class="league-card-stats">
-            ${summary.myRank ? `
-              <div class="league-stat">
-                <span class="league-stat-val">#${summary.myRank}</span>
-                <span class="league-stat-lbl">Your Rank</span>
-              </div>
-              <div class="league-stat">
-                <span class="league-stat-val ${summary.gapToLeader > 0 ? 'stat-behind' : 'stat-leading'}">${summary.gapToLeader > 0 ? `-${summary.gapToLeader}` : summary.gapToLeader === 0 ? "Leader" : `+${Math.abs(summary.gapToLeader)}`}</span>
-                <span class="league-stat-lbl">Gap</span>
-              </div>
-              <div class="league-stat">
-                <span class="league-stat-val">${summary.myGwPts}</span>
-                <span class="league-stat-lbl">GW Pts</span>
-              </div>
-              <div class="league-stat">
-                <span class="league-stat-val">${summary.myPts}</span>
-                <span class="league-stat-lbl">Total</span>
-              </div>
-            ` : `
-              <div class="league-stat league-stat-full">
-                <span class="league-stat-lbl">Set your Entry ID to see your position</span>
-              </div>
-            `}
-          </div>
-          <div class="league-card-leader">
-            <span>Leader: ${summary.leader}</span>
-            <span>${summary.leaderPts} pts</span>
-          </div>
-        `;
-
-        cardEl.addEventListener("click", () => renderDetailView(lid));
+        renderLeagueCard(cardEl, summary);
       }
+    }
+
+    // Helper to render a single league card
+    function renderLeagueCard(cardEl, summary) {
+      cardEl.classList.remove("league-card-loading", "league-card-error-state");
+
+      if (summary.error) {
+        cardEl.classList.add("league-card-error-state");
+        cardEl.innerHTML = `
+          <div class="league-card-header"><h3>${summary.name}</h3></div>
+          <div class="league-card-error-content">
+            <span class="league-card-error-icon">⚠️</span>
+            <span class="league-card-error-text">Failed to load</span>
+          </div>
+          <button class="league-card-retry-btn">Retry</button>
+        `;
+        return;
+      }
+
+      const staleIndicator = summary.stale ?
+        `<span class="league-card-stale" title="Using cached data from ${formatCacheAge(summary.cacheAge)}">📡</span>` : "";
+
+      cardEl.innerHTML = `
+        <div class="league-card-header">
+          <h3>${summary.name}${staleIndicator}</h3>
+          <span class="league-card-count">${summary.teamCount} teams</span>
+        </div>
+        <div class="league-card-stats">
+          ${summary.myRank ? `
+            <div class="league-stat">
+              <span class="league-stat-val">#${summary.myRank}</span>
+              <span class="league-stat-lbl">Your Rank</span>
+            </div>
+            <div class="league-stat">
+              <span class="league-stat-val ${summary.gapToLeader > 0 ? 'stat-behind' : 'stat-leading'}">${summary.gapToLeader > 0 ? `-${summary.gapToLeader}` : summary.gapToLeader === 0 ? "Leader" : `+${Math.abs(summary.gapToLeader)}`}</span>
+              <span class="league-stat-lbl">Gap</span>
+            </div>
+            <div class="league-stat">
+              <span class="league-stat-val">${summary.myGwPts}</span>
+              <span class="league-stat-lbl">GW Pts</span>
+            </div>
+            <div class="league-stat">
+              <span class="league-stat-val">${summary.myPts}</span>
+              <span class="league-stat-lbl">Total</span>
+            </div>
+          ` : `
+            <div class="league-stat league-stat-full">
+              <span class="league-stat-lbl">Set your Entry ID to see your position</span>
+            </div>
+          `}
+        </div>
+        <div class="league-card-leader">
+          <span>Leader: ${summary.leader}</span>
+          <span>${summary.leaderPts} pts</span>
+        </div>
+      `;
+
+      cardEl.addEventListener("click", () => renderDetailView(summary.id));
     }
 
     // Render detail view (full table + charts)
