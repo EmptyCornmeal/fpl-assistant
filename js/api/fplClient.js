@@ -16,8 +16,7 @@ import {
   CacheKey,
   getErrorMessage,
 } from "./fetchHelper.js";
-
-const API_BASE = "https://fpl-proxy.myles-fpl-proxy.workers.dev/api";
+import { API_BASE } from "../api.js";
 
 // In-memory cache configuration (for fast repeated access within same session)
 const memoryCache = new Map();

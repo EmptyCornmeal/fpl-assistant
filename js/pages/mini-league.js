@@ -103,6 +103,39 @@ export async function renderMiniLeague(main) {
     const teamShort = new Map(teams.map(t => [t.id, t.short_name]));
     const posShort = new Map(positions.map(p => [p.id, p.singular_name_short]));
 
+    const buildCachedSummary = (lid, markStale = true) => {
+      const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
+      if (!cached) return null;
+
+      const cacheAge = Date.now() - cached.timestamp;
+      const data = cached.data;
+      const leagueName = data?.league?.name || `League ${lid}`;
+      const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
+      const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
+      const myRank = me ? results.indexOf(me) + 1 : null;
+      const leaderPts = results[0]?.total || 0;
+      const myPts = me?.total || 0;
+      const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
+
+      return {
+        id: lid,
+        name: leagueName,
+        teamCount: results.length,
+        myRank,
+        myPts,
+        myGwPts: me?.event_total || 0,
+        gapToLeader,
+        leader: results[0]?.entry_name || "—",
+        leaderPts,
+        results,
+        gwRef,
+        isLive,
+        fromCache: true,
+        cacheAge,
+        stale: markStale,
+      };
+    };
+
     const safeManager = (r) =>
       r.player_name || (r.player_first_name || r.player_last_name
         ? `${r.player_first_name || ""} ${r.player_last_name || ""}`.trim()
@@ -132,37 +165,8 @@ export async function renderMiniLeague(main) {
         const leagueResult = await fplClient.leagueClassic(lid, 1);
 
         if (!leagueResult.ok) {
-          // Check for cached data
-          const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
-          if (cached) {
-            const cacheAge = Date.now() - cached.timestamp;
-            const data = cached.data;
-            const leagueName = data?.league?.name || `League ${lid}`;
-            const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
-            const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
-            const myRank = me ? results.indexOf(me) + 1 : null;
-            const leaderPts = results[0]?.total || 0;
-            const myPts = me?.total || 0;
-            const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
-
-            return {
-              id: lid,
-              name: leagueName,
-              teamCount: results.length,
-              myRank,
-              myPts,
-              myGwPts: me?.event_total || 0,
-              gapToLeader,
-              leader: results[0]?.entry_name || "—",
-              leaderPts,
-              results,
-              gwRef,
-              isLive,
-              fromCache: true,
-              cacheAge,
-              stale: true
-            };
-          }
+          const cached = buildCachedSummary(lid);
+          if (cached) return cached;
           return {
             id: lid,
             name: `League ${lid}`,
@@ -204,37 +208,8 @@ export async function renderMiniLeague(main) {
         return summary;
       } catch (e) {
         log.error(`Failed to fetch league ${lid}:`, e);
-        // Check for cached data on error
-        const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
-        if (cached) {
-          const cacheAge = Date.now() - cached.timestamp;
-          const data = cached.data;
-          const leagueName = data?.league?.name || `League ${lid}`;
-          const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
-          const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
-          const myRank = me ? results.indexOf(me) + 1 : null;
-          const leaderPts = results[0]?.total || 0;
-          const myPts = me?.total || 0;
-          const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
-
-          return {
-            id: lid,
-            name: leagueName,
-            teamCount: results.length,
-            myRank,
-            myPts,
-            myGwPts: me?.event_total || 0,
-            gapToLeader,
-            leader: results[0]?.entry_name || "—",
-            leaderPts,
-            results,
-            gwRef,
-            isLive,
-            fromCache: true,
-            cacheAge,
-            stale: true
-          };
-        }
+        const cached = buildCachedSummary(lid);
+        if (cached) return cached;
         return {
           id: lid,
           name: `League ${lid}`,
@@ -267,59 +242,36 @@ export async function renderMiniLeague(main) {
       // Fetch all leagues in parallel with a global timeout to prevent infinite loading
       const LOAD_TIMEOUT = 20000; // 20 seconds max for all leagues to load
 
-      const fetchWithTimeout = async () => {
-        return await Promise.all(leagues.map(lid => fetchLeagueSummary(lid)));
-      };
-
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Loading timeout")), LOAD_TIMEOUT);
-      });
-
-      let summaries;
-      try {
-        summaries = await Promise.race([fetchWithTimeout(), timeoutPromise]);
-      } catch (timeoutErr) {
-        // Timeout occurred - try to use cached data for all leagues
-        log.warn("Mini-League: Load timeout, attempting to use cached data");
-        summaries = leagues.map(lid => {
-          const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
-          if (cached) {
-            const cacheAge = Date.now() - cached.timestamp;
-            const data = cached.data;
-            const leagueName = data?.league?.name || `League ${lid}`;
-            const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
-            const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
-            const myRank = me ? results.indexOf(me) + 1 : null;
-            const leaderPts = results[0]?.total || 0;
-            const myPts = me?.total || 0;
-            const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
-
-            return {
-              id: lid,
-              name: leagueName,
-              teamCount: results.length,
-              myRank,
-              myPts,
-              myGwPts: me?.event_total || 0,
-              gapToLeader,
-              leader: results[0]?.entry_name || "—",
-              leaderPts,
-              results,
-              gwRef,
-              isLive,
-              fromCache: true,
-              cacheAge,
-              stale: true
-            };
-          }
-          return {
+      const summaries = (await Promise.allSettled(
+        leagues.map((lid) =>
+          Promise.race([
+            fetchLeagueSummary(lid),
+            new Promise((resolve) =>
+              setTimeout(
+                () => resolve({ id: lid, name: `League ${lid}`, error: true, errorMessage: "Loading timed out" }),
+                LOAD_TIMEOUT
+              )
+            ),
+          ]).catch((err) => ({
             id: lid,
             name: `League ${lid}`,
             error: true,
-            errorMessage: "Loading timed out"
-          };
-        });
-      }
+            errorMessage: err?.message || "Failed to load league",
+          }))
+        )
+      )).map((res, idx) => {
+        const fallback = {
+          id: leagues[idx],
+          name: `League ${leagues[idx]}`,
+          error: true,
+          errorMessage: res.reason?.message || "Failed to load league",
+        };
+        const summary = res.status === "fulfilled" ? res.value : fallback;
+        if (summary && !summary.error) return summary;
+
+        const cached = buildCachedSummary(leagues[idx]);
+        return cached || summary || fallback;
+      });
 
       // Check for total failure (all leagues failed without cache)
       const successfulLeagues = summaries.filter(s => !s.error);
@@ -362,36 +314,8 @@ export async function renderMiniLeague(main) {
         page.querySelector("#useCachedBtn")?.addEventListener("click", async () => {
           // Force use of cached data
           for (const lid of leagues) {
-            const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
-            if (cached) {
-              const cacheAge = Date.now() - cached.timestamp;
-              const data = cached.data;
-              const leagueName = data?.league?.name || `League ${lid}`;
-              const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
-              const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
-              const myRank = me ? results.indexOf(me) + 1 : null;
-              const leaderPts = results[0]?.total || 0;
-              const myPts = me?.total || 0;
-              const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
-
-              leagueDataCache.set(lid, {
-                id: lid,
-                name: leagueName,
-                teamCount: results.length,
-                myRank,
-                myPts,
-                myGwPts: me?.event_total || 0,
-                gapToLeader,
-                leader: results[0]?.entry_name || "—",
-                leaderPts,
-                results,
-                gwRef,
-                isLive,
-                fromCache: true,
-                cacheAge,
-                stale: true
-              });
-            }
+            const cachedSummary = buildCachedSummary(lid);
+            if (cachedSummary) leagueDataCache.set(lid, cachedSummary);
           }
           await renderSelectorView();
         });
