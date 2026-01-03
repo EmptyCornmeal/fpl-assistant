@@ -42,7 +42,10 @@ export function makeSelect({ options = [], value = null, onChange = null, width 
         tabindex: "-1"
       }, opt.label);
       if (i === state.idx) row.classList.add("is-active");
-      row.addEventListener("click", () => selectValue(opt.value));
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        selectValue(opt.value);
+      });
       row.addEventListener("mousemove", () => setIdx(i));
       panel.append(row);
     });

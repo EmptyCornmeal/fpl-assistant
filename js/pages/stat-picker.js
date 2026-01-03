@@ -1618,13 +1618,16 @@ function renderDependencyChecklist(container, status, isLoading = false) {
     const statusClass = `sp-dep-${depStatus.status}`;
     const statusIcon = getStatusIcon(depStatus.status);
     const optional = !dep.required ? '<span class="sp-dep-optional">(optional)</span>' : "";
+    const errorBadge = depStatus.error
+      ? `<button class="sp-dep-error" type="button" data-tooltip="${depStatus.error}" aria-label="${dep.label} error: ${depStatus.error}">!</button>`
+      : "";
 
     return `
       <div class="sp-dep-row ${statusClass}">
         <span class="sp-dep-icon">${statusIcon}</span>
         <span class="sp-dep-label">${dep.label} ${optional}</span>
         ${depStatus.fromCache ? '<span class="sp-dep-cache">cached</span>' : ""}
-        ${depStatus.error ? `<span class="sp-dep-error" title="${depStatus.error}">!</span>` : ""}
+        ${errorBadge}
       </div>
     `;
   }).join("");
@@ -1663,6 +1666,9 @@ function renderNoEntryId(container) {
  */
 function renderDegradedMode(container, result, parentContainer) {
   const { failures, dependencyStatus, context } = result;
+  const uniqueFailures = Array.from(new Map(
+    failures.map(f => [f.dependency.id, f])
+  ).values());
 
   // Check if we can fallback to cached context
   const cachedResult = loadCachedContext();
@@ -1681,7 +1687,7 @@ function renderDegradedMode(container, result, parentContainer) {
     `;
   }
 
-  const failureRows = failures.map(f => `
+  const failureRows = uniqueFailures.map(f => `
     <div class="sp-failure-row">
       <span class="sp-failure-label">${f.dependency.label}</span>
       <span class="sp-failure-error">${f.error}</span>

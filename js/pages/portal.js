@@ -91,8 +91,28 @@ function buildDeadlineTile(events) {
 }
 
 // Quick Action: Captain Pick
-function buildCaptainTile(players, fixtures, currentGw, teams) {
+function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
   const tile = utils.el("div", { class: "portal-tile tile-action tile-wide tile-clickable" });
+  const ageMinutes = Number.isFinite(meta.cacheAge) ? Math.round(meta.cacheAge / 60000) : null;
+  const infoLabel = meta.source === "cached"
+    ? `Cached data${ageMinutes !== null ? ` • ${ageMinutes}m old` : ""}`
+    : meta.fetchedAt
+      ? `Updated ${new Date(meta.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+      : "";
+
+  if (!Array.isArray(players) || players.length === 0) {
+    tile.innerHTML = `
+      <div class="tile-header">
+        <span class="tile-icon">👑</span>
+        <h3 class="tile-title">Captain Picks</h3>
+      </div>
+      <div class="tile-body empty-prompt">
+        <p>Player data unavailable right now.</p>
+        <span class="tile-link">${infoLabel || "Try refreshing data"}</span>
+      </div>
+    `;
+    return tile;
+  }
 
   // Build team map for fixture lookup
   const teamMap = new Map((teams || []).map(t => [t.id, t]));
@@ -171,7 +191,7 @@ function buildCaptainTile(players, fixtures, currentGw, teams) {
       `).join('')}
     </div>
     <div class="tile-footer">
-      <span class="tile-hint">Form + Fixture + Minutes = Captain Score</span>
+      <span class="tile-hint">${infoLabel ? `${infoLabel} • Form + Fixture + Minutes = Captain Score` : "Form + Fixture + Minutes = Captain Score"}</span>
       <span class="tile-link">View all players →</span>
     </div>
   `;
@@ -324,8 +344,28 @@ function buildFixturesTile(teams, fixtures, currentGw) {
 }
 
 // Transfer Targets
-function buildTransfersTile(players) {
+function buildTransfersTile(players, meta = {}) {
   const tile = utils.el("div", { class: "portal-tile tile-action tile-clickable" });
+  const ageMinutes = Number.isFinite(meta.cacheAge) ? Math.round(meta.cacheAge / 60000) : null;
+  const infoLabel = meta.source === "cached"
+    ? `Cached data${ageMinutes !== null ? ` • ${ageMinutes}m old` : ""}`
+    : meta.fetchedAt
+      ? `Updated ${new Date(meta.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+      : "";
+
+  if (!Array.isArray(players) || players.length === 0) {
+    tile.innerHTML = `
+      <div class="tile-header">
+        <span class="tile-icon">🔄</span>
+        <h3 class="tile-title">Transfer Targets</h3>
+      </div>
+      <div class="tile-body empty-prompt">
+        <p>Live transfer data is unavailable.</p>
+        <span class="tile-link">${infoLabel || "Retry from the refresh button"}</span>
+      </div>
+    `;
+    return tile;
+  }
 
   // Find hot transfers (most transferred in this week)
   // Use transfersIn (mapped) or transfers_in (raw)
@@ -375,6 +415,7 @@ function buildTransfersTile(players) {
       </div>
     </div>
     <div class="tile-footer">
+      ${infoLabel ? `<span class="tile-hint">${infoLabel}</span>` : ""}
       <span class="tile-link">All players →</span>
     </div>
   `;
@@ -1004,6 +1045,30 @@ async function renderPortalWithData(main, fromCache = false, cacheAge = 0) {
   const rawBootstrap = bootstrapResult.data;
   const bootstrap = mapBootstrap(rawBootstrap);
   const currentGw = bootstrap.currentEvent?.id || bootstrap.events.find(e => e.isCurrent)?.id || 1;
+  const nowTs = Date.now();
+
+  // Player data (fallback to cached if live data is missing)
+  let players = bootstrap.players;
+  let playerDataMeta = {
+    source: bootstrapResult.fromCache ? "cached" : "live",
+    cacheAge: bootstrapResult.cacheAge,
+    fetchedAt: nowTs,
+  };
+
+  if (!Array.isArray(players) || players.length === 0) {
+    const cachedBootstrap = fplClient.loadBootstrapFromCache();
+    if (cachedBootstrap.ok && cachedBootstrap.data) {
+      const mapped = mapBootstrap(cachedBootstrap.data);
+      if (mapped.players?.length) {
+        players = mapped.players;
+        playerDataMeta = {
+          source: "cached",
+          cacheAge: cachedBootstrap.cacheAge,
+          fetchedAt: nowTs,
+        };
+      }
+    }
+  }
 
   // Fetch fixtures
   const fixturesResult = await fplClient.fixtures();
@@ -1011,11 +1076,12 @@ async function renderPortalWithData(main, fromCache = false, cacheAge = 0) {
   const fixtures = rawFixtures.map(f => mapFixture(f, bootstrap.teams));
 
   // Track if we're using any cached data
-  const usingCache = fromCache || bootstrapResult.fromCache || fixturesResult.fromCache;
+  const usingCache = fromCache || bootstrapResult.fromCache || fixturesResult.fromCache || playerDataMeta.source === "cached";
   const maxCacheAge = Math.max(
     fromCache ? cacheAge : 0,
     bootstrapResult.fromCache ? bootstrapResult.cacheAge : 0,
-    fixturesResult.fromCache ? fixturesResult.cacheAge : 0
+    fixturesResult.fromCache ? fixturesResult.cacheAge : 0,
+    playerDataMeta.source === "cached" ? (playerDataMeta.cacheAge || 0) : 0
   );
 
   // Build the portal - 3-column dashboard layout
@@ -1033,13 +1099,13 @@ async function renderPortalWithData(main, fromCache = false, cacheAge = 0) {
   // CENTER COLUMN: Fixture Outlook + Captain Picks
   const centerCol = utils.el("div", { class: "portal-column-center" });
   centerCol.append(buildFixturesTile(bootstrap.teams, fixtures, currentGw));
-  centerCol.append(buildCaptainTile(bootstrap.players, fixtures, currentGw, bootstrap.teams));
+  centerCol.append(buildCaptainTile(players, fixtures, currentGw, bootstrap.teams, playerDataMeta));
 
   // RIGHT COLUMN: Injuries + Fixture Swings + Transfers
   const rightCol = utils.el("div", { class: "portal-column" });
-  rightCol.append(buildInjuriesTile(bootstrap.players));
+  rightCol.append(buildInjuriesTile(players));
   rightCol.append(buildFixtureSwingsTile(bootstrap.teams, fixtures, currentGw));
-  rightCol.append(buildTransfersTile(bootstrap.players));
+  rightCol.append(buildTransfersTile(players, playerDataMeta));
 
   page.append(leftCol, centerCol, rightCol);
 
