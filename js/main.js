@@ -13,7 +13,7 @@ import { fplClient } from "./api/fplClient.js";
 import { state, setPageUpdated, isTeamPinned, togglePinnedTeam, getPinnedTeams, getWatchlist } from "./state.js";
 import { utils } from "./utils.js";
 import { log } from "./logger.js";
-import { getApiBase } from "./config.js";
+import { getApiBase, markApiBaseValidated, getApiBaseInfo } from "./config.js";
 import { formatCacheAge } from "./api/fetchHelper.js";
 
 const APP_VERSION = "1.2.0";
@@ -528,6 +528,18 @@ async function refreshApiStatus(reason = "") {
     return;
   }
 
+  const apiBase = getApiBase();
+  if (!apiBase) {
+    // No API configured - show clear message
+    const info = getApiBaseInfo();
+    const hint = info.sameOriginViable
+      ? "Set window.__FPL_API_BASE__ or localStorage 'fpl.apiBase'"
+      : "Configure API via localStorage.setItem('fpl.apiBase', 'https://your-proxy/api')";
+    setApiStatus(ApiStatus.OFFLINE, `No API configured. ${hint}`);
+    log.warn("No API base configured", info);
+    return;
+  }
+
   const now = Date.now();
   if (apiStatusPromise && now - lastApiStatusCheck < API_STATUS_BACKOFF_MS) {
     return apiStatusPromise;
@@ -539,7 +551,9 @@ async function refreshApiStatus(reason = "") {
     try {
       const res = await fplClient.healthCheck();
       if (res.ok) {
-        setApiStatus(ApiStatus.LIVE, `Connected (${getApiBase()})`);
+        // Mark this API base as validated for future use
+        markApiBaseValidated(apiBase);
+        setApiStatus(ApiStatus.LIVE, `Connected (${apiBase})`);
       } else {
         setApiStatus(ApiStatus.UNKNOWN, "Health endpoint unavailable");
       }
@@ -1189,98 +1203,6 @@ async function renderTeamProfile(main, teamId) {
                 </div>
               `;
             }).join('')}
-          </div>
-        </div>
-
-        <div class="profile-insights-grid">
-          <div class="profile-section">
-            <div class="section-heading">
-              <h3>Upcoming Fixtures</h3>
-              ${summarySource ? `<span class="data-chip">${summarySource}</span>` : ""}
-            </div>
-            ${upcomingFixtures.length ? `
-              <ul class="inline-fixture-list">
-                ${upcomingFixtures.map(f => {
-                  const opp = (bs.teams || []).find(t => t.id === f.opponent_team);
-                  const oppName = opp ? opp.name : `Team ${f.opponent_team}`;
-                  const venue = f.is_home ? "H" : "A";
-                  const diff = clampFDR(f.difficulty || f.team_h_difficulty || f.team_a_difficulty || 3);
-                  const date = f.kickoff_time ? toLocal(f.kickoff_time).split(",").slice(0,2).join(", ") : "TBC";
-                  return `
-                    <li class="inline-fixture-row">
-                      <span class="fixture-opp" title="${oppName}">${venue} ${oppName}</span>
-                      <span class="fixture-meta">GW ${f.event ?? "?"} • ${date}</span>
-                      <span class="fdr fdr-${diff}" aria-label="Fixture difficulty ${diff}">FDR ${diff}</span>
-                    </li>
-                  `;
-                }).join("")}
-              </ul>
-            ` : `
-              <div class="empty-inline">
-                <span class="empty-icon">📅</span>
-                <div>
-                  <div class="empty-title">No fixture data</div>
-                  <div class="empty-sub">${summaryError ? summaryError : "Fixtures not available right now."}</div>
-                </div>
-                <a href="#/fixtures" class="empty-link">Open fixtures</a>
-              </div>
-            `}
-          </div>
-
-          <div class="profile-section">
-            <div class="section-heading">
-              <h3>Recent Points</h3>
-              ${summarySource ? `<span class="data-chip">${summarySource}</span>` : ""}
-            </div>
-            ${recentHistory.length ? `
-              <div class="stat-rows">
-                ${recentHistory.map(h => `
-                  <div class="stat-row">
-                    <span>GW ${h.round}${h.was_home ? " (H)" : " (A)"}${h.opponent_team ? ` vs ${(bs.teams || []).find(t => t.id === h.opponent_team)?.short_name || ""}` : ""}</span>
-                    <span>${h.total_points} pts</span>
-                  </div>
-                `).join("")}
-              </div>
-            ` : `
-              <div class="empty-inline">
-                <span class="empty-icon">ℹ️</span>
-                <div>
-                  <div class="empty-title">Points history unavailable</div>
-                  <div class="empty-sub">${summaryError ? summaryError : "We couldn't load the recent gameweeks for this player."}</div>
-                </div>
-              </div>
-            `}
-          </div>
-
-          <div class="profile-section">
-            <div class="section-heading">
-              <h3>Price Tracker</h3>
-              ${summarySource ? `<span class="data-chip">${summarySource}</span>` : ""}
-            </div>
-            ${priceSnapshots.length ? (() => {
-              const latest = priceSnapshots[priceSnapshots.length - 1];
-              const first = priceSnapshots[0];
-              const latestValue = (latest?.value ?? player.now_cost) / 10;
-              const firstValue = (first?.value ?? latestValue * 10) / 10;
-              const latestPrice = latestValue.toFixed(1);
-              const change = (latestValue - firstValue).toFixed(1);
-              const changeClass = Number(change) >= 0 ? "text-good" : "text-bad";
-              return `
-                <div class="price-track">
-                  <div class="stat-row"><span>Current Price</span><span>£${latestPrice}m</span></div>
-                  <div class="stat-row"><span>Change (last 5)</span><span class="${changeClass}">${Number(change) >= 0 ? "+" : ""}${change}m</span></div>
-                  <div class="price-track-note">Prices from last ${priceSnapshots.length} gameweeks</div>
-                </div>
-              `;
-            })() : `
-              <div class="empty-inline">
-                <span class="empty-icon">£</span>
-                <div>
-                  <div class="empty-title">Price changes unavailable</div>
-                  <div class="empty-sub">${summaryError ? summaryError : "We couldn't fetch recent price movements. Try again later."}</div>
-                </div>
-              </div>
-            `}
           </div>
         </div>
       </div>

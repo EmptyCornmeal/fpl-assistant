@@ -42,6 +42,7 @@ const CONFIG = {
  */
 export const CacheKey = {
   BOOTSTRAP: "bootstrap",
+  BOOTSTRAP_SLIM: "bootstrapSlim", // Slim version for localStorage (reduced quota usage)
   FIXTURES: "fixtures",
   ENTRY: "entry",
   ENTRY_HISTORY: "entryHistory",
@@ -52,30 +53,100 @@ export const CacheKey = {
 };
 
 /**
+ * Create a slim version of bootstrap data for localStorage caching.
+ * This dramatically reduces size (from ~5MB to ~500KB) while keeping
+ * essential fields for search, basic rendering, and offline fallback.
+ */
+function createSlimBootstrap(fullBootstrap) {
+  if (!fullBootstrap) return null;
+
+  // Slim down elements (players) - keep only essential fields
+  const slimElements = (fullBootstrap.elements || []).map(el => ({
+    id: el.id,
+    web_name: el.web_name,
+    first_name: el.first_name,
+    second_name: el.second_name,
+    team: el.team,
+    element_type: el.element_type,
+    total_points: el.total_points,
+    now_cost: el.now_cost,
+    form: el.form,
+    selected_by_percent: el.selected_by_percent,
+    status: el.status,
+    news: el.news,
+    chance_of_playing_next_round: el.chance_of_playing_next_round,
+  }));
+
+  // Keep all team fields (they're small and needed for team pages)
+  const slimTeams = (fullBootstrap.teams || []).map(t => ({
+    id: t.id,
+    name: t.name,
+    short_name: t.short_name,
+    code: t.code,
+    strength: t.strength,
+    strength_overall_home: t.strength_overall_home,
+    strength_overall_away: t.strength_overall_away,
+    strength_attack_home: t.strength_attack_home,
+    strength_attack_away: t.strength_attack_away,
+    strength_defence_home: t.strength_defence_home,
+    strength_defence_away: t.strength_defence_away,
+  }));
+
+  // Keep element_types as-is (small)
+  const slimElementTypes = fullBootstrap.element_types || [];
+
+  // Slim down events - keep only essential scheduling fields
+  const slimEvents = (fullBootstrap.events || []).map(ev => ({
+    id: ev.id,
+    name: ev.name,
+    deadline_time: ev.deadline_time,
+    is_current: ev.is_current,
+    is_next: ev.is_next,
+    is_previous: ev.is_previous,
+    finished: ev.finished,
+    data_checked: ev.data_checked,
+    highest_scoring_entry: ev.highest_scoring_entry,
+    average_entry_score: ev.average_entry_score,
+  }));
+
+  return {
+    elements: slimElements,
+    teams: slimTeams,
+    element_types: slimElementTypes,
+    events: slimEvents,
+    // Mark this as slim so we know it's not complete
+    _slim: true,
+    _slimVersion: 1,
+  };
+}
+
+/**
  * Cache policy per key
  * - persist: whether to write to localStorage
  * - memory: whether to write to memory cache
+ * - slim: whether to use a slimmed version for localStorage (e.g., bootstrap)
  *
  * Recommendation:
  * - Keep BOOTSTRAP + ENTRY + ENTRY_HISTORY persisted (small-ish, useful offline).
- * - Consider FIXTURES persisted ONLY if you store "all fixtures" (not per-event).
- * - ELEMENT_SUMMARY is huge/high-cardinality -> memory-only by default.
+ * - Bootstrap uses SLIM storage to avoid localStorage quota issues (~5MB -> ~500KB)
+ * - ELEMENT_SUMMARY is high-cardinality -> memory-only by default.
  * - ENTRY_PICKS per GW also high-cardinality -> memory-only by default.
  */
 const CACHE_POLICY = {
-  // Large payloads stay memory-only to avoid localStorage quota churn
-  [CacheKey.BOOTSTRAP]: { persist: true, memory: true },
+  // Bootstrap uses slim storage to avoid quota issues
+  // Full bootstrap stays in memory only; slim version goes to localStorage
+  [CacheKey.BOOTSTRAP]: { persist: true, memory: true, slim: true },
+  [CacheKey.BOOTSTRAP_SLIM]: { persist: true, memory: false },
 
   [CacheKey.ENTRY]: { persist: true, memory: true },
   [CacheKey.ENTRY_HISTORY]: { persist: true, memory: true },
   [CacheKey.LEAGUE_CLASSIC]: { persist: true, memory: true },
 
-  // These are dangerous if you store them per-param in localStorage:
-  // Persist fixtures + entry picks to enable offline fallbacks (cardinality is bounded: GW + entry)
+  // Persist fixtures to enable offline fallbacks
   [CacheKey.FIXTURES]: { persist: true, memory: true },
-  [CacheKey.ENTRY_PICKS]: { persist: true, memory: true },
-  // Persist element summary to provide cached fallbacks for player profile
-  [CacheKey.ELEMENT_SUMMARY]: { persist: true, memory: true },
+  // Entry picks and element summary are high-cardinality - memory only
+  [CacheKey.ENTRY_PICKS]: { persist: false, memory: true },
+  [CacheKey.ELEMENT_SUMMARY]: { persist: false, memory: true },
   [CacheKey.EVENT_LIVE]: { persist: false, memory: true },
 };
 
@@ -617,7 +688,9 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
 
   // Optional: instant paint from localStorage (ONLY if this key is allowed to persist)
   if (preferCache && shouldPersist) {
-    const cached = loadFromCache(cacheKey, ...cacheParams);
+    // For bootstrap, load from slim cache
+    const effectiveCacheKey = (cacheKey === CacheKey.BOOTSTRAP && policy.slim) ? CacheKey.BOOTSTRAP_SLIM : cacheKey;
+    const cached = loadFromCache(effectiveCacheKey, ...cacheParams);
     if (cached) {
       const cacheAge = Date.now() - cached.timestamp;
       const okAge = maxStaleMs == null ? true : cacheAge <= maxStaleMs;
@@ -626,7 +699,7 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
           ok: true,
           data: cached.data,
           errorType: null,
-          message: "Success (local cache)",
+          message: cached.data?._slim ? "Success (slim cache)" : "Success (local cache)",
           fromCache: true,
           cacheAge,
           stale: false,
@@ -653,7 +726,16 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
     // Persist to localStorage if allowed
     if (shouldPersist) {
       const metaArg = metadata ? [{ __cacheMeta: true, meta: { ...metadata, cachedAt: Date.now(), url: targetUrl } }] : [];
-      saveToCache(cacheKey, result.data, ...cacheParams, ...metaArg);
+
+      // For bootstrap, save the slim version to localStorage to avoid quota issues
+      if (cacheKey === CacheKey.BOOTSTRAP && policy.slim) {
+        const slimData = createSlimBootstrap(result.data);
+        if (slimData) {
+          saveToCache(CacheKey.BOOTSTRAP_SLIM, slimData, ...cacheParams, ...metaArg);
+        }
+      } else {
+        saveToCache(cacheKey, result.data, ...cacheParams, ...metaArg);
+      }
     }
     const cacheTimestamp = metadata?.timestamp ?? Date.now();
     return { ...result, url: result.url || targetUrl, meta: metadata || null, cacheTimestamp };
@@ -661,7 +743,9 @@ export async function fetchWithCache(url, cacheKey, options = {}) {
 
   // If failed, localStorage fallback ONLY if allowed
   if (shouldPersist) {
-    const cached = loadFromCache(cacheKey, ...cacheParams);
+    // For bootstrap, load from slim cache
+    const effectiveCacheKey = (cacheKey === CacheKey.BOOTSTRAP && policy.slim) ? CacheKey.BOOTSTRAP_SLIM : cacheKey;
+    const cached = loadFromCache(effectiveCacheKey, ...cacheParams);
     if (cached) {
       const cacheAge = Date.now() - cached.timestamp;
       const okAge = maxStaleMs == null ? true : cacheAge <= maxStaleMs;

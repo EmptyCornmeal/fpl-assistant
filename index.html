@@ -16,8 +16,21 @@
   <script>
     // Optional runtime override (e.g., local dev proxy)
     // window.__FPL_API_BASE__ = "https://your-worker.example.com/api";
+
+    // Load config.local.js if it exists (silently ignore if missing)
+    // This allows local development overrides without 404 noise on production
+    (function() {
+      var script = document.createElement('script');
+      script.src = './config.local.js';
+      script.async = false;
+      script.onerror = function() {
+        // Silently ignore - config.local.js is optional
+        // For local dev, create config.local.js with:
+        // window.__FPL_API_BASE__ = "https://your-proxy/api";
+      };
+      document.head.appendChild(script);
+    })();
   </script>
-  <script defer src="./config.local.js"></script>
 </head>
 <body>
   <header class="topbar">

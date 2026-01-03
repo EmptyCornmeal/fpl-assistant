@@ -30,6 +30,14 @@ const CACHE_TTL = {
 
 function buildUrl(path = "") {
   const base = getApiBase();
+  if (!base) {
+    throw new FplApiError("No API configured", {
+      endpoint: path,
+      status: 0,
+      retryable: false,
+      errorType: ErrorType.NETWORK,
+    });
+  }
   const cleanPath = path.replace(/^\/+/, "");
   return `${base}/${cleanPath}`;
 }
@@ -395,31 +403,49 @@ export const fplClient = {
    * Check if cached data exists for bootstrap
    */
   hasBootstrapCache() {
+    // Check slim cache first (new approach)
+    if (hasCachedData(CacheKey.BOOTSTRAP_SLIM)) return true;
+    // Fall back to full cache (legacy)
     return hasCachedData(CacheKey.BOOTSTRAP);
   },
 
   /**
-   * Get bootstrap cache age
+   * Get bootstrap cache age (checks slim cache first)
    */
   getBootstrapCacheAge() {
+    // Check slim cache first (preferred for localStorage)
+    const slimAge = getCacheAge(CacheKey.BOOTSTRAP_SLIM);
+    if (slimAge !== null) return slimAge;
+    // Fall back to full cache (legacy)
     return getCacheAge(CacheKey.BOOTSTRAP);
   },
 
   /**
    * Load bootstrap from localStorage cache only (no network)
+   * Now loads from slim cache to avoid quota issues
    */
   loadBootstrapFromCache() {
-    const cached = loadFromCache(CacheKey.BOOTSTRAP);
+    // Try slim cache first (new approach - reduced quota usage)
+    let cached = loadFromCache(CacheKey.BOOTSTRAP_SLIM);
+    let isSlim = true;
+
+    // Fall back to full cache (legacy data)
+    if (!cached) {
+      cached = loadFromCache(CacheKey.BOOTSTRAP);
+      isSlim = false;
+    }
+
     if (cached) {
       return {
         ok: true,
         data: cached.data,
         errorType: null,
-        message: "Loaded from cache",
+        message: isSlim ? "Loaded from slim cache" : "Loaded from cache",
         fromCache: true,
         cacheAge: Date.now() - cached.timestamp,
         cacheTimestamp: cached.timestamp || null,
         meta: cached.meta || null,
+        isSlim,
       };
     }
     return {
