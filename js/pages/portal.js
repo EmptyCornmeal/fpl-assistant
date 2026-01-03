@@ -273,8 +273,8 @@ function buildFixturesTile(teams, fixtures, currentGw) {
         <h4 class="fixtures-label good" data-tooltip="Teams with lowest average FDR over the next ${windowSize} GWs. Target their assets for transfers.">Easiest Run</h4>
         ${easiest.map(t => `
           <div class="fixture-team-row">
-            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
-            <span class="fixture-team-name">${t.team.shortName || t.team.short_name || '???'}</span>
+            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.name || t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            <span class="fixture-team-name">${t.team.name || t.team.shortName || t.team.short_name || '???'}</span>
             <span class="fixture-score score-good" data-tooltip="Ease score: ${t.easeScore}/100">${t.easeScore}</span>
           </div>
         `).join('')}
@@ -283,8 +283,8 @@ function buildFixturesTile(teams, fixtures, currentGw) {
         <h4 class="fixtures-label bad" data-tooltip="Teams with highest average FDR. Consider benching or selling their players.">Toughest Run</h4>
         ${hardest.map(t => `
           <div class="fixture-team-row">
-            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
-            <span class="fixture-team-name">${t.team.shortName || t.team.short_name || '???'}</span>
+            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.name || t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            <span class="fixture-team-name">${t.team.name || t.team.shortName || t.team.short_name || '???'}</span>
             <span class="fixture-score score-bad" data-tooltip="Ease score: ${t.easeScore}/100">${t.easeScore}</span>
           </div>
         `).join('')}
@@ -476,11 +476,18 @@ function buildTeamStatusTile(entryId) {
 
 async function loadTeamStatus(tile, entryId) {
   try {
-    const [entry, history] = await Promise.all([
+    const [entryResult, historyResult] = await Promise.all([
       fplClient.entry(entryId),
       fplClient.entryHistory(entryId),
     ]);
 
+    // Check if we got valid data
+    if (!entryResult.ok || !historyResult.ok) {
+      throw new Error(entryResult.message || historyResult.message || "Failed to load");
+    }
+
+    const entry = entryResult.data;
+    const history = historyResult.data;
     const lastGw = history.current[history.current.length - 1];
     const rank = entry.summary_overall_rank;
     const rankStr = rank > 999999 ? (rank / 1000000).toFixed(1) + 'M' :
@@ -511,9 +518,77 @@ async function loadTeamStatus(tile, entryId) {
     footer.innerHTML = `<span class="tile-link">View team →</span>`;
     tile.append(footer);
   } catch (e) {
-    tile.querySelector(".tile-body").innerHTML = `
-      <p class="tile-error">Could not load team data</p>
+    log.error("Portal: Failed to load team status", e);
+
+    // Check if cached data is available
+    const cachedEntry = hasCachedData(CacheKey.ENTRY, state.entryId);
+    const cachedHistory = hasCachedData(CacheKey.ENTRY_HISTORY, state.entryId);
+    const hasCache = cachedEntry || cachedHistory;
+
+    const tileBody = tile.querySelector(".tile-body");
+    tileBody.innerHTML = `
+      <div class="tile-error-card">
+        <span class="tile-error-icon">⚠️</span>
+        <p class="tile-error-msg">Could not load team data</p>
+        <div class="tile-error-actions">
+          <button class="tile-retry-btn" data-action="retry">Retry</button>
+          ${hasCache ? '<button class="tile-cache-btn" data-action="cache">Use cached data</button>' : ''}
+        </div>
+      </div>
     `;
+
+    // Wire up retry button
+    tileBody.querySelector('[data-action="retry"]')?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      tileBody.innerHTML = '<div class="loading-spinner"></div>';
+      loadTeamStatus(tile, entryId);
+    });
+
+    // Wire up cache button
+    tileBody.querySelector('[data-action="cache"]')?.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        const cachedEntryData = loadFromCache(CacheKey.ENTRY, state.entryId);
+        const cachedHistoryData = loadFromCache(CacheKey.ENTRY_HISTORY, state.entryId);
+
+        if (cachedEntryData && cachedHistoryData) {
+          const entry = cachedEntryData.data;
+          const history = cachedHistoryData.data;
+          const lastGw = history.current[history.current.length - 1];
+          const rank = entry.summary_overall_rank;
+          const rankStr = rank > 999999 ? (rank / 1000000).toFixed(1) + 'M' :
+                          rank > 999 ? (rank / 1000).toFixed(0) + 'K' : rank;
+
+          tileBody.innerHTML = `
+            <div class="team-status-grid team-status-cached">
+              <div class="status-item">
+                <span class="status-value">${entry.summary_overall_points}</span>
+                <span class="status-label">Total Pts</span>
+              </div>
+              <div class="status-item">
+                <span class="status-value">${rankStr}</span>
+                <span class="status-label">Rank</span>
+              </div>
+              <div class="status-item">
+                <span class="status-value">${lastGw?.points || '—'}</span>
+                <span class="status-label">Last GW</span>
+              </div>
+              <div class="status-item">
+                <span class="status-value">£${((lastGw?.value || 0) / 10).toFixed(1)}m</span>
+                <span class="status-label">Value</span>
+              </div>
+            </div>
+            <div class="tile-cached-notice">📡 Using cached data</div>
+          `;
+
+          const footer = utils.el("div", { class: "tile-footer" });
+          footer.innerHTML = `<span class="tile-link">View team →</span>`;
+          tile.append(footer);
+        }
+      } catch (err) {
+        log.error("Failed to load cached team data", err);
+      }
+    });
   }
 }
 
@@ -560,27 +635,56 @@ function buildLeagueTile(leagueIds) {
 
 async function loadLeagueStatus(tile, leagueIds) {
   try {
-    const leagues = await Promise.all(
-      leagueIds.slice(0, 3).map(id => fplClient.leagueClassic(id, 1).catch(() => null))
+    const leagueResults = await Promise.all(
+      leagueIds.slice(0, 3).map(id => fplClient.leagueClassic(id, 1).catch(() => ({ ok: false, data: null })))
     );
 
-    const validLeagues = leagues.filter(Boolean);
+    const validLeagues = leagueResults.filter(r => r.ok && r.data);
+    const failedCount = leagueResults.length - validLeagues.length;
 
     if (validLeagues.length === 0) {
-      tile.querySelector(".tile-body").innerHTML = `
-        <p class="tile-error">Could not load league data</p>
+      // Check for cached data
+      const hasCachedLeagues = leagueIds.slice(0, 3).some(id => hasCachedData(CacheKey.LEAGUE_CLASSIC, id, 1));
+
+      const tileBody = tile.querySelector(".tile-body");
+      tileBody.innerHTML = `
+        <div class="tile-error-card">
+          <span class="tile-error-icon">⚠️</span>
+          <p class="tile-error-msg">Could not load league data</p>
+          <div class="tile-error-actions">
+            <button class="tile-retry-btn" data-action="retry">Retry</button>
+            ${hasCachedLeagues ? '<button class="tile-cache-btn" data-action="cache">Use cached data</button>' : ''}
+          </div>
+        </div>
       `;
+
+      tileBody.querySelector('[data-action="retry"]')?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        tileBody.innerHTML = '<div class="loading-spinner"></div>';
+        loadLeagueStatus(tile, leagueIds);
+      });
+
+      tileBody.querySelector('[data-action="cache"]')?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        loadLeagueStatusFromCache(tile, leagueIds);
+      });
       return;
     }
 
     tile.querySelector(".tile-body").innerHTML = `
       <div class="leagues-preview">
-        ${validLeagues.map(league => `
-          <div class="league-row">
-            <span class="league-name">${league.league?.name || 'League'}</span>
-            <span class="league-members">${league.standings?.results?.length || 0} members</span>
-          </div>
-        `).join('')}
+        ${validLeagues.map(r => {
+          const league = r.data;
+          // Use the league metadata for total member count (not just first page results)
+          const memberCount = league.league?.league_count || league.standings?.results?.length || 0;
+          return `
+            <div class="league-row">
+              <span class="league-name">${league.league?.name || 'League'}</span>
+              <span class="league-members">${memberCount} members</span>
+            </div>
+          `;
+        }).join('')}
+        ${failedCount > 0 ? `<div class="league-row league-row-failed"><span class="league-failed-notice">⚠️ ${failedCount} league(s) failed to load</span></div>` : ''}
       </div>
     `;
 
@@ -588,10 +692,61 @@ async function loadLeagueStatus(tile, leagueIds) {
     footer.innerHTML = `<span class="tile-link">View standings →</span>`;
     tile.append(footer);
   } catch (e) {
-    tile.querySelector(".tile-body").innerHTML = `
-      <p class="tile-error">Could not load league data</p>
+    log.error("Portal: Failed to load league status", e);
+
+    const tileBody = tile.querySelector(".tile-body");
+    tileBody.innerHTML = `
+      <div class="tile-error-card">
+        <span class="tile-error-icon">⚠️</span>
+        <p class="tile-error-msg">Could not load league data</p>
+        <div class="tile-error-actions">
+          <button class="tile-retry-btn" data-action="retry">Retry</button>
+        </div>
+      </div>
     `;
+
+    tileBody.querySelector('[data-action="retry"]')?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      tileBody.innerHTML = '<div class="loading-spinner"></div>';
+      loadLeagueStatus(tile, leagueIds);
+    });
   }
+}
+
+async function loadLeagueStatusFromCache(tile, leagueIds) {
+  const cachedLeagues = [];
+  for (const id of leagueIds.slice(0, 3)) {
+    const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, id, 1);
+    if (cached) {
+      cachedLeagues.push(cached.data);
+    }
+  }
+
+  if (cachedLeagues.length === 0) {
+    tile.querySelector(".tile-body").innerHTML = `
+      <p class="tile-error">No cached data available</p>
+    `;
+    return;
+  }
+
+  tile.querySelector(".tile-body").innerHTML = `
+    <div class="leagues-preview leagues-preview-cached">
+      ${cachedLeagues.map(league => {
+        const memberCount = league.league?.league_count || league.standings?.results?.length || 0;
+        return `
+          <div class="league-row">
+            <span class="league-name">${league.league?.name || 'League'}</span>
+            <span class="league-members">${memberCount} members</span>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div class="tile-cached-notice">📡 Using cached data</div>
+  `;
+
+  const footer = utils.el("div", { class: "tile-footer" });
+  footer.innerHTML = `<span class="tile-link">View standings →</span>`;
+  tile.append(footer);
 }
 
 // Metrics Help Tile

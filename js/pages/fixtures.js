@@ -652,8 +652,8 @@ await ui.chart(canvas, cfg);
 
 // sorting toggles (sortKey/sortDir are already declared above)
 const rerender = ()=>render();
-windowSel.onchange = rerender;
-viewSel.onchange  = rerender;
+windowSel.onChange(rerender);
+viewSel.onChange(rerender);
 // Note: toggle event handlers are now set up in createFixtureToggle()
 const _setSeg = (k)=>{ setSeg(k); rerender(); };
 segAll.onclick = ()=> _setSeg("ALL");
