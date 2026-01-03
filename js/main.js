@@ -1814,34 +1814,97 @@ function initNavScrollAffordance() {
   moreBtn.setAttribute("aria-haspopup", "true");
   moreBtn.setAttribute("aria-expanded", "false");
   moreBtn.textContent = "More…";
+
+  // Phase 11: Create menu as portal element (appended to body to avoid overflow clipping)
   const moreMenu = document.createElement("div");
-  moreMenu.className = "nav-more-menu";
-  moreWrap.append(moreBtn, moreMenu);
+  moreMenu.className = "nav-more-menu nav-more-menu-portal";
+  moreMenu.style.display = "none";
+  document.body.appendChild(moreMenu);
+
+  moreWrap.appendChild(moreBtn);
   nav.appendChild(moreWrap);
+
+  // Phase 11: Position the portal menu relative to button
+  function positionMenu() {
+    if (moreMenu.style.display === "none") return;
+    const btnRect = moreBtn.getBoundingClientRect();
+    const menuWidth = moreMenu.offsetWidth || 180;
+    const viewportWidth = window.innerWidth;
+
+    // Default: align to right edge of button
+    let left = btnRect.right - menuWidth;
+
+    // If menu would go off left edge, align to left of button instead
+    if (left < 8) {
+      left = btnRect.left;
+    }
+
+    // If menu would still go off right edge, clamp it
+    if (left + menuWidth > viewportWidth - 8) {
+      left = viewportWidth - menuWidth - 8;
+    }
+
+    moreMenu.style.position = "fixed";
+    moreMenu.style.top = `${btnRect.bottom + 6}px`;
+    moreMenu.style.left = `${left}px`;
+    moreMenu.style.zIndex = "10000";
+  }
 
   const closeMore = () => {
     moreWrap.classList.remove("open");
     moreBtn.setAttribute("aria-expanded", "false");
+    moreMenu.style.display = "none";
+  };
+
+  const openMore = () => {
+    moreWrap.classList.add("open");
+    moreBtn.setAttribute("aria-expanded", "true");
+    moreMenu.style.display = "flex";
+    positionMenu();
   };
 
   moreBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    const nextState = !moreWrap.classList.contains("open");
-    moreWrap.classList.toggle("open", nextState);
-    moreBtn.setAttribute("aria-expanded", String(nextState));
+    if (moreWrap.classList.contains("open")) {
+      closeMore();
+    } else {
+      openMore();
+    }
   });
 
+  // Phase 11: Close on click outside (check both button and portal menu)
   document.addEventListener("click", (e) => {
     const target = e.target instanceof Element ? e.target : null;
-    if (target && target.closest(".nav-more")) return;
+    if (!target) return;
+    if (target.closest(".nav-more") || target.closest(".nav-more-menu-portal")) return;
     closeMore();
   });
 
+  // Phase 11: Close on Escape key and return focus to button
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && moreWrap.classList.contains("open")) {
+      closeMore();
+      moreBtn.focus();
+    }
+  });
+
+  // Phase 11: Reposition on window scroll/resize
+  window.addEventListener("scroll", positionMenu, { passive: true });
+  window.addEventListener("resize", () => {
+    positionMenu();
+    redistributeNav();
+    updateScrollAffordance();
+  }, { passive: true });
+
+  // Track which links are currently in the overflow menu
+  let overflowedLinks = [];
+
   function redistributeNav() {
     // Move any overflowed links back into the main nav before recalculating
-    Array.from(moreMenu.children).forEach(link => {
+    overflowedLinks.forEach(link => {
       nav.insertBefore(link, moreWrap);
     });
+    overflowedLinks = [];
 
     const navLinks = Array.from(nav.querySelectorAll(".nav-link")).filter((link) => link.closest(".nav") === nav);
     const availableWidth = nav.clientWidth - moreWrap.offsetWidth - 8; // gap padding
@@ -1855,8 +1918,18 @@ function initNavScrollAffordance() {
         continue;
       }
       overflowStarted = true;
+      // Move the actual link to the portal menu
       moreMenu.appendChild(link);
+      overflowedLinks.push(link);
     }
+
+    // Add click handlers to close menu after navigation
+    overflowedLinks.forEach(link => {
+      // Remove existing handler if any
+      link.removeEventListener("click", link._closeHandler);
+      link._closeHandler = () => closeMore();
+      link.addEventListener("click", link._closeHandler);
+    });
 
     moreWrap.classList.toggle("has-items", moreMenu.children.length > 0);
     if (!moreMenu.children.length) closeMore();
@@ -1876,12 +1949,6 @@ function initNavScrollAffordance() {
 
   // Update on scroll
   nav.addEventListener("scroll", updateScrollAffordance, { passive: true });
-
-  // Update on resize (layout + overflow redistribution)
-  window.addEventListener("resize", () => {
-    redistributeNav();
-    updateScrollAffordance();
-  }, { passive: true });
 
   // Initial check
   redistributeNav();

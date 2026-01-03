@@ -16,6 +16,7 @@ import { log } from "../logger.js";
 import { STORAGE_KEYS, getJSON, setJSON } from "../storage.js";
 import { getCacheAge, CacheKey, loadFromCache } from "../api/fetchHelper.js";
 import { renderTransferOptimizer, wireUpTransferOptimizer } from "../components/transferOptimizerUI.js";
+import { runTransferOptimization } from "../lib/transferOptimizer.js";
 import { renderBenchChipAdvisor, wireUpBenchChipAdvisor } from "../components/benchChipAdvisorUI.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -107,6 +108,38 @@ function toArrayFixtures(x) {
   if (Array.isArray(x.data)) return x.data;
   if (Array.isArray(x.results)) return x.results;
   return [];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 11: UNIFIED TRANSFER RECOMMENDATION HELPERS
+   Both GW Snapshot and sidebar now use the same canonical source
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Extract transfer info from canonical result for snapshot display
+ * Returns { out, in, gain } or null if no transfer recommended
+ */
+function extractSnapshotTransfer(canonicalResult) {
+  if (!canonicalResult?.ok || !canonicalResult.recommendations) return null;
+
+  const rec = canonicalResult.recommendations;
+  const action = rec.action;
+
+  // Only show transfer if action is "transfer" or "hit"
+  if (action !== "transfer" && action !== "hit") return null;
+
+  const best = rec.best;
+  if (!best || !best.transfers || best.transfers.length === 0) return null;
+
+  const firstTransfer = best.transfers[0];
+  if (!firstTransfer) return null;
+
+  return {
+    out: firstTransfer.out?.player?.web_name || "?",
+    in: firstTransfer.in?.player?.web_name || "?",
+    gain: firstTransfer.xpGain || best.netGain || 0,
+    action: action === "hit" ? "hit" : "free"
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1849,16 +1882,35 @@ async function renderOptimisedDashboard(container, recalcBanner) {
     // Optimise XI with objective and manual overrides
     const optimised = optimiseXI(squadWithXp, objectiveConfig, manualOverrides);
 
-    // Get transfer recommendations (only if predictions available)
-    let transfers = null;
+    // Get transfer recommendations using SINGLE canonical source
+    // Phase 11: Unified recommendation system - both snapshot and sidebar use same result
+    let canonicalTransferResult = null;
     let transferOptimizerHtml = "";
     if (predictionsAvailable) {
-      transfers = await getTransferRecommendations(context, horizonGwCount, bs, objectiveConfig);
-      // Phase 7: Use new Transfer Optimizer
       try {
+        // Single canonical source for all transfer recommendations
+        canonicalTransferResult = await runTransferOptimization(context, { horizonGwCount });
+
+        // Render the transfer optimizer UI using the canonical result
         transferOptimizerHtml = await renderTransferOptimizer(context, { horizonGwCount });
+
+        // Debug logging for recommendation verification
+        if (window.__DEBUG_RECS__) {
+          const snapshotTransfer = extractSnapshotTransfer(canonicalTransferResult);
+          const sidebarTransfer = canonicalTransferResult?.recommendations?.best?.transfers?.[0];
+          console.log("[DEBUG_RECS] Canonical Transfer Recommendation:", {
+            computedAt: new Date().toISOString(),
+            horizon: horizonGwCount,
+            objective: objectiveConfig?.id,
+            snapshotTransfer: snapshotTransfer ? `${snapshotTransfer.out} → ${snapshotTransfer.in}` : "None",
+            sidebarTransfer: sidebarTransfer ? `${sidebarTransfer.out?.player?.web_name} → ${sidebarTransfer.in?.player?.web_name}` : "None",
+            action: canonicalTransferResult?.recommendations?.action,
+            isUnified: true
+          });
+        }
       } catch (e) {
-        log.warn("Transfer Optimizer failed, falling back to legacy panel", e);
+        log.warn("Transfer Optimizer failed", e);
+        canonicalTransferResult = null;
         transferOptimizerHtml = "";
       }
     }
@@ -1885,7 +1937,15 @@ async function renderOptimisedDashboard(container, recalcBanner) {
 
     // Update recalculation timestamp
     dashboardState.lastRecalculated = new Date();
-    dashboardState.optimisedData = { squadWithXp, optimised, transfers, chipRec, captainData };
+    // Phase 11: Store canonical transfer result for unified recommendation access
+    dashboardState.optimisedData = {
+      squadWithXp,
+      optimised,
+      canonicalTransferResult, // Single source of truth for transfers
+      chipRec,
+      captainData,
+      horizonGwCount // Store horizon for display
+    };
 
     // Render snapshot card (6.1)
     const snapshotContainer = document.getElementById("spSnapshotCard");
@@ -1963,11 +2023,19 @@ async function renderOptimisedDashboard(container, recalcBanner) {
 
 /**
  * Generate headline stance based on current state
+ * Phase 11: Uses canonical transfer result for unified recommendations
  */
-function generateHeadlineStance(context, optimised, captainData, chipRec, transfers) {
+function generateHeadlineStance(context, optimised, captainData, chipRec, dashboardState) {
   const flaggedCount = context.flaggedPlayers?.length || 0;
   const freeTransfers = context.freeTransfers || 0;
   const overrideDelta = optimised.overrideDelta || 0;
+
+  // Phase 11: Extract transfer from canonical result (same source as sidebar)
+  const canonicalResult = dashboardState.optimisedData?.canonicalTransferResult;
+  const snapshotTransfer = extractSnapshotTransfer(canonicalResult);
+  const horizonLabel = dashboardState.optimisedData?.horizonGwCount
+    ? `Next ${dashboardState.optimisedData.horizonGwCount}`
+    : "";
 
   // Priority order for headline
   if (flaggedCount >= 3) {
@@ -1982,8 +2050,14 @@ function generateHeadlineStance(context, optimised, captainData, chipRec, transf
   if (flaggedCount > 0 && freeTransfers === 0) {
     return { text: `${flaggedCount} flagged but 0 FT - monitor news closely`, severity: "warning" };
   }
-  if (transfers?.action === "Make 1 Free Transfer") {
-    return { text: `Transfer recommended: ${transfers.transfers[0]?.out.web_name} → ${transfers.transfers[0]?.in.web_name}`, severity: "info" };
+  // Phase 11: Use unified canonical transfer for snapshot headline
+  if (snapshotTransfer) {
+    const hitLabel = snapshotTransfer.action === "hit" ? " (hit)" : "";
+    return {
+      text: `Transfer recommended${hitLabel}: ${snapshotTransfer.out} → ${snapshotTransfer.in}`,
+      severity: "info",
+      horizonLabel // For display if needed
+    };
   }
   if (overrideDelta > 2) {
     return { text: `Manual overrides costing -${overrideDelta.toFixed(1)} xP vs optimal`, severity: "warning" };
@@ -2013,9 +2087,8 @@ function renderGameweekSnapshot(context, optimised, captainData, chipRec, dashbo
   // Chips display
   const chipsAvail = (context.chipsAvailable || []).map(formatChipName).join(", ") || "None";
 
-  // Headline stance
-  const transfers = dashboardState.optimisedData?.transfers;
-  const headline = generateHeadlineStance(context, optimised, captainData, chipRec, transfers);
+  // Headline stance - Phase 11: Now uses dashboardState for unified canonical transfer
+  const headline = generateHeadlineStance(context, optimised, captainData, chipRec, dashboardState);
 
   // Last updated time
   const lastUpdated = dashboardState.lastRecalculated

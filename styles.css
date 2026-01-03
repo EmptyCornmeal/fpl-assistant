@@ -579,6 +579,42 @@
     background:var(--accent-weak);
     border-color:var(--accent);
   }
+  /* Phase 11: Portal menu rendered to body to escape overflow clipping */
+  .nav-more-menu-portal{
+    position:fixed;
+    min-width:180px;
+    padding:10px;
+    background:var(--surface-2);
+    border:1px solid var(--border-strong);
+    border-radius:12px;
+    box-shadow:var(--shadow-xl);
+    z-index:10000;
+    flex-direction:column;
+    gap:6px;
+    max-height:70vh;
+    overflow-y:auto;
+  }
+  .nav-more-menu-portal .nav-link{
+    padding:10px 14px;
+    border-radius:8px;
+    border:1px solid transparent;
+    background:transparent;
+    color:var(--text);
+    text-decoration:none;
+    font-weight:500;
+    display:block;
+    transition:all 0.15s ease;
+  }
+  .nav-more-menu-portal .nav-link:hover{
+    background:var(--accent-weak);
+    border-color:var(--accent);
+    color:var(--accent-light);
+  }
+  .nav-more-menu-portal .nav-link.active{
+    background:var(--accent-weak);
+    border-color:var(--accent);
+    color:var(--accent-light);
+  }
 
   /* Responsive: On smaller screens, nav wraps to new line */
   @media (max-width:1100px){
