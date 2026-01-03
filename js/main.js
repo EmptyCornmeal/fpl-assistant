@@ -452,9 +452,13 @@ const ApiStatus = {
   LIVE: "live",
   UPDATING: "updating",
   OFFLINE: "offline",
+  UNKNOWN: "unknown",
 };
 
 let apiStatus = ApiStatus.LIVE;
+let lastApiStatusCheck = 0;
+const API_STATUS_BACKOFF_MS = 15_000;
+let apiStatusPromise = null;
 
 function setApiStatus(status, detail = "") {
   apiStatus = status;
@@ -464,6 +468,7 @@ function setApiStatus(status, detail = "") {
   const label =
     status === ApiStatus.LIVE ? "Live" :
     status === ApiStatus.UPDATING ? "Updating" :
+    status === ApiStatus.UNKNOWN ? "Status Unknown" :
     "Offline (cached)";
 
   badge.dataset.status = status;
@@ -477,14 +482,32 @@ async function refreshApiStatus(reason = "") {
     return;
   }
 
-  setApiStatus(ApiStatus.UPDATING, reason || "Checking API…");
-  try {
-    await api.up();
-    setApiStatus(ApiStatus.LIVE, "Connected to the FPL proxy");
-  } catch (err) {
-    log.warn("API health check failed", err);
-    setApiStatus(ApiStatus.OFFLINE, "API unreachable — showing cached data where possible");
+  const now = Date.now();
+  if (apiStatusPromise && now - lastApiStatusCheck < API_STATUS_BACKOFF_MS) {
+    return apiStatusPromise;
   }
+  lastApiStatusCheck = now;
+
+  setApiStatus(ApiStatus.UPDATING, reason || "Checking API…");
+  apiStatusPromise = (async () => {
+    try {
+      await api.up();
+      setApiStatus(ApiStatus.LIVE, "Connected to the FPL proxy");
+    } catch (err) {
+      const msg = `${err?.message || err}`;
+      const isMissing = msg.includes("HTTP 404") || msg.toLowerCase().includes("not found");
+      log.warn("API health check failed", err);
+      if (isMissing) {
+        setApiStatus(ApiStatus.UNKNOWN, "Health endpoint missing or misconfigured");
+      } else {
+        setApiStatus(ApiStatus.OFFLINE, "API unreachable — showing cached data where possible");
+      }
+    } finally {
+      apiStatusPromise = null;
+    }
+  })();
+
+  return apiStatusPromise;
 }
 
 function bindApiStatusEvents() {
@@ -879,7 +902,10 @@ async function renderTeamProfile(main, teamId) {
 
   try {
     const bs = state.bootstrap || await api.bootstrap();
-    const team = (bs.teams || []).find(t => t.id === teamId);
+    const teams = bs.teams || [];
+    const teamIdNum = Number(teamId);
+    const teamById = new Map(teams.map(t => [Number(t.id), t]));
+    const team = teamById.get(teamIdNum);
 
     if (!team) {
       main.innerHTML = `<div class="card error-404"><h2>Team Not Found</h2><p>No team with ID ${teamId}</p><button class="btn-primary" onclick="history.back()">Go Back</button></div>`;
@@ -887,7 +913,7 @@ async function renderTeamProfile(main, teamId) {
     }
 
     const badgeUrl = `https://resources.premierleague.com/premierleague/badges/100/t${team.code}.png`;
-    const players = (bs.elements || []).filter(p => p.team === teamId);
+    const players = (bs.elements || []).filter(p => Number(p.team) === teamIdNum);
     const positions = bs.element_types || [];
 
     // Group players by position
@@ -929,7 +955,7 @@ async function renderTeamProfile(main, teamId) {
       fixturesError = "Fixtures unavailable right now.";
     }
 
-    const teamFixtures = allFixtures.filter(f => f.team_h === teamId || f.team_a === teamId);
+    const teamFixtures = allFixtures.filter(f => f.team_h === teamIdNum || f.team_a === teamIdNum);
     const upcoming = teamFixtures
       .filter(f => !f.finished && !f.finished_provisional)
       .sort((a, b) => new Date(a.kickoff_time || 0) - new Date(b.kickoff_time || 0))
@@ -941,21 +967,21 @@ async function renderTeamProfile(main, teamId) {
 
     const formatResult = (fx) => {
       if (!Number.isFinite(fx.team_h_score) || !Number.isFinite(fx.team_a_score)) return "FT";
-      const isHome = fx.team_h === teamId;
+      const isHome = fx.team_h === teamIdNum;
       const gf = isHome ? fx.team_h_score : fx.team_a_score;
       const ga = isHome ? fx.team_a_score : fx.team_h_score;
       const outcome = gf > ga ? "W" : gf === ga ? "D" : "L";
       return `${outcome} ${gf}-${ga}`;
     };
 
-    const teamPinned = isTeamPinned(teamId);
+    const teamPinned = isTeamPinned(teamIdNum);
 
     main.innerHTML = `
       <div class="team-profile">
         <div class="profile-header">
           <div class="profile-header-actions">
             <button class="back-btn" onclick="history.back()">← Back</button>
-            <button class="pin-team-btn ${teamPinned ? "active" : ""}" data-team-id="${teamId}">
+            <button class="pin-team-btn ${teamPinned ? "active" : ""}" data-team-id="${teamIdNum}">
               ${teamPinned ? "Unpin Team" : "Pin Team"}
             </button>
           </div>
@@ -1014,9 +1040,9 @@ async function renderTeamProfile(main, teamId) {
             ${upcoming.length ? `
               <ul class="inline-fixture-list">
                 ${upcoming.map(f => {
-                  const isHome = f.team_h === teamId;
+                  const isHome = f.team_h === teamIdNum;
                   const oppId = isHome ? f.team_a : f.team_h;
-                  const opp = teamById.get(oppId);
+                  const opp = teamById.get(Number(oppId));
                   const diff = clampFDR(isHome ? f.team_h_difficulty : f.team_a_difficulty);
                   const date = f.kickoff_time ? new Date(f.kickoff_time).toLocaleDateString("en-GB", { month: "short", day: "numeric" }) : "TBC";
                   return `
@@ -1048,9 +1074,9 @@ async function renderTeamProfile(main, teamId) {
             ${recent.length ? `
               <div class="stat-rows">
                 ${recent.map(f => {
-                  const isHome = f.team_h === teamId;
+                  const isHome = f.team_h === teamIdNum;
                   const oppId = isHome ? f.team_a : f.team_h;
-                  const opp = teamById.get(oppId);
+                  const opp = teamById.get(Number(oppId));
                   return `
                     <div class="stat-row">
                       <span>${isHome ? "H" : "A"} ${opp?.short_name || oppId}</span>

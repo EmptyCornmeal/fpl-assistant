@@ -63,7 +63,9 @@ export const CacheKey = {
  * - ENTRY_PICKS per GW also high-cardinality -> memory-only by default.
  */
 const CACHE_POLICY = {
-  [CacheKey.BOOTSTRAP]: { persist: true, memory: true },
+  // Large payloads stay memory-only to avoid localStorage quota churn
+  [CacheKey.BOOTSTRAP]: { persist: false, memory: true },
+
   [CacheKey.ENTRY]: { persist: true, memory: true },
   [CacheKey.ENTRY_HISTORY]: { persist: true, memory: true },
   [CacheKey.LEAGUE_CLASSIC]: { persist: true, memory: true },
