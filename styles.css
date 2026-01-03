@@ -12008,3 +12008,418 @@ body:hover .dev-toggle-hint {
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 10: FINAL POLISH & BUG FIXES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── PORTAL ERROR CARDS ───────────────────────────────────────────────────── */
+.tile-error-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.tile-error-icon {
+  font-size: 24px;
+}
+
+.tile-error-msg {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.tile-error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tile-retry-btn,
+.tile-cache-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tile-retry-btn {
+  background: var(--accent-weak);
+  color: var(--accent-light);
+  border-color: var(--accent);
+}
+
+.tile-retry-btn:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.tile-cache-btn {
+  background: var(--surface-1);
+  color: var(--muted);
+}
+
+.tile-cache-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.tile-cached-notice {
+  font-size: 10px;
+  color: var(--muted);
+  padding: 4px 8px;
+  background: var(--surface-1);
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.team-status-cached {
+  opacity: 0.85;
+}
+
+.league-row-failed {
+  opacity: 0.7;
+}
+
+.league-failed-notice {
+  font-size: 10px;
+  color: var(--yellow);
+}
+
+.leagues-preview-cached {
+  opacity: 0.85;
+}
+
+/* ─── MY TEAM FIXTURES CARD: PREVENT TRUNCATION & FILL WIDTH ───────────────── */
+.my-team-page .tile-wide {
+  width: 100%;
+  flex: 1;
+}
+
+.my-team-page .fixtures-preview-grid {
+  max-height: none !important;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.my-team-page .fixture-team-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.my-team-page .fixture-team-row .fixtures-strip {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.my-team-page .fixture-team-row .fixtures-strip .fdr-cell {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── PLAYER HEADSHOTS IMPROVED FALLBACK ───────────────────────────────────── */
+.player-photo-wrapper {
+  position: relative;
+}
+
+.player-photo {
+  width: 48px;
+  height: 60px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.player-photo[src*="data:image"] {
+  padding: 8px;
+}
+
+/* ─── FIXTURES PAGE: COMPACT FILTER BAR ────────────────────────────────────── */
+.fixtures-dashboard .toolbar-compact {
+  padding: 6px 8px;
+  gap: 8px;
+  min-height: auto;
+}
+
+.fixtures-dashboard .tile-flush {
+  padding: 8px 10px;
+}
+
+.fixtures-dashboard .fx-toggle {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+.fixtures-dashboard .fx-toggle-label {
+  font-size: 10px;
+}
+
+/* ─── FIXTURES PAGE: EXPAND MATRIX & CHART ─────────────────────────────────── */
+.fixtures-dashboard {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-height) - 20px);
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.fixtures-content {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fixtures-content > .card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.fixtures-content > .card h3 {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.fixtures-content .matrix-wrap {
+  flex: 1;
+  overflow: auto;
+}
+
+/* ─── EXPLORER PAGE: NORMALIZE VERTICAL LAYOUT ─────────────────────────────── */
+.gw-dashboard {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-height) - 20px);
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.gw-dashboard .toolbar-compact {
+  flex-shrink: 0;
+}
+
+.gw-top-row {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.gw-top-row > .card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Match heights: GW Summary and Team of the Week */
+.gw-summary-card,
+.gw-totw-card {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.gw-summary-content {
+  font-size: 12px;
+}
+
+.gw-summary-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 0 4px 0;
+}
+
+.gw-hauls-list {
+  font-size: 11px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+.gw-stats-chips {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+
+.gw-team-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gw-team-stat {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--surface-1);
+  border-radius: 4px;
+}
+
+.gw-pos-stats {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gw-totw-content {
+  font-size: 12px;
+}
+
+.gw-totw-header {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gw-totw-empty {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 16px;
+}
+
+.gw-table-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.gw-table-container h3 {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.gw-table-container .table {
+  flex: 1;
+  min-height: 0;
+}
+
+.mt-8 {
+  margin-top: 8px;
+}
+
+/* ─── STAT PICKER: TEXT WRAP & OVERFLOW FIXES ──────────────────────────────── */
+.sp-explanation-text {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.sp-player-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.sp-card,
+.sp-bench-row,
+.sp-transfer-row {
+  overflow: hidden;
+}
+
+.sp-card .sp-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-bench-player-name,
+.sp-transfer-player-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sp-section-content {
+  overflow-x: auto;
+}
+
+/* Prevent overflow in explanation sections */
+.sp-explanation,
+.sp-rationale {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ─── PLAYERS PAGE: SCATTER PLOT INTERACTIVITY FIX ─────────────────────────── */
+.players-chart canvas {
+  pointer-events: auto !important;
+}
+
+.players-chart .tile-body {
+  position: relative;
+}
+
+/* Ensure chart container has proper dimensions for hit detection */
+.players-chart #ap-chart-slot {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.players-chart #ap-chart-slot canvas {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ─── PLAYERS PAGE: RESET FILTERS BUTTON ───────────────────────────────────── */
+.ap-reset-filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.ap-reset-filters:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.ap-reset-filters:active {
+  transform: scale(0.98);
+}
+
+.ap-reset-filters .reset-icon {
+  font-size: 12px;
+}

@@ -677,7 +677,11 @@ export async function renderAllPlayers(main){
 
     const applyBtn = utils.el("button",{class:"btn-primary"}, "Apply");
 
-    row2.append(sortSel, xgiToggle, xpToggle, chartWrap, applyBtn);
+    // Reset Filters button
+    const resetBtn = utils.el("button", { class: "ap-reset-filters", title: "Reset all filters to defaults" });
+    resetBtn.innerHTML = `<span class="reset-icon">↻</span> Reset`;
+
+    row2.append(sortSel, xgiToggle, xpToggle, chartWrap, applyBtn, resetBtn);
 
     toolbar.append(utils.el("h3",{},"All Players — Filters, Sort & Tools"), row1, row2);
 
@@ -747,6 +751,42 @@ export async function renderAllPlayers(main){
 
     /* ---- Apply button (manual trigger) ---- */
     applyBtn.addEventListener("click", applyFilters);
+
+    // Reset Filters handler
+    resetBtn.addEventListener("click", () => {
+      // Reset all filter values to defaults
+      Object.assign(filters, DEFAULTS);
+
+      // Reset UI elements
+      q.value = "";
+      posButtons.forEach((btn, i) => btn.classList.toggle("active", i === 0));
+      filters.posId = "";
+      filters.teamIds = [];
+      teamBtn.innerHTML = `🏆 All teams`;
+      priceMin.value = "";
+      priceMax.value = "";
+      priceMin.classList.remove("input-invalid");
+      priceMax.classList.remove("input-invalid");
+      statusSel.value = "";
+      minutesChk.querySelector("input").checked = false;
+
+      // Reset sort
+      Object.assign(sort, DEFAULT_SORT);
+      sortSel.value = "total_points_desc";
+
+      // Reset chart mode
+      chartMode = DEFAULT_CHART_MODE;
+      btnChartPoints.classList.add("active");
+      btnChartXP.classList.remove("active");
+
+      // Clear localStorage
+      writeLS(LS_AP_FILTERS, DEFAULTS);
+      writeLS(LS_AP_SORT, DEFAULT_SORT);
+      writeLS(LS_AP_CHART, DEFAULT_CHART_MODE);
+
+      // Update view
+      update();
+    });
 
     /* ---- Auto-apply on price inputs with debounce ---- */
     priceMin.addEventListener("input", () => {
@@ -958,16 +998,16 @@ export async function renderAllPlayers(main){
       if (chartInstance) { try { chartInstance.destroy(); } catch {} chartInstance = null; }
       chartSlot.innerHTML = "";
 
-      const slotWidth = Math.max(320, Math.floor(chartSlot.getBoundingClientRect().width || chartSlot.clientWidth || 900));
-      const canvas = utils.el("canvas", {
-        width: slotWidth,
-        height: 680, // double height
-        style: "max-width:100%;display:block"
+      // Create canvas wrapper for proper responsive sizing
+      const canvasWrap = utils.el("div", {
+        style: "position:relative;width:100%;height:calc(100% - 32px);min-height:400px"
       });
+      const canvas = utils.el("canvas");
+      canvasWrap.append(canvas);
 
       chartSlot.append(
         utils.el("h3",{}, chartMode==="points" ? "Price vs Total Points (filtered)" : "Price vs xP (Next 5) — filtered"),
-        canvas
+        canvasWrap
       );
 
       const colors = {1:"#60a5fa", 2:"#34d399", 3:"#f472b6", 4:"#f59e0b"};
@@ -976,18 +1016,27 @@ export async function renderAllPlayers(main){
         data: { datasets: [{
           data: ds,
           parsing: false,
-          pointRadius:      ctx => Math.max(3, Math.sqrt(ctx.raw.own || 0) + 2),
-          pointHoverRadius: ctx => Math.max(5, Math.sqrt(ctx.raw.own || 0) + 5),
-          pointBackgroundColor: ctx => colors[ctx.raw.pos] || "#93c5fd"
+          pointRadius:      ctx => Math.max(4, Math.sqrt(ctx.raw.own || 0) + 3),
+          pointHoverRadius: ctx => Math.max(7, Math.sqrt(ctx.raw.own || 0) + 6),
+          pointBackgroundColor: ctx => colors[ctx.raw.pos] || "#93c5fd",
+          pointBorderWidth: 1,
+          pointBorderColor: "rgba(255,255,255,0.3)"
         }]},
         options: {
-          responsive: false,
+          responsive: true,
+          maintainAspectRatio: false,
           animation: false,
+          interaction: {
+            mode: "nearest",
+            axis: "xy",
+            intersect: false
+          },
           plugins: {
             legend: { display: false },
             tooltip: {
+              enabled: true,
               mode: "nearest",
-              intersect: true,
+              intersect: false,
               callbacks: {
                 label: (ctx) => {
                   const r = ctx.raw;

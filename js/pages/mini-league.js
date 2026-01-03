@@ -264,8 +264,62 @@ export async function renderMiniLeague(main) {
         </div>
       `;
 
-      // Fetch all leagues in parallel
-      const summaries = await Promise.all(leagues.map(lid => fetchLeagueSummary(lid)));
+      // Fetch all leagues in parallel with a global timeout to prevent infinite loading
+      const LOAD_TIMEOUT = 20000; // 20 seconds max for all leagues to load
+
+      const fetchWithTimeout = async () => {
+        return await Promise.all(leagues.map(lid => fetchLeagueSummary(lid)));
+      };
+
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Loading timeout")), LOAD_TIMEOUT);
+      });
+
+      let summaries;
+      try {
+        summaries = await Promise.race([fetchWithTimeout(), timeoutPromise]);
+      } catch (timeoutErr) {
+        // Timeout occurred - try to use cached data for all leagues
+        log.warn("Mini-League: Load timeout, attempting to use cached data");
+        summaries = leagues.map(lid => {
+          const cached = loadFromCache(CacheKey.LEAGUE_CLASSIC, lid, 1);
+          if (cached) {
+            const cacheAge = Date.now() - cached.timestamp;
+            const data = cached.data;
+            const leagueName = data?.league?.name || `League ${lid}`;
+            const results = Array.isArray(data?.standings?.results) ? data.standings.results : [];
+            const me = results.find(r => state.entryId && Number(state.entryId) === Number(r.entry));
+            const myRank = me ? results.indexOf(me) + 1 : null;
+            const leaderPts = results[0]?.total || 0;
+            const myPts = me?.total || 0;
+            const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
+
+            return {
+              id: lid,
+              name: leagueName,
+              teamCount: results.length,
+              myRank,
+              myPts,
+              myGwPts: me?.event_total || 0,
+              gapToLeader,
+              leader: results[0]?.entry_name || "—",
+              leaderPts,
+              results,
+              gwRef,
+              isLive,
+              fromCache: true,
+              cacheAge,
+              stale: true
+            };
+          }
+          return {
+            id: lid,
+            name: `League ${lid}`,
+            error: true,
+            errorMessage: "Loading timed out"
+          };
+        });
+      }
 
       // Check for total failure (all leagues failed without cache)
       const successfulLeagues = summaries.filter(s => !s.error);
