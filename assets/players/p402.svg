@@ -1,0 +1,12 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'>
+      <defs>
+        <linearGradient id='g402' x1='0%' y1='0%' x2='100%' y2='100%'>
+          <stop stop-color='#8B5CF6' offset='0%'/>
+          <stop stop-color='#0f172a' offset='100%'/>
+        </linearGradient>
+      </defs>
+      <rect width='120' height='120' rx='16' fill='url(#g402)'/>
+      <circle cx='60' cy='48' r='24' fill='rgba(255,255,255,0.16)'/>
+      <rect x='32' y='76' width='56' height='32' rx='12' fill='rgba(255,255,255,0.08)'/>
+      <text x='60' y='70' text-anchor='middle' fill='#E2E8F0' font-family='Inter, sans-serif' font-size='22' font-weight='700'>P402</text>
+    </svg>
