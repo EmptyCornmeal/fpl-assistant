@@ -1,8 +1,21 @@
 // js/lib/images.js
 // Centralized helpers for player photos and team badges.
 // Uses Premier League CDN directly for reliable image loading.
+// Includes Wikipedia fallback for new signings/missing photos.
 
 import { log } from "../logger.js";
+
+// Re-export player image resolver functions for convenience
+export {
+  applySmartImageFallback,
+  resolvePlayerImageSrc,
+  resolveWikiThumbnail,
+  preloadWikiThumbnail,
+  clearWikiCache,
+  getCachedWikiThumb,
+  buildPLImageUrl,
+  cleanPhotoCode as cleanPhotoCodeFromResolver,
+} from "./playerImageResolver.js";
 
 // Resolve placeholder relative to this module so it works on GitHub Pages subpaths
 export const PLAYER_PLACEHOLDER_SRC = new URL("../../assets/placeholder-player.svg", import.meta.url).href;

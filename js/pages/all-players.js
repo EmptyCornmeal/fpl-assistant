@@ -7,7 +7,7 @@ import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
 import { getCacheAge, CacheKey, hasCachedData } from "../api/fetchHelper.js";
-import { applyImageFallback, getPlayerImage, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
+import { applyImageFallback, applySmartImageFallback, getPlayerImage, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
 
 /* ========= LocalStorage keys ========= */
 const LS_AP_FILTERS = "fpl.ap.filters";
@@ -228,7 +228,8 @@ function showCompareModal(playerById, posShortById, teamShortById) {
       src: getPlayerImage(player.photo),
       alt: player.web_name
     });
-    applyImageFallback(photo, PLAYER_PLACEHOLDER_SRC);
+    // Use smart fallback with Wikipedia for players missing PL headshots
+    applySmartImageFallback(photo, player, { clubName: teamShortById.get(player.team) });
 
     const info = utils.el("div", { class: "compare-player-info" });
     info.innerHTML = `
