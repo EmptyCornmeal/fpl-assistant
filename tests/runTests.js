@@ -9,6 +9,7 @@ import "./transferOptimizer.test.js";
 import "./statPicker.test.js";
 import "./benchOptimizer.test.js";
 import "./images.test.js";
+import "./playerImageResolver.test.js";
 import "./livePoints.test.js";
 import "./pinnedRemoval.test.js";
 

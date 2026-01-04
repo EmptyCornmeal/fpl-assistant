@@ -10,7 +10,7 @@ import { openModal } from "../components/modal.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey, getCacheAge, formatCacheAge } from "../api/fetchHelper.js";
 import { getApiBaseInfo, setApiBaseOverride, validateApiBase } from "../config.js";
-import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl, applyImageFallback, hideOnError } from "../lib/images.js";
+import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl, applyImageFallback, applySmartImageFallback, hideOnError } from "../lib/images.js";
 
 /* ───────────────── Helpers ───────────────── */
 function badgeImg(team, className = "fixture-badge") {
@@ -26,9 +26,29 @@ function playerImg(player, className = "captain-photo") {
   return `<img class="${className}" src="${src}" alt="${alt}">`;
 }
 
-function wireTileImageFallbacks(root) {
+/**
+ * Wire image fallbacks for portal tiles
+ * @param {HTMLElement} root - Root element to search within
+ * @param {Map} playersById - Optional map of player ID to player object for smart fallback
+ */
+function wireTileImageFallbacks(root, playersById = null) {
   root.querySelectorAll("img.fixture-badge, img.swing-badge, img.swing-badge-sm, img.team-badge, img.team-badge-sm").forEach((img) => hideOnError(img));
-  root.querySelectorAll("img.captain-photo, img.captain-photo-lg, img.tile-player-photo").forEach((img) => applyImageFallback(img, PLAYER_PLACEHOLDER_SRC));
+
+  // For player photos, use smart fallback if player data is available
+  root.querySelectorAll("img.captain-photo, img.captain-photo-lg, img.tile-player-photo").forEach((img) => {
+    // Try to get player ID from parent element's data attribute
+    const row = img.closest("[data-player-id]");
+    const playerId = row?.dataset?.playerId ? Number(row.dataset.playerId) : null;
+    const player = playerId && playersById ? playersById.get(playerId) : null;
+
+    if (player) {
+      // Use smart fallback with Wikipedia
+      applySmartImageFallback(img, player, { clubName: player.teamShortName || player._raw?.team_short_name });
+    } else {
+      // Fall back to basic fallback
+      applyImageFallback(img, PLAYER_PLACEHOLDER_SRC);
+    }
+  });
 }
 
 /* ───────────────── Skeleton Loading ───────────────── */
@@ -207,13 +227,15 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
     </div>
   `;
 
-  wireTileImageFallbacks(tile);
+  // Build players map for smart image fallback
+  const candidatesById = new Map(candidates.map(p => [p.id, p]));
+  wireTileImageFallbacks(tile, candidatesById);
   tile.addEventListener("click", () => {
     const modalContent = utils.el("div", { class: "portal-modal-content" });
     modalContent.innerHTML = `
       <div class="captain-modal-grid">
         ${candidates.length === 0 ? '<p>No captain picks available</p>' : candidates.map((p, i) => `
-          <div class="captain-modal-row">
+          <div class="captain-modal-row" data-player-id="${p.id}">
             <div class="captain-rank-lg">${i + 1}</div>
             ${playerImg(p, "captain-photo-lg")}
             <div class="captain-info">
@@ -237,7 +259,7 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
         <a href="#/all-players">View all players →</a>
       </div>
     `;
-    wireTileImageFallbacks(modalContent);
+    wireTileImageFallbacks(modalContent, candidatesById);
     openModal(`Captain Picks — GW${currentGw}`, modalContent);
   });
 

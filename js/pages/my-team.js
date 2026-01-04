@@ -6,7 +6,7 @@ import { ui } from "../components/ui.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey } from "../api/fetchHelper.js";
-import { applyImageFallback, getPlayerImage, getTeamBadgeUrl, hideOnError, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
+import { applyImageFallback, applySmartImageFallback, getPlayerImage, getTeamBadgeUrl, hideOnError, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
 import { calculateLiveGwPoints, buildLiveDataMap } from "../lib/livePoints.js";
 
 /* ───────────────── constants ───────────────── */
@@ -269,7 +269,8 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
     alt: player.name,
     loading: "lazy"
   });
-  applyImageFallback(photo, PLAYER_PLACEHOLDER_SRC);
+  // Use smart fallback with Wikipedia for players missing PL headshots
+  applySmartImageFallback(photo, pl, { clubName: team?.short_name });
   
   // Team badge overlay
   const teamBadgeSrc = getTeamBadgeUrl(team?.code);
