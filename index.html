@@ -20,6 +20,10 @@
     // Load config.local.js if it exists (silently ignore if missing)
     // This allows local development overrides without 404 noise on production
     (async function() {
+      const hasWindow = typeof window !== "undefined";
+      const host = hasWindow ? window.location.hostname : "";
+      const isLocalHost = hasWindow && (["localhost", "127.0.0.1", "::1"].includes(host) || window.location.protocol === "file:");
+      if (!isLocalHost) return;
       try {
         const res = await fetch("./config.local.js", { cache: "no-store" });
         if (res.ok) {

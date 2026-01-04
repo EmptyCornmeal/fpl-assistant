@@ -40,6 +40,7 @@ const PLAYER_PHOTO_URL = (photoId) => {
   const cleanId = String(photoId).replace(/\.(png|jpg)$/i, '').replace(/^p/, '');
   return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
 };
+const PLAYER_PLACEHOLDER_SRC = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 110 140'%3E%3Crect fill='%23334155' width='110' height='140'/%3E%3Ctext x='55' y='80' text-anchor='middle' fill='%2394a3b8' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
 
 // Team badge URL
 const TEAM_BADGE_URL = (teamCode) =>
@@ -273,14 +274,17 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
 
   // Player photo
   const photoWrapper = utils.el("div", { class: "player-photo-wrapper" });
-  const photo = utils.el("img", { 
+  const resolvedPhoto = PLAYER_PHOTO_URL(pl?.photo);
+  const photo = utils.el("img", {
     class: "player-photo",
-    src: PLAYER_PHOTO_URL(pl?.photo),
+    src: resolvedPhoto || PLAYER_PLACEHOLDER_SRC,
     alt: player.name,
     loading: "lazy"
   });
   photo.onerror = () => {
-    photo.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 110 140'%3E%3Crect fill='%23334155' width='110' height='140'/%3E%3Ctext x='55' y='80' text-anchor='middle' fill='%2394a3b8' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+    photo.onerror = null;
+    photo.src = PLAYER_PLACEHOLDER_SRC;
+    photo.dataset.placeholder = "true";
   };
   
   // Team badge overlay
@@ -1076,8 +1080,13 @@ async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
     const pointsKey = liveGw ? 'currPoints' : 'prevPoints';
     const displayGw = liveGw || prevGw || roster.gw;
     const sortedByPoints = [...rows].sort((a,b) => ((b[pointsKey]||0) - (a[pointsKey]||0)));
-    const topPerformer = sortedByPoints[0];
-    const topPerformerPts = topPerformer?.[pointsKey] || 0;
+    const topPerformerPts = sortedByPoints.length ? (sortedByPoints[0][pointsKey] || 0) : 0;
+    const topPerformers = sortedByPoints.filter(p => (p[pointsKey] || 0) === topPerformerPts && p.name);
+    const topPerformerNames = topPerformers.map(p => p.name);
+    const topPerformerLabel = topPerformerNames.length
+      ? topPerformerNames.join(", ")
+      : "—";
+    const topPerformerSuffix = topPerformerNames.length > 1 ? " (tie)" : "";
 
     const quickStatsTile1 = utils.el("div", { class: "tile tile-compact tile-clickable" });
     quickStatsTile1.innerHTML = `
@@ -1087,8 +1096,8 @@ async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
       </div>
       <div class="tile-body">
         <div style="text-align:center">
-          <div style="font-size:1.5rem;font-weight:700;color:var(--brand-light)">${topPerformer?.name || '—'}</div>
-          <div style="font-size:0.85rem;color:var(--muted)">${topPerformerPts} pts</div>
+          <div style="font-size:1.5rem;font-weight:700;color:var(--brand-light)">${topPerformerLabel}</div>
+          <div style="font-size:0.85rem;color:var(--muted)">${topPerformerPts} pts${topPerformerSuffix}</div>
         </div>
       </div>
     `;

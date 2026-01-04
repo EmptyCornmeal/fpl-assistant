@@ -553,7 +553,10 @@ async function refreshApiStatus(reason = "") {
       if (res.ok) {
         // Mark this API base as validated for future use
         markApiBaseValidated(apiBase);
-        setApiStatus(ApiStatus.LIVE, `Connected (${apiBase})`);
+        const detail = res.degraded
+          ? `Connected (${apiBase}) — health endpoint unavailable`
+          : `Connected (${apiBase})`;
+        setApiStatus(ApiStatus.LIVE, detail);
       } else {
         setApiStatus(ApiStatus.UNKNOWN, "Health endpoint unavailable");
       }

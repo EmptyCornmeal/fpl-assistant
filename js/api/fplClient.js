@@ -24,6 +24,7 @@ const CACHE_TTL = {
   entry: 1 * 60 * 1000,           // 1 minute
   league: 2 * 60 * 1000,          // 2 minutes
 };
+const HEALTH_PATHS = ["up?live=true", "up", "health", "status"];
 
 const NO_API_MESSAGE = "No API configured. Set API base in Settings or localStorage.fpl.apiBase.";
 
@@ -574,18 +575,49 @@ export const fplClient = {
    * Health check
    */
   async healthCheck() {
-    const path = "up?live=true";
-    const resolved = resolveApiUrl(path);
-    if (!resolved.ok) {
+    const baseInfo = getApiBaseInfo();
+    if (!baseInfo.base) {
       return { ok: false, error: NO_API_MESSAGE, errorType: ErrorType.CLIENT, code: "NO_API_BASE" };
     }
-    const result = await fetchWithTimeout(resolved.url, { timeout: 5000 });
 
-    if (result.ok) {
-      return { ok: true, ...result.data };
+    let lastReachable = null;
+    for (const path of HEALTH_PATHS) {
+      const resolved = resolveApiUrl(path);
+      if (!resolved.ok) continue;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(resolved.url, { signal: controller.signal, cache: "no-store" });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          return { ok: true, status: res.status, path };
+        }
+        if (res.status > 0) {
+          lastReachable = { status: res.status, path };
+          // Allow trying another path if the endpoint itself is missing
+          if (res.status === 404 || res.status === 405) continue;
+          // Other status codes mean the host responded; treat as reachable but degraded
+          return { ok: true, status: res.status, path, degraded: true };
+        }
+      } catch (err) {
+        clearTimeout(timeoutId);
+        lastReachable = lastReachable || { status: 0, path };
+        continue;
+      }
     }
 
-    return { ok: false, error: result.message, errorType: result.errorType };
+    if (lastReachable) {
+      return {
+        ok: true,
+        degraded: true,
+        status: lastReachable.status,
+        path: lastReachable.path,
+        message: "Health endpoint unavailable, but API responded",
+      };
+    }
+
+    return { ok: false, error: "Health check failed", errorType: ErrorType.NETWORK };
   },
 };
 
