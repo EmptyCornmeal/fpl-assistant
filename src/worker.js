@@ -46,7 +46,7 @@ function buildCorsHeaders(request, extra = {}) {
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
+  const url = new URL(request.url);
 
     // ----- CORS preflight -----
     if (request.method === "OPTIONS") {
@@ -59,6 +59,51 @@ export default {
     // Health ping (support multiple aliases to avoid noisy 404s)
     if (["/api/up", "/api/health", "/api/status", "/up", "/health", "/status"].includes(url.pathname)) {
       return json(request, 200, { ok: true, ts: Date.now() });
+    }
+
+    if (url.pathname.startsWith("/api/player-photo/")) {
+      const photoId = url.pathname.replace("/api/player-photo/", "").replace(/\D/g, "");
+      if (!photoId) return json(request, 400, { error: "Missing photoId" });
+      const upstream = `https://resources.premierleague.com/premierleague/photos/players/250x250/p${photoId}.png`;
+      try {
+        const r = await fetch(upstream, {
+          method: "GET",
+          redirect: "follow",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; FPL-Dashboard/1.0)",
+            "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+            "Origin": "https://fantasy.premierleague.com",
+            "Referer": "https://fantasy.premierleague.com/"
+          },
+          cf: { cacheTtl: 60 * 60 * 24, cacheEverything: true }
+        });
+
+        if (r.status === 404) {
+          return new Response("Not Found", {
+            status: 404,
+            headers: buildCorsHeaders(request, {
+              "Cache-Control": "public, max-age=300",
+              "CDN-Cache-Control": "max-age=300",
+              "Content-Type": "text/plain; charset=utf-8",
+              "Access-Control-Allow-Origin": "*",
+            })
+          });
+        }
+
+        const headers = buildCorsHeaders(request, {
+          "Content-Type": r.headers.get("Content-Type") || "image/png",
+          "Cache-Control": "public, max-age=86400",
+          "CDN-Cache-Control": "max-age=86400",
+          "Access-Control-Allow-Origin": "*",
+        });
+        return new Response(r.body, { status: r.status, statusText: r.statusText, headers });
+      } catch (err) {
+        return json(request, 502, {
+          error: "Photo fetch failed",
+          details: err?.message || String(err),
+          upstream,
+        });
+      }
     }
 
     const imgRoute = matchImageRoute(url.pathname);

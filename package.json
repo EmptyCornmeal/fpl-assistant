@@ -1,0 +1,27 @@
+{
+  "name": "fpl-assistant",
+  "version": "1.2.0",
+  "description": "Live-aware Fantasy Premier League dashboard with offline caching and planning tools.",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "node tests/runTests.js"
+  },
+  "keywords": [
+    "fantasy-premier-league",
+    "fpl",
+    "dashboard",
+    "cloudflare-worker"
+  ],
+  "author": "Myles",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^9.11.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "prettier": "^3.3.3"
+  }
+}
