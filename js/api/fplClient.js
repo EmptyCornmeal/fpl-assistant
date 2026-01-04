@@ -13,7 +13,7 @@ import {
   ErrorType,
   CacheKey,
 } from "./fetchHelper.js";
-import { getApiBaseInfo } from "../config.js";
+import { getApiBaseInfo, HEALTH_PATH } from "../config.js";
 
 // In-memory cache configuration (for fast repeated access within same session)
 const memoryCache = new Map();
@@ -24,7 +24,10 @@ const CACHE_TTL = {
   entry: 1 * 60 * 1000,           // 1 minute
   league: 2 * 60 * 1000,          // 2 minutes
 };
-const HEALTH_PATHS = ["up?live=true", "up", "health", "status"];
+const HEALTH_PATHS = [HEALTH_PATH];
+const HEALTH_BACKOFF_MS = 10_000;
+let lastHealthCheckTs = 0;
+let lastHealthResult = null;
 
 const NO_API_MESSAGE = "No API configured. Set API base in Settings or localStorage.fpl.apiBase.";
 
@@ -580,6 +583,12 @@ export const fplClient = {
       return { ok: false, error: NO_API_MESSAGE, errorType: ErrorType.CLIENT, code: "NO_API_BASE" };
     }
 
+    const now = Date.now();
+    if (lastHealthResult && now - lastHealthCheckTs < HEALTH_BACKOFF_MS) {
+      return lastHealthResult;
+    }
+    lastHealthCheckTs = now;
+
     let lastReachable = null;
     for (const path of HEALTH_PATHS) {
       const resolved = resolveApiUrl(path);
@@ -591,14 +600,18 @@ export const fplClient = {
         const res = await fetch(resolved.url, { signal: controller.signal, cache: "no-store" });
         clearTimeout(timeoutId);
         if (res.ok) {
-          return { ok: true, status: res.status, path };
+          lastHealthResult = { ok: true, status: res.status, path };
+          return lastHealthResult;
         }
         if (res.status > 0) {
+          if (res.status === 404 || res.status === 405) {
+            lastHealthResult = { ok: false, missing: true, status: res.status, path };
+            return lastHealthResult;
+          }
           lastReachable = { status: res.status, path };
-          // Allow trying another path if the endpoint itself is missing
-          if (res.status === 404 || res.status === 405) continue;
           // Other status codes mean the host responded; treat as reachable but degraded
-          return { ok: true, status: res.status, path, degraded: true };
+          lastHealthResult = { ok: true, status: res.status, path, degraded: true };
+          return lastHealthResult;
         }
       } catch (err) {
         clearTimeout(timeoutId);
@@ -608,16 +621,22 @@ export const fplClient = {
     }
 
     if (lastReachable) {
-      return {
+      if (lastReachable.status === 0) {
+        lastHealthResult = { ok: false, error: "Health check failed", errorType: ErrorType.NETWORK };
+        return lastHealthResult;
+      }
+      lastHealthResult = {
         ok: true,
         degraded: true,
         status: lastReachable.status,
         path: lastReachable.path,
         message: "Health endpoint unavailable, but API responded",
       };
+      return lastHealthResult;
     }
 
-    return { ok: false, error: "Health check failed", errorType: ErrorType.NETWORK };
+    lastHealthResult = { ok: false, error: "Health check failed", errorType: ErrorType.NETWORK };
+    return lastHealthResult;
   },
 };
 
