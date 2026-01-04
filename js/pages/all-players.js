@@ -7,7 +7,7 @@ import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
 import { getCacheAge, CacheKey, hasCachedData } from "../api/fetchHelper.js";
-import { applyImageFallback, getPlayerImage, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
+import { applyImageFallback, getPlayerImageSources, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
 
 /* ========= LocalStorage keys ========= */
 const LS_AP_FILTERS = "fpl.ap.filters";
@@ -223,12 +223,14 @@ function showCompareModal(playerById, posShortById, teamShortById) {
 
     // Header
     const header = utils.el("div", { class: "compare-player-header" });
+    const { src, fallback } = getPlayerImageSources(player.photo);
     const photo = utils.el("img", {
       class: "compare-player-photo",
-      src: getPlayerImage(player.photo),
+      src,
+      "data-avatar-label": player.web_name,
       alt: player.web_name
     });
-    applyImageFallback(photo, PLAYER_PLACEHOLDER_SRC);
+    applyImageFallback(photo, PLAYER_PLACEHOLDER_SRC, fallback);
 
     const info = utils.el("div", { class: "compare-player-info" });
     info.innerHTML = `
@@ -959,8 +961,13 @@ export async function renderAllPlayers(main, options = {}){
         { header:"", cell:compareCell, thClass:"select-cell", tdClass:"select-cell" },
         { header:"Name", accessor:r=>r.web_name, sortBy:r=>r.web_name, cell:r=>{
             const w = utils.el("div",{class:"name-cell"});
+            const link = utils.el("a", { class: "nm player-link", href: `#/player/${r.id}` }, r.web_name);
+            link.addEventListener("click", (e) => {
+              e.preventDefault();
+              location.hash = `#/player/${r.id}`;
+            });
             w.append(utils.el("span",{class:"team-chip"}, r.team_short));
-            w.append(utils.el("span",{class:"nm"}, r.web_name));
+            w.append(link);
             return w;
         }},
         { header:"Pos", accessor:r=>r.pos_name, sortBy:r=>r.pos_name },

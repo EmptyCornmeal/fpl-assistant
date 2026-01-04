@@ -10,7 +10,7 @@ import { openModal } from "../components/modal.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey, getCacheAge, formatCacheAge } from "../api/fetchHelper.js";
 import { getApiBaseInfo, setApiBaseOverride, validateApiBase } from "../config.js";
-import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl, applyImageFallback, hideOnError } from "../lib/images.js";
+import { getPlayerImageSources, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl, applyImageFallback, hideOnError } from "../lib/images.js";
 
 /* ───────────────── Helpers ───────────────── */
 function badgeImg(team, className = "fixture-badge") {
@@ -21,14 +21,18 @@ function badgeImg(team, className = "fixture-badge") {
 }
 
 function playerImg(player, className = "captain-photo") {
-  const src = getPlayerImage(player?._raw?.photo || player?.photo);
+  const { src, fallback } = getPlayerImageSources(player?._raw?.photo || player?.photo);
   const alt = player?.webName || player?.web_name || player?.name || "Player";
-  return `<img class="${className}" src="${src}" alt="${alt}">`;
+  const label = player?.webName || player?.web_name || player?.second_name || alt;
+  return `<img class="${className}" src="${src}" data-fallback="${fallback}" data-avatar-label="${label}" alt="${alt}">`;
 }
 
 function wireTileImageFallbacks(root) {
   root.querySelectorAll("img.fixture-badge, img.swing-badge, img.swing-badge-sm, img.team-badge, img.team-badge-sm").forEach((img) => hideOnError(img));
-  root.querySelectorAll("img.captain-photo, img.captain-photo-lg, img.tile-player-photo").forEach((img) => applyImageFallback(img, PLAYER_PLACEHOLDER_SRC));
+  root.querySelectorAll("img.captain-photo, img.captain-photo-lg, img.tile-player-photo").forEach((img) => {
+    const localFallback = img.dataset.fallback || null;
+    applyImageFallback(img, PLAYER_PLACEHOLDER_SRC, localFallback);
+  });
 }
 
 /* ───────────────── Skeleton Loading ───────────────── */
@@ -208,6 +212,13 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
   `;
 
   wireTileImageFallbacks(tile);
+  tile.querySelectorAll(".captain-option-row").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = Number(row.dataset.playerId);
+      if (id) location.hash = `#/player/${id}`;
+    });
+  });
   tile.addEventListener("click", () => {
     const modalContent = utils.el("div", { class: "portal-modal-content" });
     modalContent.innerHTML = `

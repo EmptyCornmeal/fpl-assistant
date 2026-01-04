@@ -15,7 +15,7 @@ import { utils } from "./utils.js";
 import { log } from "./logger.js";
 import { getApiBase, markApiBaseValidated, getApiBaseInfo } from "./config.js";
 import { formatCacheAge } from "./api/fetchHelper.js";
-import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl, applyImageFallback, hideOnError } from "./lib/images.js";
+import { getPlayerImageSources, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl, applyImageFallback, hideOnError } from "./lib/images.js";
 
 const APP_VERSION = "1.2.0";
 const COMMIT_HASH = "b0868d2"; // Auto-updated during build/deploy
@@ -700,11 +700,13 @@ function bindRefreshButton() {
 
 /* ---------- Routing ---------- */
 function getTabFromHash(hash) {
-  const raw = (hash || location.hash || "#/").replace(/^#\//, "");
+  const raw = (hash || location.hash || "#/").replace(/^#\//, "").replace(/\/+$/, "");
 
   const legacyRoutes = {
     "players/all": "all-players",
     "players/all-players": "all-players",
+    "players": "all-players",
+    "home": "portal",
   };
   if (legacyRoutes[raw]) {
     return { tab: legacyRoutes[raw], valid: true, params: {} };
@@ -791,7 +793,7 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
 
     const team = (bs.teams || []).find(t => t.id === player.team);
     const pos = (bs.element_types || []).find(p => p.id === player.element_type);
-    const photoUrl = getPlayerImage(player.photo, "250x250");
+    const { src: photoUrl, fallback: photoFallback } = getPlayerImageSources(player.photo, "250x250");
     const badgeUrl = getTeamBadgeUrl(team?.code);
 
     const statusClass = player.status === 'a' ? 'st-okay' :
@@ -874,9 +876,9 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
     main.innerHTML = `
       <div class="player-profile">
         <div class="profile-header">
-          <button class="back-btn" data-back-target="${backTarget}">← Back</button>
+          <button class="btn-ghost back-btn" data-back-target="${backTarget}">← Back</button>
           <div class="profile-info">
-            ${photoUrl ? `<img class="profile-photo" src="${photoUrl}" alt="${player.web_name}">` : '<div class="profile-photo-placeholder">👤</div>'}
+            ${photoUrl ? `<img class="profile-photo" src="${photoUrl}" data-avatar-label="${player.web_name}" alt="${player.web_name}">` : '<div class="profile-photo-placeholder">👤</div>'}
             <div class="profile-details">
               <h1 class="profile-name">${player.first_name} ${player.second_name}</h1>
               <div class="profile-meta">
@@ -1027,7 +1029,7 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
     `;
 
     const profilePhoto = main.querySelector(".profile-photo");
-    if (profilePhoto) applyImageFallback(profilePhoto, PLAYER_PLACEHOLDER_SRC);
+    if (profilePhoto) applyImageFallback(profilePhoto, PLAYER_PLACEHOLDER_SRC, photoFallback);
     const profileBadge = main.querySelector(".profile-badge");
     if (profileBadge) hideOnError(profileBadge);
 
@@ -1905,17 +1907,32 @@ function initNavScrollAffordance() {
 
   if (!container || !nav) return;
 
-  // Overflow handler - move excess links into a "More" menu
+  // Accessible “More” menu with quick links (always populated)
   const moreWrap = document.createElement("div");
-  moreWrap.className = "nav-more";
+  moreWrap.className = "nav-more has-items";
   const moreBtn = document.createElement("button");
   moreBtn.className = "nav-more-btn";
   moreBtn.type = "button";
   moreBtn.setAttribute("aria-haspopup", "true");
   moreBtn.setAttribute("aria-expanded", "false");
+  moreBtn.setAttribute("aria-label", "More navigation links");
   moreBtn.textContent = "More…";
   const moreMenu = document.createElement("div");
   moreMenu.className = "nav-more-menu";
+  const quickLinks = [
+    { href: "#/help", label: "Help & Keyboard" },
+    { href: "#/stat-picker", label: "Stat Picker" },
+    { href: "#/mini-league", label: "Mini-League" },
+    { href: "#/gw-explorer", label: "GW Explorer" },
+  ];
+  quickLinks.forEach((link) => {
+    const a = document.createElement("a");
+    a.href = link.href;
+    a.className = "nav-link";
+    a.textContent = link.label;
+    a.setAttribute("data-route", "");
+    moreMenu.appendChild(a);
+  });
   moreWrap.append(moreBtn, moreMenu);
   nav.appendChild(moreWrap);
 
@@ -1929,6 +1946,7 @@ function initNavScrollAffordance() {
     const nextState = !moreWrap.classList.contains("open");
     moreWrap.classList.toggle("open", nextState);
     moreBtn.setAttribute("aria-expanded", String(nextState));
+    if (nextState) moreMenu.querySelector("a")?.focus();
   });
   moreBtn.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
@@ -1949,31 +1967,6 @@ function initNavScrollAffordance() {
     closeMore();
   });
 
-  function redistributeNav() {
-    // Move any overflowed links back into the main nav before recalculating
-    Array.from(moreMenu.children).forEach(link => {
-      nav.insertBefore(link, moreWrap);
-    });
-
-    const navLinks = Array.from(nav.querySelectorAll(".nav-link")).filter((link) => link.closest(".nav") === nav);
-    const availableWidth = nav.clientWidth - moreWrap.offsetWidth - 8; // gap padding
-    let used = 0;
-    let overflowStarted = false;
-
-    for (const link of navLinks) {
-      const linkWidth = link.getBoundingClientRect().width + 6; // include gap
-      if (!overflowStarted && used + linkWidth <= availableWidth) {
-        used += linkWidth;
-        continue;
-      }
-      overflowStarted = true;
-      moreMenu.appendChild(link);
-    }
-
-    moreWrap.classList.toggle("has-items", moreMenu.children.length > 0);
-    if (!moreMenu.children.length) closeMore();
-  }
-
   function updateScrollAffordance() {
     const scrollLeft = nav.scrollLeft;
     const scrollWidth = nav.scrollWidth;
@@ -1989,14 +1982,12 @@ function initNavScrollAffordance() {
   // Update on scroll
   nav.addEventListener("scroll", updateScrollAffordance, { passive: true });
 
-  // Update on resize (layout + overflow redistribution)
+  // Update on resize (layout)
   window.addEventListener("resize", () => {
-    redistributeNav();
     updateScrollAffordance();
   }, { passive: true });
 
   // Initial check
-  redistributeNav();
   updateScrollAffordance();
 }
 
