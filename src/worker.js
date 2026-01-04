@@ -13,6 +13,7 @@ const IMAGE_ROUTES = [
     to: (m) => `https://resources.premierleague.com/premierleague/photos/players/${m[1]}/p${m[2]}.png`,
     cacheSeconds: 60 * 60 * 24, // 1 day
     contentType: "image/png",
+    fallback: true,
   },
   {
     type: "badge",
@@ -55,8 +56,8 @@ export default {
       });
     }
 
-    // Health ping
-    if (url.pathname === "/api/up") {
+    // Health ping (support multiple aliases to avoid noisy 404s)
+    if (["/api/up", "/api/health", "/api/status", "/up", "/health", "/status"].includes(url.pathname)) {
       return json(request, 200, { ok: true, ts: Date.now() });
     }
 
@@ -142,6 +143,13 @@ function matchImageRoute(pathname) {
 async function proxyImage(request, route) {
   const cacheSeconds = route.cacheSeconds || 3600;
   const upstream = route.to(route.match);
+  const placeholderSvg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+      <rect width="120" height="120" rx="12" ry="12" fill="#0f172a" />
+      <circle cx="60" cy="50" r="22" fill="#1e293b" stroke="#334155" stroke-width="4" />
+      <rect x="32" y="74" width="56" height="30" rx="8" fill="#1e293b" stroke="#334155" stroke-width="4" />
+      <text x="60" y="68" text-anchor="middle" fill="#94a3b8" font-family="Inter, sans-serif" font-size="12" font-weight="700">FPL</text>
+    </svg>`;
 
   try {
     const r = await fetch(upstream, {
@@ -156,6 +164,17 @@ async function proxyImage(request, route) {
       cf: { cacheTtl: cacheSeconds, cacheEverything: true }
     });
 
+    if (!r.ok && route.fallback) {
+      return new Response(placeholderSvg.trim(), {
+        status: 200,
+        headers: buildCorsHeaders(request, {
+          "Content-Type": "image/svg+xml",
+          "Cache-Control": "public, max-age=600",
+          "CDN-Cache-Control": "max-age=600",
+        })
+      });
+    }
+
     const headers = buildCorsHeaders(request, {
       "Content-Type": r.headers.get("Content-Type") || route.contentType || "image/png",
       "Cache-Control": `public, max-age=${cacheSeconds}`,
@@ -164,12 +183,12 @@ async function proxyImage(request, route) {
 
     return new Response(r.body, { status: r.status, statusText: r.statusText, headers });
   } catch (err) {
-    return new Response("Image fetch failed", {
-      status: 502,
+    return new Response(placeholderSvg.trim(), {
+      status: 200,
       headers: buildCorsHeaders(request, {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-store",
-        "CDN-Cache-Control": "no-store",
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "public, max-age=300",
+        "CDN-Cache-Control": "max-age=300",
       })
     });
   }

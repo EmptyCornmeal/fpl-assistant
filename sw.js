@@ -40,6 +40,7 @@ const API_PATH_PATTERNS = [
   /\/api\/lc\/\d+/,         // league classic
   /\/api\/ev\/\d+\/live/,   // event live
   /\/api\/up\/?/,           // health check
+  /\/api\/health\/?/,       // health check alias
 ];
 
 let lastBroadcastStatus = null;

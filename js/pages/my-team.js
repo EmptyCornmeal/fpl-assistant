@@ -3,7 +3,6 @@ import { fplClient } from "../api/fplClient.js";
 import { state, isInWatchlist, toggleWatchlist, validateState, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
-import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey } from "../api/fetchHelper.js";
@@ -689,9 +688,9 @@ async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
 
     // Async enrichment is started later with .then() to update xP tile
 
-    // Player click handler for modal
+    // Player click handler → go to canonical player page
     const handlePlayerClick = (player) => {
-      openModal(`${player.name} — Breakdown`, renderBreakdown(player));
+      location.hash = `#/player/${player.id}`;
     };
 
     /* ───────────────── UI helpers ───────────────── */

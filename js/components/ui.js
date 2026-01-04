@@ -34,6 +34,65 @@ export const ui = {
   },
 
   /**
+   * Unified state surface for loading/error/empty/cached panels
+   */
+  stateBlock({
+    variant = "info",
+    title = "",
+    message = "",
+    cacheAge = null,
+    actions = [],
+  } = {}) {
+    const icons = {
+      loading: "⏳",
+      error: "⚠️",
+      offline: "📡",
+      empty: "📭",
+      cached: "💾",
+      info: "ℹ️",
+    };
+    const card = utils.el("div", { class: `state-block state-${variant}` });
+
+    const header = utils.el("div", { class: "state-block__header" });
+    header.append(
+      utils.el("span", { class: "state-block__icon" }, icons[variant] || icons.info),
+      utils.el("span", { class: "state-block__title" }, title || "Status")
+    );
+    card.append(header);
+
+    if (message) {
+      card.append(utils.el("p", { class: "state-block__message" }, message));
+    }
+
+    if (cacheAge !== null) {
+      const cache = utils.el("div", { class: "state-block__cache" });
+      cache.innerHTML = `<span class="cache-icon">💾</span><span class="cache-text">Cached data available (${formatCacheAge(cacheAge)})</span>`;
+      card.append(cache);
+    }
+
+    if (Array.isArray(actions) && actions.length) {
+      const actionBar = utils.el("div", { class: "state-block__actions" });
+      actions.forEach(({ label, variant: btnVariant = "primary", onClick }) => {
+        const btn = utils.el("button", { class: `btn-${btnVariant}` }, label);
+        if (onClick) {
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            try {
+              await onClick();
+            } finally {
+              btn.disabled = false;
+            }
+          });
+        }
+        actionBar.append(btn);
+      });
+      card.append(actionBar);
+    }
+
+    return card;
+  },
+
+  /**
    * Error card with retry button
    * @param {Object} options
    * @param {string} options.title - Error title
@@ -107,60 +166,22 @@ export const ui = {
    * @param {Function} options.onUseCached - Use cached data callback
    */
   degradedCard({ title = "Connection Issue", message = "", errorType = null, cacheAge = null, onRetry = null, onUseCached = null } = {}) {
-    const card = utils.el("div", { class: "degraded-card" });
+    const fallbackMessage = cacheAge !== null
+      ? "Could not load data (API offline). You can retry or use cached data."
+      : "Could not load data. Please retry in a moment.";
+    const displayMessage = message || (errorType ? getErrorMessage(errorType) : fallbackMessage);
 
-    // Header
-    const header = utils.el("div", { class: "degraded-card-header" });
-    header.append(utils.el("span", { class: "degraded-card-icon" }, "⚠️"));
-    header.append(utils.el("span", { class: "degraded-card-title" }, title));
-    card.append(header);
+    const actions = [];
+    if (onRetry) actions.push({ label: "Retry", variant: "primary", onClick: onRetry });
+    if (onUseCached && cacheAge !== null) actions.push({ label: "Use Cached Data", variant: "secondary", onClick: onUseCached });
 
-    // Message - use provided or generate from errorType
-    const displayMessage = message || (errorType ? getErrorMessage(errorType) : "Unable to load fresh data.");
-    card.append(utils.el("p", { class: "degraded-card-message" }, displayMessage));
-
-    // Cache info
-    if (cacheAge !== null && onUseCached) {
-      const cacheInfo = utils.el("div", { class: "degraded-card-cache-info" });
-      cacheInfo.innerHTML = `
-        <span class="cache-icon">💾</span>
-        <span class="cache-text">Cached data available from <strong>${formatCacheAge(cacheAge)}</strong></span>
-      `;
-      card.append(cacheInfo);
-    }
-
-    // Actions
-    const actions = utils.el("div", { class: "degraded-card-actions" });
-
-    if (onRetry) {
-      const retryBtn = utils.el("button", { class: "btn-retry" }, "Retry");
-      retryBtn.addEventListener("click", async () => {
-        retryBtn.disabled = true;
-        retryBtn.textContent = "Retrying...";
-        try {
-          await onRetry();
-        } catch (e) {
-          log.error("Retry failed:", e);
-          retryBtn.disabled = false;
-          retryBtn.textContent = "Retry";
-        }
-      });
-      actions.append(retryBtn);
-    }
-
-    if (onUseCached && cacheAge !== null) {
-      const cacheBtn = utils.el("button", { class: "btn-use-cached" }, "Use Cached Data");
-      cacheBtn.addEventListener("click", () => {
-        if (onUseCached) onUseCached();
-      });
-      actions.append(cacheBtn);
-    }
-
-    if (actions.children.length > 0) {
-      card.append(actions);
-    }
-
-    return card;
+    return this.stateBlock({
+      variant: cacheAge !== null ? "offline" : "error",
+      title,
+      message: displayMessage,
+      cacheAge,
+      actions,
+    });
   },
 
   /**

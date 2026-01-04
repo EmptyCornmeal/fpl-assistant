@@ -13,6 +13,7 @@ const STORAGE_KEY = "fpl.apiBase";
 const VALIDATED_KEY = "fpl.apiBase.validated";
 const VALIDATION_TS_KEY = "fpl.apiBase.validatedAt";
 const VALIDATION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // Re-validate after 24h
+export const HEALTH_PATH = "up";
 
 // Candidate fallback hosts to try (in order) when no valid API is configured
 // These are validated before use - they're NOT auto-selected.
@@ -186,7 +187,7 @@ export async function validateApiBase(base, timeout = 5000) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    const response = await fetch(`${normalized}/up?live=true`, {
+    const response = await fetch(`${normalized}/${HEALTH_PATH}`, {
       signal: controller.signal,
       cache: "no-store",
     });

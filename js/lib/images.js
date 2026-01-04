@@ -6,7 +6,8 @@
 import { getApiBase } from "../config.js";
 import { log } from "../logger.js";
 
-export const PLAYER_PLACEHOLDER_SRC = "/assets/placeholder-player.svg";
+// Resolve placeholder relative to this module so it works on GitHub Pages subpaths
+export const PLAYER_PLACEHOLDER_SRC = new URL("../../assets/placeholder-player.svg", import.meta.url).href;
 const IMAGE_PROXY_SEGMENT = "/img";
 
 function cleanPhotoId(photoId) {

@@ -10,20 +10,25 @@ import { openModal } from "../components/modal.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey, getCacheAge, formatCacheAge } from "../api/fetchHelper.js";
 import { getApiBaseInfo, setApiBaseOverride, validateApiBase } from "../config.js";
-import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl } from "../lib/images.js";
+import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl, applyImageFallback, hideOnError } from "../lib/images.js";
 
 /* ───────────────── Helpers ───────────────── */
 function badgeImg(team, className = "fixture-badge") {
   const src = getTeamBadgeUrl(team?.code || team?.teamCode);
   if (!src) return "";
   const alt = team?.name || team?.shortName || team?.short_name || "";
-  return `<img class="${className}" src="${src}" alt="${alt}" onerror="this.style.display='none'">`;
+  return `<img class="${className}" src="${src}" alt="${alt}">`;
 }
 
 function playerImg(player, className = "captain-photo") {
   const src = getPlayerImage(player?._raw?.photo || player?.photo);
   const alt = player?.webName || player?.web_name || player?.name || "Player";
-  return `<img class="${className}" src="${src}" alt="${alt}" onerror="this.onerror=null;this.src='${PLAYER_PLACEHOLDER_SRC}';">`;
+  return `<img class="${className}" src="${src}" alt="${alt}">`;
+}
+
+function wireTileImageFallbacks(root) {
+  root.querySelectorAll("img.fixture-badge, img.swing-badge, img.swing-badge-sm, img.team-badge, img.team-badge-sm").forEach((img) => hideOnError(img));
+  root.querySelectorAll("img.captain-photo, img.captain-photo-lg, img.tile-player-photo").forEach((img) => applyImageFallback(img, PLAYER_PLACEHOLDER_SRC));
 }
 
 /* ───────────────── Skeleton Loading ───────────────── */
@@ -202,6 +207,7 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
     </div>
   `;
 
+  wireTileImageFallbacks(tile);
   tile.addEventListener("click", () => {
     const modalContent = utils.el("div", { class: "portal-modal-content" });
     modalContent.innerHTML = `
@@ -231,6 +237,7 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
         <a href="#/all-players">View all players →</a>
       </div>
     `;
+    wireTileImageFallbacks(modalContent);
     openModal(`Captain Picks — GW${currentGw}`, modalContent);
   });
 
@@ -322,6 +329,7 @@ function buildFixturesTile(teams, fixtures, currentGw) {
     </div>
   `;
 
+  wireTileImageFallbacks(tile);
   tile.addEventListener("click", () => {
     const modalContent = utils.el("div", { class: "portal-modal-content" });
     const allTeams = [...teamFixtures].sort((a, b) => b.easeScore - a.easeScore);
@@ -343,6 +351,7 @@ function buildFixturesTile(teams, fixtures, currentGw) {
         <a href="#/fixtures">Full fixtures page →</a>
       </div>
     `;
+    wireTileImageFallbacks(modalContent);
     openModal(`Fixture Outlook — GW${currentGw} to GW${currentGw + windowSize - 1}`, modalContent);
   });
 
@@ -946,6 +955,7 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
     </div>
   `;
 
+  wireTileImageFallbacks(tile);
   tile.addEventListener("click", () => {
     const allEasier = [...teamSwings].filter(t => t.swing > 0).sort((a, b) => b.swing - a.swing);
     const allHarder = [...teamSwings].filter(t => t.swing < 0).sort((a, b) => a.swing - b.swing);
@@ -982,6 +992,7 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
         <a href="#/fixtures">Full fixtures page →</a>
       </div>
     `;
+    wireTileImageFallbacks(modalContent);
     openModal(`Fixture Swings — Last ${recentWindow} vs Next ${upcomingWindow} GWs`, modalContent);
   });
 

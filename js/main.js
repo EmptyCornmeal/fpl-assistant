@@ -15,7 +15,7 @@ import { utils } from "./utils.js";
 import { log } from "./logger.js";
 import { getApiBase, markApiBaseValidated, getApiBaseInfo } from "./config.js";
 import { formatCacheAge } from "./api/fetchHelper.js";
-import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl } from "./lib/images.js";
+import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl, applyImageFallback, hideOnError } from "./lib/images.js";
 
 const APP_VERSION = "1.2.0";
 const COMMIT_HASH = "b0868d2"; // Auto-updated during build/deploy
@@ -308,6 +308,7 @@ let lastHashValue = "#/";
 
 /* ---------- Refresh state ---------- */
 let lastFetchTime = null;
+let lastHealthSuccess = null;
 let isLiveGw = false;
 let bootstrapMeta = null;
 let bootstrapBannerDismissed = false;
@@ -511,16 +512,26 @@ function setApiStatus(status, detail = "") {
   const badge = document.getElementById("apiStatusBadge");
   if (!badge) return;
 
+  const hasApiBase = !!getApiBase();
   const label =
-    status === ApiStatus.LIVE ? "Live" :
+    status === ApiStatus.LIVE ? "Online" :
     status === ApiStatus.UPDATING ? "Updating" :
-    status === ApiStatus.UNKNOWN ? "Status Unknown" :
-    "Offline (cached)";
+    status === ApiStatus.UNKNOWN ? "API Misconfigured" :
+    hasApiBase ? "Using Cache" : "API Misconfigured";
+
+  const base = getApiBase();
+  const lastSeenTs = lastHealthSuccess || lastFetchTime;
+  const lastSeen = lastSeenTs ? formatCacheAge(Date.now() - lastSeenTs) : null;
+  const extra = detail || (status === ApiStatus.LIVE && base ? base : "");
 
   badge.dataset.status = status;
-  badge.textContent = label;
-  badge.title = detail || label;
-  badge.dataset.base = getApiBase();
+  badge.dataset.base = base || "";
+  badge.innerHTML = `
+    <span class="api-status-label">${label}</span>
+    ${extra ? `<span class="api-status-detail">${extra}</span>` : ""}
+    ${lastSeen ? `<span class="api-status-meta">Last success: ${lastSeen}</span>` : ""}
+  `;
+  badge.title = [label, extra, lastSeen ? `Last success ${lastSeen}` : ""].filter(Boolean).join(" • ");
 }
 
 async function refreshApiStatus(reason = "") {
@@ -536,7 +547,7 @@ async function refreshApiStatus(reason = "") {
     const hint = info.sameOriginViable
       ? "Set window.__FPL_API_BASE__ or localStorage 'fpl.apiBase'"
       : "Configure API via localStorage.setItem('fpl.apiBase', 'https://your-proxy/api')";
-    setApiStatus(ApiStatus.OFFLINE, `No API configured. ${hint}`);
+    setApiStatus(ApiStatus.UNKNOWN, `No API configured. ${hint}`);
     log.warn(`No API base configured (source: ${info.source || "none"})`);
     return;
   }
@@ -554,10 +565,13 @@ async function refreshApiStatus(reason = "") {
       if (res.ok) {
         // Mark this API base as validated for future use
         markApiBaseValidated(apiBase);
+        lastHealthSuccess = Date.now();
         const detail = res.degraded
           ? `Connected (${apiBase}) — health endpoint unavailable`
           : `Connected (${apiBase})`;
         setApiStatus(ApiStatus.LIVE, detail);
+      } else if (res.missing) {
+        setApiStatus(ApiStatus.UNKNOWN, "Health endpoint missing or misconfigured");
       } else {
         setApiStatus(ApiStatus.UNKNOWN, "Health endpoint unavailable");
       }
@@ -688,6 +702,14 @@ function bindRefreshButton() {
 function getTabFromHash(hash) {
   const raw = (hash || location.hash || "#/").replace(/^#\//, "");
 
+  const legacyRoutes = {
+    "players/all": "all-players",
+    "players/all-players": "all-players",
+  };
+  if (legacyRoutes[raw]) {
+    return { tab: legacyRoutes[raw], valid: true, params: {} };
+  }
+
   // Check for static routes first
   if (routes[raw]) return { tab: raw, valid: true, params: {} };
 
@@ -732,6 +754,8 @@ function render404(main, attemptedRoute) {
 // Route aliases for nav highlighting (alias -> canonical route in nav)
 const routeAliases = {
   "players": "all-players",
+  "players/all": "all-players",
+  "players/all-players": "all-players",
   "explorer": "gw-explorer",
   "league": "mini-league",
 };
@@ -782,6 +806,9 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
     let summaryData = null;
     let summarySource = null;
     let summaryError = null;
+    let liveStats = null;
+    let liveMeta = null;
+    let liveGwId = null;
 
     try {
       summaryData = await api.elementSummary(player.id);
@@ -792,6 +819,23 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
     }
 
     if (!summaryData) summarySource = null;
+
+    const { lastFinished, current } = computeMarkers(bs.events || []);
+    const lastFinishedHistory = lastFinished ? (summaryData?.history || []).find(h => h.round === lastFinished.id) : null;
+
+    if (current && !current.data_checked) {
+      try {
+        const liveResult = await fplClient.eventLive(current.id, { preferCache: true });
+        if (liveResult.ok && liveResult.data?.elements) {
+          const liveRow = liveResult.data.elements.find((el) => el.id === player.id);
+          liveStats = liveRow?.stats || null;
+          liveMeta = { cacheAge: liveResult.cacheAge ?? null, fromCache: liveResult.fromCache ?? false };
+          liveGwId = current.id;
+        }
+      } catch (err) {
+        log.warn("Live stats unavailable for player profile", err);
+      }
+    }
 
     const recentHistory = summaryData?.history ? summaryData.history.slice(-5).reverse() : [];
     const upcomingFixtures = summaryData?.fixtures ? summaryData.fixtures.slice(0, 5) : [];
@@ -832,16 +876,58 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
         <div class="profile-header">
           <button class="back-btn" data-back-target="${backTarget}">← Back</button>
           <div class="profile-info">
-            ${photoUrl ? `<img class="profile-photo" src="${photoUrl}" alt="${player.web_name}" onerror="this.onerror=null;this.src='${PLAYER_PLACEHOLDER_SRC}';">` : '<div class="profile-photo-placeholder">👤</div>'}
+            ${photoUrl ? `<img class="profile-photo" src="${photoUrl}" alt="${player.web_name}">` : '<div class="profile-photo-placeholder">👤</div>'}
             <div class="profile-details">
               <h1 class="profile-name">${player.first_name} ${player.second_name}</h1>
               <div class="profile-meta">
-                ${badgeUrl ? `<img class="profile-badge" src="${badgeUrl}" alt="${team?.short_name}" onerror="this.style.display='none'">` : ''}
+                ${badgeUrl ? `<img class="profile-badge" src="${badgeUrl}" alt="${team?.short_name}">` : ''}
                 <span class="profile-team">${team?.name || 'Unknown'}</span>
                 <span class="profile-pos">${pos?.singular_name || 'Player'}</span>
                 <span class="status-pill ${statusClass}">${statusLabel}</span>
               </div>
               ${player.news ? `<p class="profile-news">${player.news}</p>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="profile-section profile-gw-breakdown">
+          <h3>Gameweek Breakdown</h3>
+          <div class="gw-breakdown-grid">
+            <div class="gw-card">
+              <div class="gw-card-header">
+                <span class="gw-label">Previous GW${lastFinished?.id ?? "—"}</span>
+                ${lastFinishedHistory ? `<span class="gw-meta">Final · ${lastFinished?.name || ""}</span>` : `<span class="gw-meta muted">No recent data</span>`}
+              </div>
+              ${lastFinishedHistory ? `
+                <div class="gw-stats">
+                  <div><span>Points</span><strong>${lastFinishedHistory.total_points ?? 0}</strong></div>
+                  <div><span>Minutes</span><strong>${lastFinishedHistory.minutes ?? 0}</strong></div>
+                  <div><span>Goals</span><strong>${lastFinishedHistory.goals_scored ?? 0}</strong></div>
+                  <div><span>Assists</span><strong>${lastFinishedHistory.assists ?? 0}</strong></div>
+                  <div><span>Clean Sheets</span><strong>${lastFinishedHistory.clean_sheets ?? 0}</strong></div>
+                  <div><span>Bonus</span><strong>${lastFinishedHistory.bonus ?? 0}</strong></div>
+                </div>
+              ` : `
+                <p class="gw-empty">Previous gameweek stats not available.</p>
+              `}
+            </div>
+            <div class="gw-card">
+              <div class="gw-card-header">
+                <span class="gw-label">Current GW${liveGwId ?? (current?.id || "—")}</span>
+                ${liveStats ? `<span class="gw-meta">Live${liveMeta?.cacheAge ? ` · ${formatCacheAge(liveMeta.cacheAge)}` : ""}</span>` : `<span class="gw-meta muted">${current && !current.data_checked ? "Live data unavailable" : "No live GW"}</span>`}
+              </div>
+              ${liveStats ? `
+                <div class="gw-stats">
+                  <div><span>Points</span><strong>${liveStats.total_points ?? 0}</strong></div>
+                  <div><span>Minutes</span><strong>${liveStats.minutes ?? 0}</strong></div>
+                  <div><span>Goals</span><strong>${liveStats.goals_scored ?? 0}</strong></div>
+                  <div><span>Assists</span><strong>${liveStats.assists ?? 0}</strong></div>
+                  <div><span>Clean Sheets</span><strong>${liveStats.clean_sheets ?? 0}</strong></div>
+                  <div><span>Bonus</span><strong>${liveStats.bonus ?? 0}</strong></div>
+                </div>
+              ` : `
+                <p class="gw-empty">${current && !current.data_checked ? "Live stats are still loading for this GW." : "No live fixtures right now."}</p>
+              `}
             </div>
           </div>
         </div>
@@ -939,6 +1025,11 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
       </div>
       ${secondaryBackTarget ? `<div class="back-fallback">Not coming from Players? <a href="${secondaryBackTarget}">Return to last page</a> or <a href="#/all-players">browse all players</a>.</div>` : ''}
     `;
+
+    const profilePhoto = main.querySelector(".profile-photo");
+    if (profilePhoto) applyImageFallback(profilePhoto, PLAYER_PLACEHOLDER_SRC);
+    const profileBadge = main.querySelector(".profile-badge");
+    if (profileBadge) hideOnError(profileBadge);
 
     const backBtn = main.querySelector(".back-btn");
     if (backBtn) {
@@ -1056,7 +1147,7 @@ async function renderTeamProfile(main, teamId) {
             </button>
           </div>
           <div class="profile-info">
-            ${badgeUrl ? `<img class="team-badge-large" src="${badgeUrl}" alt="${team.name}" onerror="this.style.display='none'">` : ""}
+            ${badgeUrl ? `<img class="team-badge-large" src="${badgeUrl}" alt="${team.name}">` : ""}
             <div class="profile-details">
               <h1 class="profile-name">${team.name}</h1>
               <div class="profile-meta">
@@ -1209,6 +1300,9 @@ async function renderTeamProfile(main, teamId) {
         </div>
       </div>
     `;
+
+    const teamBadgeImg = main.querySelector(".team-badge-large");
+    if (teamBadgeImg) hideOnError(teamBadgeImg);
 
     const pinBtn = main.querySelector(".pin-team-btn");
     if (pinBtn) {
@@ -1483,6 +1577,7 @@ function applyBootstrapData(bs, meta = {}) {
   }
 
   updateLastFetchTime(cacheTimestamp);
+  lastHealthSuccess = Date.now();
   setHeaderStatusFromBootstrap(bs);
   startDeadlineCountdown();
   updateSidebarStats();
@@ -1834,6 +1929,18 @@ function initNavScrollAffordance() {
     const nextState = !moreWrap.classList.contains("open");
     moreWrap.classList.toggle("open", nextState);
     moreBtn.setAttribute("aria-expanded", String(nextState));
+  });
+  moreBtn.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeMore();
+      moreBtn.blur();
+    }
+  });
+  moreMenu.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeMore();
+      moreBtn.focus();
+    }
   });
 
   document.addEventListener("click", (e) => {
