@@ -1,0 +1,37 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="675" rx="32" fill="#0f172a"/>
+  <rect x="32" y="32" width="1136" height="72" rx="14" fill="#111827" stroke="#1f2937"/>
+  <circle cx="76" cy="68" r="18" fill="#10b981"/>
+  <rect x="108" y="52" width="120" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="244" y="52" width="96" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="356" y="52" width="96" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="468" y="52" width="96" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="580" y="52" width="96" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="692" y="52" width="96" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="804" y="52" width="96" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="916" y="52" width="96" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="1028" y="52" width="112" height="32" rx="10" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="32" y="124" width="1136" height="519" rx="16" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="56" y="148" width="360" height="150" rx="16" fill="#0f172a" stroke="#1f2937"/>
+  <rect x="436" y="148" width="360" height="150" rx="16" fill="#0f172a" stroke="#1f2937"/>
+  <rect x="816" y="148" width="328" height="150" rx="16" fill="#0f172a" stroke="#1f2937"/>
+  <rect x="56" y="320" width="520" height="304" rx="16" fill="#0f172a" stroke="#1f2937"/>
+  <rect x="596" y="320" width="548" height="304" rx="16" fill="#0f172a" stroke="#1f2937"/>
+  <rect x="84" y="344" width="120" height="120" rx="18" fill="#10b981"/>
+  <rect x="228" y="356" width="320" height="20" rx="10" fill="#1f2937"/>
+  <rect x="228" y="388" width="280" height="12" rx="6" fill="#111827"/>
+  <rect x="228" y="410" width="260" height="12" rx="6" fill="#111827"/>
+  <rect x="612" y="344" width="500" height="20" rx="10" fill="#1f2937"/>
+  <rect x="612" y="376" width="360" height="12" rx="6" fill="#111827"/>
+  <rect x="612" y="398" width="400" height="12" rx="6" fill="#111827"/>
+  <rect x="612" y="432" width="500" height="16" rx="8" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="612" y="460" width="500" height="16" rx="8" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="612" y="488" width="500" height="16" rx="8" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="612" y="516" width="500" height="16" rx="8" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="612" y="544" width="500" height="16" rx="8" fill="#0b1324" stroke="#1f2937"/>
+  <rect x="612" y="572" width="500" height="16" rx="8" fill="#0b1324" stroke="#1f2937"/>
+  <text x="80" y="120" fill="#e2e8f0" font-family="Inter, sans-serif" font-size="24" font-weight="700">FPL Assistant</text>
+  <text x="80" y="185" fill="#e2e8f0" font-family="Inter, sans-serif" font-size="16">Portal tiles</text>
+  <text x="80" y="370" fill="#e2e8f0" font-family="Inter, sans-serif" font-size="16">Player profile</text>
+  <text x="612" y="370" fill="#e2e8f0" font-family="Inter, sans-serif" font-size="16">Live stats &amp; fixtures</text>
+</svg>

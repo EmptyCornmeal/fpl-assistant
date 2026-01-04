@@ -6,7 +6,7 @@ import { ui } from "../components/ui.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey } from "../api/fetchHelper.js";
-import { applyImageFallback, getPlayerImage, getTeamBadgeUrl, hideOnError, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
+import { applyImageFallback, getPlayerImageSources, getTeamBadgeUrl, hideOnError, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
 
 /* ───────────────── constants ───────────────── */
 const STATUS_MAP = {
@@ -261,14 +261,15 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
 
   // Player photo
   const photoWrapper = utils.el("div", { class: "player-photo-wrapper" });
-  const resolvedPhoto = getPlayerImage(pl?.photo);
+  const { src: resolvedPhoto, fallback: resolvedFallback } = getPlayerImageSources(pl?.photo);
   const photo = utils.el("img", {
     class: "player-photo",
     src: resolvedPhoto || PLAYER_PLACEHOLDER_SRC,
+    "data-avatar-label": player.name,
     alt: player.name,
     loading: "lazy"
   });
-  applyImageFallback(photo, PLAYER_PLACEHOLDER_SRC);
+  applyImageFallback(photo, PLAYER_PLACEHOLDER_SRC, resolvedFallback);
   
   // Team badge overlay
   const teamBadgeSrc = getTeamBadgeUrl(team?.code);
@@ -726,146 +727,6 @@ async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
       const pill = utils.el("span",{class:`status-pill ${s.cls}`}, `${s.icon} ${s.label}`);
       if (r.news) pill.dataset.tooltip = r.news;
       return pill;
-    }
-
-    /* ─────────────── breakdown modal helpers ─────────────── */
-    function ensureBreakdownStyles(){
-      if (document.getElementById("bd-styles")) return;
-      const css = `
-      .bd-wrap { display:flex; flex-direction:column; gap:14px; }
-      .bd-title { font-weight:600; margin-bottom:2px; }
-      .bd-divider { height:4px; }
-      .bd-card { padding:12px 14px; border:1px solid rgba(255,255,255,.08);
-                 border-radius:12px; background:rgba(255,255,255,.02); }
-      .bd-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-      .bd-sub { opacity:.85; font-weight:600; margin:4px 0 8px; }
-      .bd-meta .chip { margin-left:6px; }
-      .bd-fixture { margin:6px 0 10px; }
-      .fx-badge { font-weight:700; }
-      .bd-chip-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-      @media (min-width: 860px){ .bd-chip-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
-      .stat-chip { display:flex; align-items:center; justify-content:space-between;
-                   border-radius:999px; padding:.45rem .65rem; background:rgba(255,255,255,.06); }
-      .stat-chip .badge { margin-left:8px; }
-      .bd-subtotal { margin-top:6px; font-size:.9rem; opacity:.8; }
-      `;
-      const style = document.createElement("style");
-      style.id = "bd-styles";
-      style.textContent = css;
-      document.head.appendChild(style);
-    }
-
-    function gwCard({ title, points, minutes, explain, teamId }){
-      const card = utils.el("div",{class:"bd-card"});
-
-      const head = utils.el("div",{class:"bd-header"});
-      head.append(
-        utils.el("div",{class:"b"}, title),
-        (() => {
-          const meta = utils.el("div",{class:"bd-meta chips"});
-          meta.append(
-            utils.el("span",{class:"chip chip-accent"}, `${points} pts`),
-            utils.el("span",{class:"chip chip-dim"}, `${minutes}′`)
-          );
-          return meta;
-        })()
-      );
-      card.append(head);
-
-      if (!explain || !explain.length){
-        card.append(utils.el("div",{class:"muted"},"No breakdown available yet."));
-        return card;
-      }
-
-      let gwSum = 0;
-
-      for (const chunk of explain){
-        const block = utils.el("div",{class:"bd-fixture"});
-
-        const fx = fixturesById.get(chunk.fixture) || null;
-        let label = `Fixture ${chunk.fixture}`;
-        if (fx){
-          const isHome = (fx.team_h === teamId);
-          const oppId  = isHome ? fx.team_a : fx.team_h;
-          const opp    = teamShort(oppId);
-          const scoreKnown = Number.isFinite(fx.team_h_score) && Number.isFinite(fx.team_a_score);
-          const score = scoreKnown ? `${fx.team_h_score}–${fx.team_a_score}` : "";
-          label = `${isHome ? "H" : "A"} ${opp}${score ? ` · ${score}` : ""}`;
-        }
-        block.append(utils.el("div",{class:"bd-sub"}, [
-          utils.el("span",{class:"chip fx-badge"}, label)
-        ]));
-
-        const chips = utils.el("div",{class:"bd-chip-grid"});
-        let localSum = 0;
-
-        for (const s of (chunk.stats || [])){
-          const pts = Number(s.points || 0);
-          localSum += pts; gwSum += pts;
-          const labelTxt = (STAT_LABEL[s.identifier] || s.identifier);
-          const value = (s.value ?? "—");
-          const chip = utils.el("div",{class:"stat-chip"});
-          chip.append(
-            utils.el("span",{}, `${labelTxt}${value !== "" ? ` ${value}` : ""}`),
-            utils.el("span",{class:"badge pts-badge"}, (pts>0?`+${pts}`:`${pts}`))
-          );
-          chips.append(chip);
-        }
-
-        block.append(chips);
-        block.append(utils.el("div",{class:"bd-subtotal"}, `Fixture subtotal: ${localSum} pts`));
-        card.append(block);
-      }
-
-      card.append(utils.el("div",{class:"bd-subtotal"}, `GW subtotal: ${gwSum} pts`));
-      return card;
-    }
-
-    function renderBreakdown(r){
-      ensureBreakdownStyles();
-      const box = utils.el("div",{class:"bd-wrap"});
-
-      // Header with name and sparkline
-      const headerRow = utils.el("div", { style: "display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;" });
-      headerRow.append(utils.el("div",{class:"bd-title"}, `${r.name} (${r.team}, ${r.pos})`));
-
-      // Add sparkline if form data exists
-      if (r.formData && r.formData.length > 0) {
-        const avgForm = (r.formData.reduce((a, b) => a + b, 0) / r.formData.length).toFixed(1);
-        const sparkline = createSparkline(r.formData, `Avg: ${avgForm}`);
-        if (sparkline) {
-          sparkline.dataset.tooltip = `Last ${r.formData.length} GW points: ${r.formData.join(", ")}`;
-          headerRow.append(sparkline);
-        }
-      }
-
-      box.append(headerRow);
-
-      const hasPrev = (typeof r.prevPoints === "number") || (r.prevExplain && r.prevExplain.length);
-      if (hasPrev){
-        box.append(gwCard({
-          title: `Previous GW (final)`,
-          points: r.prevPoints ?? 0,
-          minutes:r.prevMinutes ?? 0,
-          explain:r.prevExplain,
-          teamId: r.teamId
-        }));
-      }
-
-      const hasCurr = (typeof r.currPoints === "number") || (r.currExplain && r.currExplain.length);
-      if (hasPrev && hasCurr) box.append(utils.el("div",{class:"bd-divider"}));
-
-      if (hasCurr){
-        box.append(gwCard({
-          title: `Current GW (live)`,
-          points: r.currPoints ?? 0,
-          minutes:r.currMinutes ?? 0,
-          explain:r.currExplain,
-          teamId: r.teamId
-        }));
-      }
-
-      return box;
     }
 
     /* ───────────────── Suggestions ───────────────── */

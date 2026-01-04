@@ -1,0 +1,5 @@
+node_modules
+assets/players/**
+dist
+coverage
+tests/index.html
