@@ -12,8 +12,6 @@ export const STORAGE_KEYS = {
   LEAGUE_IDS: 'fpl.leagueIds',       // Classic league IDs (JSON array of numbers)
 
   // User preferences
-  WATCHLIST: 'fpl.watchlist',        // Watched player IDs (JSON array of numbers)
-  PINNED_TEAMS: 'fpl.pinnedTeams',   // Club IDs the user has pinned (JSON array of numbers)
   THEME: 'fpl.theme',                // Theme preference: 'light' | 'dark'
   SIDEBAR_COLLAPSED: 'fpl.sidebarCollapsed', // Sidebar state: 'true' | 'false'
 

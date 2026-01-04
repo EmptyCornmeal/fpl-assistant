@@ -10,7 +10,7 @@ import { renderStatPicker } from "./pages/stat-picker.js";
 import { initTooltips } from "./components/tooltip.js";
 import { api } from "./api.js";
 import { fplClient } from "./api/fplClient.js";
-import { state, setPageUpdated, isTeamPinned, togglePinnedTeam, getPinnedTeams, getWatchlist } from "./state.js";
+import { state, setPageUpdated } from "./state.js";
 import { utils } from "./utils.js";
 import { log } from "./logger.js";
 import { getApiBase, markApiBaseValidated, getApiBaseInfo } from "./config.js";
@@ -678,7 +678,6 @@ async function refreshData() {
     bootstrapBannerDismissed = false;
     const result = await fetchBootstrap({ allowCacheFallback: true, forceRefresh: true });
     if (!result.ok) throw new Error("Bootstrap refresh failed");
-    renderPinnedSidebar();
 
     // Update live status
     isLiveGw = checkIfLiveGw();
@@ -1145,16 +1144,11 @@ async function renderTeamProfile(main, teamId) {
       return `${outcome} ${gf}-${ga}`;
     };
 
-    const teamPinned = isTeamPinned(teamIdNum);
-
     main.innerHTML = `
       <div class="team-profile">
         <div class="profile-header">
           <div class="profile-header-actions">
             <button class="back-btn" onclick="history.back()">← Back</button>
-            <button class="pin-team-btn ${teamPinned ? "active" : ""}" data-team-id="${teamIdNum}">
-              ${teamPinned ? "Unpin Team" : "Pin Team"}
-            </button>
           </div>
           <div class="profile-info">
             ${badgeUrl ? `<img class="team-badge-large" src="${badgeUrl}" alt="${team.name}">` : ""}
@@ -1313,17 +1307,6 @@ async function renderTeamProfile(main, teamId) {
 
     const teamBadgeImg = main.querySelector(".team-badge-large");
     if (teamBadgeImg) hideOnError(teamBadgeImg);
-
-    const pinBtn = main.querySelector(".pin-team-btn");
-    if (pinBtn) {
-      pinBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        const pinned = togglePinnedTeam(teamId);
-        pinBtn.classList.toggle("active", pinned);
-        pinBtn.textContent = pinned ? "Unpin Team" : "Pin Team";
-        renderPinnedSidebar();
-      });
-    }
   } catch (e) {
     console.error("Team profile error:", e);
     main.innerHTML = `
@@ -1415,62 +1398,6 @@ function renderLoadingState(main, message = "Loading...") {
   main.appendChild(card);
 }
 
-function renderPinnedSidebar() {
-  const teamList = document.getElementById("pinnedTeamsList");
-  const playerList = document.getElementById("pinnedPlayersList");
-
-  if (teamList) {
-    teamList.innerHTML = "";
-    const pinned = getPinnedTeams();
-    const hasData = pinned.length > 0 && state.bootstrap?.teams?.length;
-    if (!hasData) {
-      teamList.classList.add("is-empty");
-      teamList.innerHTML = `
-        <li class="pin-placeholder">
-          <div class="empty-title">No pinned teams yet</div>
-          <div class="empty-sub">Open a team page and click <strong>Pin Team</strong>.</div>
-        </li>
-      `;
-    } else {
-      teamList.classList.remove("is-empty");
-      const teamById = new Map(state.bootstrap.teams.map(t => [t.id, t]));
-      pinned.forEach(id => {
-        const t = teamById.get(id);
-        const name = t?.name || `Team ${id}`;
-        const li = document.createElement("li");
-        li.className = "pin-row";
-        li.innerHTML = `<a href="#/team/${id}" class="pin-link">${name}</a>`;
-        teamList.append(li);
-      });
-    }
-  }
-
-  if (playerList) {
-    playerList.innerHTML = "";
-    const watchlist = getWatchlist();
-    const hasData = watchlist.length > 0 && state.bootstrap?.elements?.length;
-    if (!hasData) {
-      playerList.classList.add("is-empty");
-      playerList.innerHTML = `
-        <li class="pin-placeholder">
-          <div class="empty-title">No pinned players yet</div>
-          <div class="empty-sub">Use the ☆ button on player cards to pin them here.</div>
-        </li>
-      `;
-    } else {
-      playerList.classList.remove("is-empty");
-      const playerById = new Map(state.bootstrap.elements.map(p => [p.id, p]));
-      watchlist.forEach(id => {
-        const p = playerById.get(id);
-        const name = p ? `${p.first_name} ${p.second_name}` : `Player ${id}`;
-        const li = document.createElement("li");
-        li.className = "pin-row";
-        li.innerHTML = `<a href="#/player/${id}" class="pin-link">${name}</a>`;
-        playerList.append(li);
-      });
-    }
-  }
-}
 
 /* ---------- Smart-paste helpers ---------- */
 function extractEntryId(str) {
@@ -1605,7 +1532,6 @@ function applyBootstrapData(bs, meta = {}) {
   setHeaderStatusFromBootstrap(bs);
   startDeadlineCountdown();
   updateSidebarStats();
-  renderPinnedSidebar();
   renderBootstrapBanner();
 }
 
@@ -1882,7 +1808,6 @@ async function init() {
   // Initialize theme first (prevents flash)
   initTheme();
   bindThemeToggle();
-  renderPinnedSidebar();
   setApiStatus(ApiStatus.UPDATING, "Starting up…");
   bindApiStatusEvents();
   registerServiceWorker();
@@ -1910,8 +1835,6 @@ async function init() {
   initTooltips(document.body);
   initTooltipPositioning();
   initNavScrollAffordance();
-  window.addEventListener("watchlist-changed", renderPinnedSidebar);
-  window.addEventListener("pinned-teams-changed", renderPinnedSidebar);
 
   if (!location.hash) location.hash = "#/";
   let lastHashSeen = location.hash || "#/";

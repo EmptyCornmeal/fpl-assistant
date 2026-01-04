@@ -9,6 +9,8 @@ import "./transferOptimizer.test.js";
 import "./statPicker.test.js";
 import "./benchOptimizer.test.js";
 import "./images.test.js";
+import "./livePoints.test.js";
+import "./pinnedRemoval.test.js";
 
 // Run tests and output results
 async function main() {

@@ -7,6 +7,7 @@ import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { log } from "../logger.js";
 import { getCacheAge, CacheKey, loadFromCache, formatCacheAge } from "../api/fetchHelper.js";
+import { calculateLiveGwPoints, buildLiveDataMap } from "../lib/livePoints.js";
 
 /**
  * Mini-League - Two-view model:
@@ -97,12 +98,27 @@ export async function renderMiniLeague(main) {
 
     // Preload event_live for the extra GW (live/provisional)
     let extraMap = null;
+    let liveDataMap = null;
     if (liveGwId) {
       try {
         const liveResult = await fplClient.eventLive(liveGwId);
         const live = liveResult.ok ? liveResult.data : { elements: [] };
         extraMap = new Map((live?.elements || []).map(e => [e.id, e.stats || {}]));
-      } catch { extraMap = new Map(); }
+        liveDataMap = buildLiveDataMap(liveResult.ok ? liveResult.data : { elements: [] });
+      } catch { extraMap = new Map(); liveDataMap = new Map(); }
+    }
+
+    // Helper to calculate live GW points for an entry
+    async function calculateEntryLivePoints(entryId) {
+      if (!liveGwId || !liveDataMap) return null;
+      try {
+        const picksResult = await fplClient.entryPicks(entryId, liveGwId);
+        if (!picksResult.ok || !picksResult.data?.picks) return null;
+        const liveCalc = calculateLiveGwPoints(picksResult.data, liveDataMap);
+        return liveCalc.total;
+      } catch {
+        return null;
+      }
     }
 
     // Helpers
@@ -196,13 +212,22 @@ export async function renderMiniLeague(main) {
         const myPts = me?.total || 0;
         const gapToLeader = myRank > 1 ? leaderPts - myPts : 0;
 
+        // Calculate live GW points for user's own entry during live gameweeks
+        let myGwPts = me?.event_total || 0;
+        if (isLive && state.entryId) {
+          const livePoints = await calculateEntryLivePoints(state.entryId);
+          if (livePoints !== null) {
+            myGwPts = livePoints;
+          }
+        }
+
         const summary = {
           id: lid,
           name: leagueName,
           teamCount: results.length,
           myRank,
           myPts,
-          myGwPts: me?.event_total || 0,
+          myGwPts,
           gapToLeader,
           leader: results[0]?.entry_name || "—",
           leaderPts,
@@ -491,6 +516,8 @@ export async function renderMiniLeague(main) {
 
       // Build full data with history
       const results = summary.results;
+
+      // Build initial rows with stale GW points
       const rows = results.map(r => ({
         manager: safeManager(r),
         team: r.entry_name || "—",
@@ -500,6 +527,18 @@ export async function renderMiniLeague(main) {
         total: r.total || 0,
         rank: r.rank || 0
       }));
+
+      // Calculate live GW points for visible entries during live gameweeks
+      if (isLive && liveDataMap) {
+        const MAX_LIVE_ENTRIES = 20; // Limit to top 20 to keep it fast
+        await poolMap(rows.slice(0, MAX_LIVE_ENTRIES), 4, async (r) => {
+          if (!r?.entry) return;
+          const livePoints = await calculateEntryLivePoints(r.entry);
+          if (livePoints !== null) {
+            r.gw = livePoints;
+          }
+        });
+      }
 
       // Fetch history for charts
       const labelsFinished = Array.from({ length: lastFinished }, (_, i) => `GW${i + 1}`);
