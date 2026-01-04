@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 140" role="img" aria-labelledby="title desc">
+  <title id="title">Player placeholder</title>
+  <desc id="desc">Silhouette placeholder when a player photo is unavailable.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1f2937" />
+      <stop offset="100%" stop-color="#111827" />
+    </linearGradient>
+  </defs>
+  <rect width="110" height="140" fill="url(#bg)" rx="8" ry="8" />
+  <circle cx="55" cy="50" r="20" fill="#334155" />
+  <path d="M30 110c0-16 10-28 25-28s25 12 25 28" fill="#334155" />
+  <circle cx="55" cy="45" r="6" fill="#0ea5e9" opacity="0.8" />
+</svg>

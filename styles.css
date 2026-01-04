@@ -12436,10 +12436,6 @@ body:hover .dev-toggle-hint {
   overflow-x: auto;
 }
 
-.fixtures-dashboard .tile-flush {
-  padding: 6px 8px;
-}
-
 .fixtures-dashboard .fx-toggle {
   font-size: 10px;
   padding: 3px 6px;
@@ -12460,11 +12456,46 @@ body:hover .dev-toggle-hint {
   padding: var(--gap-md);
   min-height: 0;
   height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.fixtures-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-md);
+  padding: var(--gap-sm) var(--gap-md);
+  border-bottom: 1px solid var(--border);
+}
+
+.fixtures-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-sm);
+}
+
+.fixtures-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.fixtures-subtitle {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.fixtures-header .toolbar-compact {
+  margin-bottom: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .fixtures-content {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: var(--gap-md);
   min-height: 0;
   align-items: start;
@@ -12476,18 +12507,19 @@ body:hover .dev-toggle-hint {
   }
 }
 
-@media (min-width: 1600px) {
-  .fixtures-content {
-    grid-template-columns: 3fr 1fr;
-  }
-}
-
-.fixtures-content > .card {
+.fixtures-card {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.fixtures-matrix-card {
   overflow: auto;
+}
+
+.fixtures-chart-card {
+  overflow: hidden;
 }
 
 .fixtures-content > .card h3 {

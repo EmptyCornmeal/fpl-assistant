@@ -283,18 +283,19 @@ export async function renderFixtures(main, options = {}){
       pinMine, onlyDoubles, showSwings, fullNamesToggle.wrap
     ]);
 
-    /* Dashboard layout: toolbar + 2-column content */
+    /* Dashboard layout: header + 2-column content */
     const page = utils.el("div",{class:"fixtures-dashboard"});
 
     // Header with compact toolbar
-    const header = utils.el("div",{class:"tile tile-flush", style:"padding:var(--gap-md)"});
-    const headerTop = utils.el("div",{style:"display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--gap-sm)"});
-    headerTop.innerHTML = `<span class="tile-title" style="font-size:11px">FIXTURES & DIFFICULTY</span><span style="font-size:9px;color:var(--muted)">FDR 1=easy → 5=hard</span>`;
-    header.append(headerTop, toolbar);
+    const headerTitle = utils.el("div",{class:"fixtures-title-wrap"},[
+      utils.el("span",{class:"fixtures-title"},"FIXTURES & DIFFICULTY"),
+      utils.el("span",{class:"fixtures-subtitle"},"FDR 1=easy → 5=hard")
+    ]);
+    const header = utils.el("div",{class:"fixtures-header"},[headerTitle, toolbar]);
 
     /* Cards */
-    const matrixCard = utils.el("div",{class:"card card-flush", style:"flex:1;min-height:0;overflow:auto"});
-    const chartCard  = utils.el("div",{class:"card card-flush", style:"flex:1;min-height:0;overflow:hidden"});
+    const matrixCard = utils.el("div",{class:"card card-flush fixtures-card fixtures-matrix-card"});
+    const chartCard  = utils.el("div",{class:"card card-flush fixtures-card fixtures-chart-card"});
 
     // Content area: matrix left, chart right
     const content = utils.el("div",{class:"fixtures-content"});
