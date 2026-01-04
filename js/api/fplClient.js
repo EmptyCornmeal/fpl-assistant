@@ -1,7 +1,5 @@
 // js/api/fplClient.js
 // Centralized FPL API client with caching, retries, and graceful degradation
-
-import { log } from "../logger.js";
 import {
   fetchWithTimeout,
   fetchWithCache,
@@ -14,9 +12,8 @@ import {
   getCacheStats,
   ErrorType,
   CacheKey,
-  getErrorMessage,
 } from "./fetchHelper.js";
-import { getApiBase } from "../config.js";
+import { getApiBaseInfo } from "../config.js";
 
 // In-memory cache configuration (for fast repeated access within same session)
 const memoryCache = new Map();
@@ -28,18 +25,51 @@ const CACHE_TTL = {
   league: 2 * 60 * 1000,          // 2 minutes
 };
 
-function buildUrl(path = "") {
-  const base = getApiBase();
+const NO_API_MESSAGE = "No API configured. Set API base in Settings or localStorage.fpl.apiBase.";
+
+function resolveApiUrl(path = "") {
+  const info = getApiBaseInfo();
+  const base = info.base || null;
+  const source = info.source || null;
+
   if (!base) {
-    throw new FplApiError("No API configured", {
+    const error = new FplApiError(NO_API_MESSAGE, {
       endpoint: path,
       status: 0,
       retryable: false,
-      errorType: ErrorType.NETWORK,
+      errorType: ErrorType.CLIENT,
     });
+    error.code = "NO_API_BASE";
+    error.apiBaseSource = source;
+    return { ok: false, error, source, base: null };
   }
+
   const cleanPath = path.replace(/^\/+/, "");
-  return `${base}/${cleanPath}`;
+  return {
+    ok: true,
+    url: `${base}/${cleanPath}`,
+    base,
+    source,
+  };
+}
+
+function buildMissingApiResult(endpoint = "") {
+  const info = getApiBaseInfo();
+  return {
+    ok: false,
+    data: null,
+    errorType: ErrorType.CLIENT,
+    message: NO_API_MESSAGE,
+    fromCache: false,
+    cacheAge: 0,
+    status: 0,
+    code: "NO_API_BASE",
+    meta: {
+      apiBase: null,
+      apiBaseSource: info.source || null,
+      endpoint,
+    },
+  };
 }
 
 /**
@@ -105,8 +135,9 @@ export const fplClient = {
   async bootstrap(options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = "bootstrap";
-    const url = buildUrl("bs");
-    const apiBase = getApiBase();
+    const resolved = resolveApiUrl("bs");
+    if (!resolved.ok) return buildMissingApiResult("bs");
+    const { url, base: apiBase, source: apiBaseSource } = resolved;
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -127,7 +158,7 @@ export const fplClient = {
     const result = await fetchWithCache(url, CacheKey.BOOTSTRAP, {
       preferCache,
       forceRefresh,
-      metadata: { apiBase, timestamp: Date.now() },
+      metadata: { apiBase, apiBaseSource, timestamp: Date.now() },
     });
 
     if (result.ok) {
@@ -145,7 +176,10 @@ export const fplClient = {
   async fixtures(gwId = null, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = gwId ? `fixtures-${gwId}` : "fixtures-all";
-    const url = gwId ? buildUrl(`fx/${gwId}`) : buildUrl("fx");
+    const path = gwId ? `fx/${gwId}` : "fx";
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) return buildMissingApiResult(path);
+    const url = resolved.url;
     const localCacheKey = gwId ? CacheKey.FIXTURES : CacheKey.FIXTURES;
     const cacheParams = gwId ? [gwId] : [];
 
@@ -181,7 +215,10 @@ export const fplClient = {
   async elementSummary(elementId, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = `element-${elementId}`;
-    const url = buildUrl(`es/${elementId}`);
+    const path = `es/${elementId}`;
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) return buildMissingApiResult(path);
+    const url = resolved.url;
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -215,7 +252,10 @@ export const fplClient = {
   async entry(entryId, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = `entry-${entryId}`;
-    const url = buildUrl(`en/${entryId}`);
+    const path = `en/${entryId}`;
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) return buildMissingApiResult(path);
+    const url = resolved.url;
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -249,7 +289,10 @@ export const fplClient = {
   async entryHistory(entryId, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = `entry-history-${entryId}`;
-    const url = buildUrl(`en/${entryId}/history`);
+    const path = `en/${entryId}/history`;
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) return buildMissingApiResult(path);
+    const url = resolved.url;
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -282,7 +325,10 @@ export const fplClient = {
    */
   async entryPicks(entryId, gwId, options = {}) {
     const { preferCache } = normalizeOptions(options);
-    const url = buildUrl(`ep/${entryId}/${gwId}/picks`);
+    const path = `ep/${entryId}/${gwId}/picks`;
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) return buildMissingApiResult(path);
+    const url = resolved.url;
 
     // Entry picks should be cached per entry+gw
     const result = await fetchWithCache(url, CacheKey.ENTRY_PICKS, {
@@ -300,7 +346,10 @@ export const fplClient = {
    */
   async eventLive(gwId, options = {}) {
     const { preferCache } = normalizeOptions(options);
-    const url = buildUrl(`ev/${gwId}/live`);
+    const path = `ev/${gwId}/live`;
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) return buildMissingApiResult(path);
+    const url = resolved.url;
 
     // Live data should be fresh but allow cached fallback when offline
     return await fetchWithCache(url, CacheKey.EVENT_LIVE, {
@@ -316,7 +365,10 @@ export const fplClient = {
    * Note: Always fresh, no cache
    */
   async eventStatus() {
-    const url = buildUrl("ev/status");
+    const path = "ev/status";
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) return buildMissingApiResult(path);
+    const url = resolved.url;
 
     // Status should always be fresh
     const result = await fetchWithTimeout(url, { live: true });
@@ -331,7 +383,10 @@ export const fplClient = {
   async leagueClassic(leagueId, page = 1, options = {}) {
     const { forceRefresh, preferCache } = normalizeOptions(options);
     const cacheKey = `league-${leagueId}-${page}`;
-    const url = buildUrl(`lc/${leagueId}/${page}`);
+    const path = `lc/${leagueId}/${page}`;
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) return buildMissingApiResult(path);
+    const url = resolved.url;
 
     // Check in-memory cache first
     if (!forceRefresh) {
@@ -519,7 +574,12 @@ export const fplClient = {
    * Health check
    */
   async healthCheck() {
-    const result = await fetchWithTimeout(buildUrl("up?live=true"), { timeout: 5000 });
+    const path = "up?live=true";
+    const resolved = resolveApiUrl(path);
+    if (!resolved.ok) {
+      return { ok: false, error: NO_API_MESSAGE, errorType: ErrorType.CLIENT, code: "NO_API_BASE" };
+    }
+    const result = await fetchWithTimeout(resolved.url, { timeout: 5000 });
 
     if (result.ok) {
       return { ok: true, ...result.data };

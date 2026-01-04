@@ -8,7 +8,8 @@ import { mapBootstrap, mapFixture } from "../api/fplMapping.js";
 import { fixtureEase, getMetricExplanations } from "../api/fplDerived.js";
 import { openModal } from "../components/modal.js";
 import { log } from "../logger.js";
-import { hasCachedData, CacheKey, getCacheAge } from "../api/fetchHelper.js";
+import { hasCachedData, CacheKey, getCacheAge, formatCacheAge } from "../api/fetchHelper.js";
+import { getApiBaseInfo, setApiBaseOverride, validateApiBase } from "../config.js";
 
 /* ───────────────── Constants ───────────────── */
 const TEAM_BADGE_URL = (teamCode) =>
@@ -983,6 +984,86 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
 }
 
 /* ───────────────── Main Render ───────────────── */
+function renderApiSetup(main) {
+  const info = getApiBaseInfo();
+  const cacheAge = getCacheAge(CacheKey.BOOTSTRAP);
+  const hasCache = cacheAge !== null;
+
+  const card = utils.el("div", { class: "degraded-card api-setup-card" });
+  const header = utils.el("div", { class: "degraded-card-header" });
+  header.append(utils.el("span", { class: "degraded-card-icon" }, "⚙️"));
+  header.append(utils.el("span", { class: "degraded-card-title" }, "No API configured"));
+  card.append(header);
+
+  const message = utils.el("p", { class: "degraded-card-message" }, "No API configured. Set API base in Settings or localStorage.fpl.apiBase.");
+  card.append(message);
+
+  const helper = utils.el("p", { class: "degraded-card-message sub" }, info.defaultBase
+    ? `Default: ${info.defaultBase}`
+    : "Default API base will use this site's /api path.");
+  card.append(helper);
+
+  const form = utils.el("form", { class: "api-setup-form" });
+  const input = utils.el("input", {
+    type: "text",
+    placeholder: "https://your-proxy.example.com/api",
+    value: info.override || info.injected || info.defaultBase || "",
+    "aria-label": "API base URL",
+  });
+
+  const actions = utils.el("div", { class: "degraded-card-actions" });
+  const saveBtn = utils.el("button", { class: "btn-retry", type: "submit" }, "Save API Base");
+  const useDefaultBtn = utils.el("button", { class: "btn-secondary", type: "button" }, "Use Same-Origin /api");
+  useDefaultBtn.addEventListener("click", () => {
+    if (info.defaultBase) {
+      input.value = info.defaultBase;
+    }
+  });
+  actions.append(saveBtn);
+  if (info.defaultBase) actions.append(useDefaultBtn);
+
+  if (hasCache) {
+    const cachedBtn = utils.el("button", { class: "btn-use-cached", type: "button" }, `Use Cached Data (${formatCacheAge(cacheAge)})`);
+    cachedBtn.addEventListener("click", async () => {
+      await renderPortalWithData(main, true, cacheAge);
+    });
+    actions.append(cachedBtn);
+  }
+
+  const status = utils.el("div", { class: "api-setup-status", role: "status", "aria-live": "polite" });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    status.textContent = "";
+    saveBtn.disabled = true;
+    const value = input.value.trim();
+    if (!value) {
+      status.textContent = "Enter an API base URL.";
+      saveBtn.disabled = false;
+      return;
+    }
+
+    const normalized = setApiBaseOverride(value);
+    if (!normalized) {
+      status.textContent = "API base must be a full URL (e.g., https://host/api).";
+      saveBtn.disabled = false;
+      return;
+    }
+
+    status.textContent = "Validating API base…";
+    const ok = await validateApiBase(normalized, 4000);
+    status.textContent = ok
+      ? "Saved! Reloading with new API base…"
+      : "Saved, but health check failed. Trying anyway…";
+
+    await renderPortal(main);
+  });
+
+  form.append(input, actions);
+  card.append(form, status);
+  ui.mount(main, card);
+}
+
 export async function renderPortal(main) {
   // Show loading state
   ui.mount(main, ui.loadingWithTimeout("Loading dashboard..."));
@@ -992,6 +1073,11 @@ export async function renderPortal(main) {
 
   // Handle complete failure with degraded state options
   if (!bootstrapResult.ok) {
+    if (bootstrapResult.code === "NO_API_BASE") {
+      renderApiSetup(main);
+      return;
+    }
+
     log.error("Portal: Bootstrap fetch failed", bootstrapResult.message);
 
     // Check if cached data is available
@@ -1025,7 +1111,7 @@ export async function renderPortal(main) {
 async function renderPortalWithData(main, fromCache = false, cacheAge = 0) {
   // If explicitly using cached data, load from cache
   let bootstrapResult;
-  if (fromCache && cacheAge === 0) {
+  if (fromCache) {
     bootstrapResult = fplClient.loadBootstrapFromCache();
     cacheAge = bootstrapResult.cacheAge;
   } else {
