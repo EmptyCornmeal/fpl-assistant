@@ -34,13 +34,13 @@ const STAT_LABEL = {
 };
 
 // FPL photo URL template - photo field is like "12345.png" or "12345.jpg", need to extract just the number
+const PLAYER_PLACEHOLDER_SRC = "/assets/placeholder-player.svg";
 const PLAYER_PHOTO_URL = (photoId) => {
-  if (!photoId) return null;
+  if (!photoId) return PLAYER_PLACEHOLDER_SRC;
   // FPL API may supply .jpg or .png - strip either extension and any leading 'p'
   const cleanId = String(photoId).replace(/\.(png|jpg)$/i, '').replace(/^p/, '');
   return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
 };
-const PLAYER_PLACEHOLDER_SRC = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 110 140'%3E%3Crect fill='%23334155' width='110' height='140'/%3E%3Ctext x='55' y='80' text-anchor='middle' fill='%2394a3b8' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
 
 // Team badge URL
 const TEAM_BADGE_URL = (teamCode) =>

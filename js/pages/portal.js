@@ -15,8 +15,9 @@ import { getApiBaseInfo, setApiBaseOverride, validateApiBase } from "../config.j
 const TEAM_BADGE_URL = (teamCode) =>
   `https://resources.premierleague.com/premierleague/badges/70/t${teamCode}.png`;
 
+const PLAYER_PLACEHOLDER_SRC = "/assets/placeholder-player.svg";
 const PLAYER_PHOTO_URL = (photoId) => {
-  if (!photoId) return null;
+  if (!photoId) return PLAYER_PLACEHOLDER_SRC;
   const cleanId = String(photoId).replace(/\.(png|jpg)$/i, '').replace(/^p/, '');
   return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
 };
@@ -179,7 +180,7 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
       ${candidates.length === 0 ? '<p class="tile-desc">No captain picks available</p>' : candidates.map((p, i) => `
         <div class="captain-option-row" data-player-id="${p.id}">
           <span class="captain-rank">${i + 1}</span>
-          <img class="captain-photo" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.style.display='none'">
+          <img class="captain-photo" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.onerror=null;this.src='${PLAYER_PLACEHOLDER_SRC}';">
           <div class="captain-details">
             <span class="captain-name">${p.webName || p.web_name || 'Unknown'}</span>
             <div class="captain-meta">
@@ -204,7 +205,7 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
         ${candidates.length === 0 ? '<p>No captain picks available</p>' : candidates.map((p, i) => `
           <div class="captain-modal-row">
             <div class="captain-rank-lg">${i + 1}</div>
-            <img class="captain-photo-lg" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.style.display='none'">
+            <img class="captain-photo-lg" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.onerror=null;this.src='${PLAYER_PLACEHOLDER_SRC}';">
             <div class="captain-info">
               <div class="captain-name-lg">${p.webName || p.web_name || 'Unknown'}</div>
               <div class="captain-meta-lg">
