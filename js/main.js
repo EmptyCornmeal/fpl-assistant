@@ -536,7 +536,7 @@ async function refreshApiStatus(reason = "") {
       ? "Set window.__FPL_API_BASE__ or localStorage 'fpl.apiBase'"
       : "Configure API via localStorage.setItem('fpl.apiBase', 'https://your-proxy/api')";
     setApiStatus(ApiStatus.OFFLINE, `No API configured. ${hint}`);
-    log.warn("No API base configured", info);
+    log.warn(`No API base configured (source: ${info.source || "none"})`);
     return;
   }
 
@@ -1706,6 +1706,7 @@ function primeBootstrapFromCache() {
 }
 
 async function fetchBootstrap({ allowCacheFallback = true, forceRefresh = false } = {}) {
+  let lastFailure = null;
   try {
     const result = await fplClient.bootstrap({ forceRefresh });
     if (result.ok) {
@@ -1723,8 +1724,10 @@ async function fetchBootstrap({ allowCacheFallback = true, forceRefresh = false 
       setApiStatus(meta.stale ? ApiStatus.OFFLINE : ApiStatus.LIVE, detail);
       return { ok: true, meta };
     }
+    lastFailure = result;
   } catch (e) {
     log.warn("Bootstrap fetch failed - some features may be limited:", e);
+    lastFailure = lastFailure || e;
   }
 
   if (allowCacheFallback) {
@@ -1744,7 +1747,7 @@ async function fetchBootstrap({ allowCacheFallback = true, forceRefresh = false 
   }
 
   setApiStatus(ApiStatus.OFFLINE, "Bootstrap not loaded — check API base");
-  return { ok: false };
+  return { ok: false, code: lastFailure?.code || null, message: lastFailure?.message || null };
 }
 
 async function requireBootstrap() {

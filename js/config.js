@@ -3,10 +3,11 @@
 // Resolution order:
 //   1) window.__FPL_API_BASE__ (runtime injection)
 //   2) localStorage "fpl.apiBase" (user override or validated host)
-//   3) same-origin /api (only if not GitHub Pages or file://)
+//   3) same-origin /api (default, always a string when location is available)
 //   4) NO automatic fallback to a hardcoded host (previous dead worker issue)
 //
 // For fallback hosts, callers should use validateAndSetApiBase() which health-checks first.
+import { log } from "./logger.js";
 
 const STORAGE_KEY = "fpl.apiBase";
 const VALIDATED_KEY = "fpl.apiBase.validated";
@@ -21,26 +22,29 @@ const FALLBACK_CANDIDATES = [
 ];
 
 let cachedBase = null;
+let cachedSource = null;
+let lastLoggedBase = null;
+let lastLoggedSource = null;
 
 function normalize(base) {
-  if (!base) return null;
+  if (typeof base !== "string") return null;
+  const trimmed = base.trim();
+  if (!trimmed) return null;
   try {
-    const url = new URL(base, typeof window !== "undefined" ? window.location.origin : undefined);
+    const url = new URL(trimmed, typeof window !== "undefined" ? window.location.origin : undefined);
     return url.toString().replace(/\/+$/, "");
   } catch {
     return null;
   }
 }
 
-function looksSameOriginViable() {
-  if (typeof window === "undefined") return false;
-  const { location } = window;
-  if (!location) return false;
-
-  // GitHub Pages and file:// won't have a backing /api route without a proxy
-  if (location.protocol === "file:") return false;
-  if (location.hostname.endsWith("github.io")) return false;
-  return true;
+function buildDefaultBase() {
+  if (typeof window === "undefined" || !window.location) return null;
+  try {
+    return new URL("./api", window.location.href).href.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
 }
 
 function readLocalOverride() {
@@ -78,6 +82,7 @@ export function setApiBaseOverride(value) {
     localStorage.removeItem(VALIDATION_TS_KEY);
   } catch {}
   cachedBase = normalized;
+  cachedSource = "localStorage";
   return normalized;
 }
 
@@ -88,6 +93,7 @@ export function clearApiBaseOverride() {
     localStorage.removeItem(VALIDATION_TS_KEY);
   } catch {}
   cachedBase = null;
+  cachedSource = null;
 }
 
 export function markApiBaseValidated(base) {
@@ -96,45 +102,58 @@ export function markApiBaseValidated(base) {
     localStorage.setItem(VALIDATED_KEY, base);
     localStorage.setItem(VALIDATION_TS_KEY, String(Date.now()));
   } catch {}
+  cachedBase = base;
+  cachedSource = "validated";
+  logResolution(base, "validated");
+}
+
+function logResolution(base, source) {
+  if (!base) return;
+  if (lastLoggedBase === base && lastLoggedSource === source) return;
+  lastLoggedBase = base;
+  lastLoggedSource = source;
+  const label = source || "auto";
+  log.info(`API base resolved from ${label}: ${base}`);
 }
 
 export function getApiBase() {
   if (cachedBase) return cachedBase;
 
-  // 1. Runtime injection (highest priority)
-  const injected =
-    typeof window !== "undefined" && typeof window.__FPL_API_BASE__ === "string"
-      ? window.__FPL_API_BASE__
-      : null;
+  const candidates = [
+    {
+      value: typeof window !== "undefined" && typeof window.__FPL_API_BASE__ === "string"
+        ? window.__FPL_API_BASE__
+        : null,
+      source: "window.__FPL_API_BASE__",
+    },
+    {
+      value: readLocalOverride(),
+      source: "localStorage",
+    },
+    {
+      value: buildDefaultBase(),
+      source: "default",
+    },
+    {
+      value: getValidatedHost()?.host || null,
+      source: "validated",
+    },
+  ];
 
-  // 2. User-configured localStorage override
-  const stored = readLocalOverride();
-
-  // 3. Same-origin /api (only if viable)
-  const sameOrigin = looksSameOriginViable() && typeof window !== "undefined"
-    ? `${window.location.origin}/api`
-    : null;
-
-  // 4. Previously validated host (from successful health check)
-  const validated = getValidatedHost();
-
-  let base =
-    normalize(injected) ||
-    normalize(stored) ||
-    normalize(sameOrigin) ||
-    (validated ? normalize(validated.host) : null);
-
-  // If we still don't have a base, there's no valid API configured
-  // Previously this would fall back to a hardcoded dead worker - now it doesn't
-  if (!base) {
-    // Return null to indicate no API is configured
-    // The UI should show an appropriate message
-    cachedBase = null;
-    return null;
+  for (const candidate of candidates) {
+    const normalized = normalize(candidate.value);
+    if (normalized) {
+      cachedBase = normalized;
+      cachedSource = candidate.source;
+      logResolution(normalized, candidate.source);
+      return cachedBase;
+    }
   }
 
-  cachedBase = base;
-  return cachedBase;
+  // If we still don't have a base, there's no valid API configured
+  cachedBase = null;
+  cachedSource = null;
+  return null;
 }
 
 /**
@@ -144,11 +163,13 @@ export function getApiBaseInfo() {
   const validated = getValidatedHost();
   return {
     base: getApiBase(),
+    source: cachedSource || null,
     override: readLocalOverride(),
     injected: typeof window !== "undefined" ? window.__FPL_API_BASE__ : null,
     validatedHost: validated?.host || null,
     validationStale: validated?.stale || false,
-    sameOriginViable: looksSameOriginViable(),
+    sameOriginViable: !!buildDefaultBase(),
+    defaultBase: buildDefaultBase(),
     fallbackCandidates: FALLBACK_CANDIDATES,
   };
 }
@@ -175,6 +196,7 @@ export async function validateApiBase(base, timeout = 5000) {
     if (response.ok) {
       markApiBaseValidated(normalized);
       cachedBase = normalized;
+      cachedSource = "validated";
       return true;
     }
   } catch {

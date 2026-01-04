@@ -19,16 +19,19 @@
 
     // Load config.local.js if it exists (silently ignore if missing)
     // This allows local development overrides without 404 noise on production
-    (function() {
-      var script = document.createElement('script');
-      script.src = './config.local.js';
-      script.async = false;
-      script.onerror = function() {
-        // Silently ignore - config.local.js is optional
-        // For local dev, create config.local.js with:
-        // window.__FPL_API_BASE__ = "https://your-proxy/api";
-      };
-      document.head.appendChild(script);
+    (async function() {
+      try {
+        const res = await fetch("./config.local.js", { cache: "no-store" });
+        if (res.ok) {
+          const text = await res.text();
+          // eslint-disable-next-line no-new-func
+          new Function(text)();
+        }
+        // Ignore 404s silently
+      } catch (err) {
+        // Ignore failures - config.local.js is optional
+        console.debug("config.local.js not loaded (optional)", err?.status || err);
+      }
     })();
   </script>
 </head>
