@@ -7,6 +7,7 @@ import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
 import { getCacheAge, CacheKey, hasCachedData } from "../api/fetchHelper.js";
+import { applyImageFallback, getPlayerImage, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
 
 /* ========= LocalStorage keys ========= */
 const LS_AP_FILTERS = "fpl.ap.filters";
@@ -14,13 +15,6 @@ const LS_AP_SORT    = "fpl.ap.sort";
 const LS_AP_CHART   = "fpl.ap.chartmode"; // "points" | "xp"
 
 /* ========= Player Photo URL ========= */
-const PLAYER_PLACEHOLDER_SRC = "/assets/placeholder-player.svg";
-const PLAYER_PHOTO_URL = (photoId) => {
-  if (!photoId) return PLAYER_PLACEHOLDER_SRC;
-  // FPL API may supply .jpg or .png - strip either extension
-  const cleanId = String(photoId).replace(/\.(png|jpg)$/i, '').replace(/^p/, '');
-  return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
-};
 
 /* ========= Compare Selection State ========= */
 let compareSelection = []; // Array of player IDs (max 2)
@@ -231,13 +225,10 @@ function showCompareModal(playerById, posShortById, teamShortById) {
     const header = utils.el("div", { class: "compare-player-header" });
     const photo = utils.el("img", {
       class: "compare-player-photo",
-      src: PLAYER_PHOTO_URL(player.photo),
+      src: getPlayerImage(player.photo),
       alt: player.web_name
     });
-    photo.onerror = () => {
-      if (photo.src.endsWith(PLAYER_PLACEHOLDER_SRC)) return;
-      photo.src = PLAYER_PLACEHOLDER_SRC;
-    };
+    applyImageFallback(photo, PLAYER_PLACEHOLDER_SRC);
 
     const info = utils.el("div", { class: "compare-player-info" });
     info.innerHTML = `

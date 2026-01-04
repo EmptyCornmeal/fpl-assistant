@@ -15,6 +15,7 @@ import { utils } from "./utils.js";
 import { log } from "./logger.js";
 import { getApiBase, markApiBaseValidated, getApiBaseInfo } from "./config.js";
 import { formatCacheAge } from "./api/fetchHelper.js";
+import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl } from "./lib/images.js";
 
 const APP_VERSION = "1.2.0";
 const COMMIT_HASH = "b0868d2"; // Auto-updated during build/deploy
@@ -766,10 +767,8 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
 
     const team = (bs.teams || []).find(t => t.id === player.team);
     const pos = (bs.element_types || []).find(p => p.id === player.element_type);
-    const photoUrl = player.photo
-      ? `https://resources.premierleague.com/premierleague/photos/players/250x250/p${String(player.photo).replace(/\.(png|jpg)$/i, '').replace(/^p/, '')}.png`
-      : null;
-    const badgeUrl = team ? `https://resources.premierleague.com/premierleague/badges/70/t${team.code}.png` : null;
+    const photoUrl = getPlayerImage(player.photo, "250x250");
+    const badgeUrl = getTeamBadgeUrl(team?.code);
 
     const statusClass = player.status === 'a' ? 'st-okay' :
                         player.status === 'd' ? 'st-doubt' :
@@ -833,11 +832,11 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
         <div class="profile-header">
           <button class="back-btn" data-back-target="${backTarget}">← Back</button>
           <div class="profile-info">
-            ${photoUrl ? `<img class="profile-photo" src="${photoUrl}" alt="${player.web_name}" onerror="this.style.display='none'">` : '<div class="profile-photo-placeholder">👤</div>'}
+            ${photoUrl ? `<img class="profile-photo" src="${photoUrl}" alt="${player.web_name}" onerror="this.onerror=null;this.src='${PLAYER_PLACEHOLDER_SRC}';">` : '<div class="profile-photo-placeholder">👤</div>'}
             <div class="profile-details">
               <h1 class="profile-name">${player.first_name} ${player.second_name}</h1>
               <div class="profile-meta">
-                ${badgeUrl ? `<img class="profile-badge" src="${badgeUrl}" alt="${team?.short_name}">` : ''}
+                ${badgeUrl ? `<img class="profile-badge" src="${badgeUrl}" alt="${team?.short_name}" onerror="this.style.display='none'">` : ''}
                 <span class="profile-team">${team?.name || 'Unknown'}</span>
                 <span class="profile-pos">${pos?.singular_name || 'Player'}</span>
                 <span class="status-pill ${statusClass}">${statusLabel}</span>
@@ -983,7 +982,7 @@ async function renderTeamProfile(main, teamId) {
       return;
     }
 
-    const badgeUrl = `https://resources.premierleague.com/premierleague/badges/100/t${team.code}.png`;
+    const badgeUrl = getTeamBadgeUrl(team.code, 100);
     const players = (bs.elements || []).filter(p => Number(p.team) === teamIdNum);
     const positions = bs.element_types || [];
 
@@ -1057,7 +1056,7 @@ async function renderTeamProfile(main, teamId) {
             </button>
           </div>
           <div class="profile-info">
-            <img class="team-badge-large" src="${badgeUrl}" alt="${team.name}">
+            ${badgeUrl ? `<img class="team-badge-large" src="${badgeUrl}" alt="${team.name}" onerror="this.style.display='none'">` : ""}
             <div class="profile-details">
               <h1 class="profile-name">${team.name}</h1>
               <div class="profile-meta">
