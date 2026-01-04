@@ -1795,6 +1795,8 @@
     height:14px;
     object-fit:contain;
     filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+    z-index: 1;
+    pointer-events: none;
   }
 
   .player-info{
@@ -7119,8 +7121,8 @@
 
 /* Fixtures preview compact */
 .fixtures-preview-grid {
-  max-height: 140px;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -7971,7 +7973,7 @@
 
 /* Fixtures preview more compact */
 .fixtures-preview-grid {
-  max-height: 100px;
+  max-height: none;
 }
 
 .fixtures-preview-grid .fixture-team-row {
@@ -12372,6 +12374,8 @@ body:hover .dev-toggle-hint {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+  min-height: 0;
 }
 
 .my-team-page .fixture-team-row {
@@ -12400,6 +12404,7 @@ body:hover .dev-toggle-hint {
 /* ─── PLAYER HEADSHOTS IMPROVED FALLBACK ───────────────────────────────────── */
 .player-photo-wrapper {
   position: relative;
+  overflow: hidden;
 }
 
 .player-photo {
@@ -12413,6 +12418,13 @@ body:hover .dev-toggle-hint {
 
 .player-photo[src*="data:image"] {
   padding: 8px;
+}
+.player-team-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  z-index: 1;
+  pointer-events: none;
 }
 
 /* ─── FIXTURES PAGE: COMPACT FILTER BAR ────────────────────────────────────── */
@@ -12444,18 +12456,30 @@ body:hover .dev-toggle-hint {
 .fixtures-dashboard {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--topbar-height) - 20px);
-  gap: 8px;
-  padding: 8px;
-  overflow: hidden;
+  gap: var(--gap-md);
+  padding: var(--gap-md);
+  min-height: 0;
+  height: auto;
 }
 
 .fixtures-content {
-  flex: 1;
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gap-md);
   min-height: 0;
-  overflow: hidden;
+  align-items: start;
+}
+
+@media (min-width: 1200px) {
+  .fixtures-content {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+@media (min-width: 1600px) {
+  .fixtures-content {
+    grid-template-columns: 3fr 1fr;
+  }
 }
 
 .fixtures-content > .card {
