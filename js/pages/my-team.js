@@ -1,12 +1,13 @@
 // js/pages/my-team.js
 import { fplClient } from "../api/fplClient.js";
-import { state, isInWatchlist, toggleWatchlist, validateState, setPageUpdated } from "../state.js";
+import { state, validateState, setPageUpdated } from "../state.js";
 import { utils } from "../utils.js";
 import { ui } from "../components/ui.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey } from "../api/fetchHelper.js";
 import { applyImageFallback, getPlayerImage, getTeamBadgeUrl, hideOnError, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
+import { calculateLiveGwPoints, buildLiveDataMap } from "../lib/livePoints.js";
 
 /* ───────────────── constants ───────────────── */
 const STATUS_MAP = {
@@ -322,19 +323,6 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
   info.append(name, pointsRow, minsBadge);
   card.append(photoWrapper, info);
 
-  // Watchlist button
-  const watchlistBtn = utils.el("button", { class: `watchlist-btn ${isInWatchlist(player.id) ? 'active' : ''}` });
-  watchlistBtn.innerHTML = `<span class="star-icon">${isInWatchlist(player.id) ? '★' : '☆'}</span>`;
-  watchlistBtn.title = isInWatchlist(player.id) ? "Remove from watchlist" : "Add to watchlist";
-  watchlistBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const isNowWatched = toggleWatchlist(player.id);
-    watchlistBtn.classList.toggle("active", isNowWatched);
-    watchlistBtn.querySelector(".star-icon").textContent = isNowWatched ? "★" : "☆";
-    watchlistBtn.title = isNowWatched ? "Remove from watchlist" : "Add to watchlist";
-  });
-  card.append(watchlistBtn);
-
   // Click handler
   card.addEventListener("click", () => {
     if (onPlayerClick) onPlayerClick(player);
@@ -531,11 +519,31 @@ async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
 
     const overallRank = picksEntryHist?.overall_rank ?? histRow?.overall_rank ?? profile?.summary_overall_rank ?? "—";
     const gwRank = picksEntryHist?.rank ?? histRow?.rank ?? "—";
-    // GW points from picks entry_history (actual user points), not hist which may be average
-    const gwPoints = picksEntryHist?.points ?? histRow?.points ?? "—";
     const totalPoints = picksEntryHist?.total_points ?? histRow?.total_points ?? profile?.summary_overall_points ?? "—";
 
     const livePrevMap = toMap(livePrev?.elements || []);
+
+    // Calculate LIVE GW points from picks + eventLive data (includes captain multipliers and chips)
+    // This ensures we show real-time points during live GWs, not stale saved values
+    let gwPoints = "—";
+    let activeChip = null;
+
+    if (liveGw && liveResult.ok && roster.data?.picks) {
+      // Live GW: Calculate from current live data
+      const liveDataMap = buildLiveDataMap(liveResult.data);
+      const liveCalc = calculateLiveGwPoints(roster.data, liveDataMap);
+      gwPoints = liveCalc.total;
+      activeChip = liveCalc.chip;
+    } else if (prevGw && livePrev?.elements?.length && picksPrev?.picks) {
+      // Previous GW finished: Calculate from that GW's live data (final points)
+      const prevDataMap = buildLiveDataMap(livePrev);
+      const prevCalc = calculateLiveGwPoints(picksPrev, prevDataMap);
+      gwPoints = prevCalc.total;
+      activeChip = prevCalc.chip;
+    } else {
+      // Fallback to saved points if live calculation not possible
+      gwPoints = picksEntryHist?.points ?? histRow?.points ?? "—";
+    }
 
     function toMap(arr){ return new Map((arr || []).map(e => [e.id, e])); }
 
@@ -620,6 +628,25 @@ async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
       const statusMultiplier = pl.status === 'a' ? 1 : (pl.status === 'd' ? 0.5 : 0);
       const xmins = Math.round(90 * Math.min(1, minutesPercent) * statusMultiplier);
 
+      // Calculate multiplier for this pick (captain, triple captain, bench boost)
+      const isBenchBoost = activeChip === 'bboost';
+      const isTripleCaptain = activeChip === '3xc';
+      let pickMultiplier = 1;
+      if (benchIndex !== null) {
+        // Bench player - only counts with bench boost
+        pickMultiplier = isBenchBoost ? 1 : 0;
+      } else if (pk.is_captain) {
+        pickMultiplier = isTripleCaptain ? 3 : 2;
+      }
+
+      // Base points from live data
+      const prevBasePoints = prevStats.total_points ?? null;
+      const currBasePoints = liveGw ? (currStats.total_points ?? null) : null;
+
+      // Multiplied points for display (includes captain/chip bonuses)
+      const prevPoints = prevBasePoints !== null ? prevBasePoints * pickMultiplier : null;
+      const currPoints = currBasePoints !== null ? currBasePoints * pickMultiplier : null;
+
       return {
         id: pl.id,
         name: pl.web_name,
@@ -637,10 +664,11 @@ async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
         news: pl.news || "",
         cap: pk.is_captain ? "C" : (pk.is_vice_captain ? "VC" : ""),
         benchNo: benchIndex != null ? benchIndex + 1 : null,
+        multiplier: pickMultiplier,
 
-        prevPoints:  (prevStats.total_points ?? null),
+        prevPoints,
         prevMinutes: (prevStats.minutes ?? null),
-        currPoints:  (liveGw ? (currStats.total_points ?? null) : null),
+        currPoints,
         currMinutes: (liveGw ? (currStats.minutes ?? null) : null),
 
         prevExplain, currExplain,

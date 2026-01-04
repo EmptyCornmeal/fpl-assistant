@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 70" role="img" aria-labelledby="title desc">
+  <title id="title">Team badge placeholder</title>
+  <desc id="desc">Shield placeholder when a team badge is unavailable.</desc>
+  <defs>
+    <linearGradient id="shield-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1f2937" />
+      <stop offset="100%" stop-color="#111827" />
+    </linearGradient>
+  </defs>
+  <path d="M35 5 L60 15 L60 40 Q60 55 35 65 Q10 55 10 40 L10 15 Z" fill="url(#shield-bg)" stroke="#334155" stroke-width="2" />
+  <circle cx="35" cy="35" r="12" fill="#334155" />
+  <path d="M35 28 L38 33 L44 34 L39 38 L41 44 L35 41 L29 44 L31 38 L26 34 L32 33 Z" fill="#0ea5e9" opacity="0.8" />
+</svg>
