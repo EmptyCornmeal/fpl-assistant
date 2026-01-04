@@ -56,6 +56,12 @@ export default {
       });
     }
 
+    // Dedicated player photo proxy (avoids CORS and enables caching)
+    const playerPhotoMatch = url.pathname.match(/^\/api\/player-photo\/(\d+)(?:\.png)?$/i);
+    if (playerPhotoMatch) {
+      return handlePlayerPhoto(request, ctx, playerPhotoMatch[1]);
+    }
+
     // Health ping (support multiple aliases to avoid noisy 404s)
     if (["/api/up", "/api/health", "/api/status", "/up", "/health", "/status"].includes(url.pathname)) {
       return json(request, 200, { ok: true, ts: Date.now() });
@@ -189,6 +195,71 @@ async function proxyImage(request, route) {
         "Content-Type": "image/svg+xml",
         "Cache-Control": "public, max-age=300",
         "CDN-Cache-Control": "max-age=300",
+      })
+    });
+  }
+}
+
+async function handlePlayerPhoto(request, ctx, photoId) {
+  const cache = caches.default;
+  const cacheKey = new Request(request.url, request);
+
+  const cached = await cache.match(cacheKey);
+  if (cached) {
+    return new Response(cached.body, {
+      status: cached.status,
+      statusText: cached.statusText,
+      headers: buildCorsHeaders(request, {
+        "Content-Type": cached.headers.get("Content-Type") || "image/png",
+        "Cache-Control": cached.headers.get("Cache-Control") || "public, max-age=86400",
+        "CDN-Cache-Control": cached.headers.get("CDN-Cache-Control") || "max-age=86400",
+      })
+    });
+  }
+
+  const upstream = `https://resources.premierleague.com/premierleague/photos/players/250x250/p${photoId}.png`;
+  try {
+    const response = await fetch(upstream, {
+      method: request.method === "HEAD" ? "HEAD" : "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; FPL-Dashboard/1.0)",
+        "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+        "Origin": "https://fantasy.premierleague.com",
+        "Referer": "https://fantasy.premierleague.com/"
+      },
+      cf: { cacheEverything: true, cacheTtl: 86400 }
+    });
+
+    if (response.status === 404) {
+      return new Response(null, {
+        status: 404,
+        headers: buildCorsHeaders(request, {
+          "Cache-Control": "public, max-age=60",
+          "Content-Type": "image/png",
+          "CDN-Cache-Control": "max-age=60",
+        })
+      });
+    }
+
+    const proxied = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: buildCorsHeaders(request, {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=86400",
+        "CDN-Cache-Control": "max-age=86400",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+      })
+    });
+
+    ctx.waitUntil(cache.put(cacheKey, proxied.clone()));
+    return proxied;
+  } catch (err) {
+    return new Response(JSON.stringify({ error: "Failed to fetch player photo", details: String(err?.message || err) }), {
+      status: 502,
+      headers: buildCorsHeaders(request, {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
       })
     });
   }

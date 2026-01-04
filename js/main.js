@@ -193,6 +193,18 @@ function bindKeyboardShortcuts() {
   });
 }
 
+function bindPlayerNavigation() {
+  document.body.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target.closest("[data-player-link]") : null;
+    if (!target) return;
+    const playerId = target.dataset.playerId || target.getAttribute("data-player-link");
+    if (!playerId) return;
+    if (target.tagName === "A" && target.getAttribute("href")) return; // allow native anchors
+    event.preventDefault();
+    location.hash = `#/player/${playerId}`;
+  });
+}
+
 function showKeyboardShortcutsHelp() {
   // Remove existing overlay if present
   const existing = document.getElementById("keyboardHelpOverlay");
@@ -776,8 +788,7 @@ function highlightActiveNav(tab) {
 
 /* ---------- Player Profile ---------- */
 async function renderPlayerProfile(main, playerId, backNav = {}) {
-  // Show loading
-  main.innerHTML = `<div class="card"><div class="loading-spinner"></div><p style="text-align:center;color:var(--muted)">Loading player...</p></div>`;
+  renderLoadingState(main, "Loading player...");
 
   try {
     const bs = await requireBootstrap();
@@ -1057,8 +1068,7 @@ async function renderPlayerProfile(main, playerId, backNav = {}) {
 
 /* ---------- Team Profile ---------- */
 async function renderTeamProfile(main, teamId) {
-  // Show loading
-  main.innerHTML = `<div class="card"><div class="loading-spinner"></div><p style="text-align:center;color:var(--muted)">Loading team...</p></div>`;
+  renderLoadingState(main, "Loading team...");
 
   try {
     const bs = await requireBootstrap();
@@ -1391,6 +1401,20 @@ function setStatePatch(patch) {
   else Object.assign(state, patch);
 }
 
+function renderLoadingState(main, message = "Loading...") {
+  if (!main) return;
+  const card = document.createElement("div");
+  card.className = "card loading-card";
+  card.setAttribute("role", "status");
+  card.setAttribute("aria-live", "polite");
+  card.innerHTML = `
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <p class="text-muted text-center">${message}</p>
+  `;
+  main.innerHTML = "";
+  main.appendChild(card);
+}
+
 function renderPinnedSidebar() {
   const teamList = document.getElementById("pinnedTeamsList");
   const playerList = document.getElementById("pinnedPlayersList");
@@ -1631,7 +1655,7 @@ function bindGlobalSearch() {
 
     const bs = state.bootstrap;
     if (!bs) {
-      results.innerHTML = '<div class="search-result-item"><span class="result-name" style="color:var(--muted)">Player search unavailable: bootstrap not loaded</span></div>';
+      results.innerHTML = '<div class="search-result-item"><span class="result-name text-muted">Player search unavailable: bootstrap not loaded</span></div>';
       results.classList.add("active");
       searchItems = Array.from(results.querySelectorAll(".search-result-item"));
       searchActive = -1;
@@ -1741,7 +1765,7 @@ function bindGlobalSearch() {
     }
 
     if (searchItems.length === 0) {
-      results.innerHTML = '<div class="search-result-item"><span class="result-name" style="color:var(--muted)">No results found</span></div>';
+      results.innerHTML = '<div class="search-result-item"><span class="result-name text-muted">No results found</span></div>';
     }
 
     results.classList.add("active");
@@ -1880,6 +1904,7 @@ async function init() {
   bindKeyboardShortcuts();
   bindRefreshButton();
   bindGlobalSearch();
+  bindPlayerNavigation();
   initSidebar();
   initChartDefaults();
   initTooltips(document.body);
@@ -1905,75 +1930,6 @@ function initNavScrollAffordance() {
 
   if (!container || !nav) return;
 
-  // Overflow handler - move excess links into a "More" menu
-  const moreWrap = document.createElement("div");
-  moreWrap.className = "nav-more";
-  const moreBtn = document.createElement("button");
-  moreBtn.className = "nav-more-btn";
-  moreBtn.type = "button";
-  moreBtn.setAttribute("aria-haspopup", "true");
-  moreBtn.setAttribute("aria-expanded", "false");
-  moreBtn.textContent = "More…";
-  const moreMenu = document.createElement("div");
-  moreMenu.className = "nav-more-menu";
-  moreWrap.append(moreBtn, moreMenu);
-  nav.appendChild(moreWrap);
-
-  const closeMore = () => {
-    moreWrap.classList.remove("open");
-    moreBtn.setAttribute("aria-expanded", "false");
-  };
-
-  moreBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const nextState = !moreWrap.classList.contains("open");
-    moreWrap.classList.toggle("open", nextState);
-    moreBtn.setAttribute("aria-expanded", String(nextState));
-  });
-  moreBtn.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      closeMore();
-      moreBtn.blur();
-    }
-  });
-  moreMenu.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      closeMore();
-      moreBtn.focus();
-    }
-  });
-
-  document.addEventListener("click", (e) => {
-    const target = e.target instanceof Element ? e.target : null;
-    if (target && target.closest(".nav-more")) return;
-    closeMore();
-  });
-
-  function redistributeNav() {
-    // Move any overflowed links back into the main nav before recalculating
-    Array.from(moreMenu.children).forEach(link => {
-      nav.insertBefore(link, moreWrap);
-    });
-
-    const navLinks = Array.from(nav.querySelectorAll(".nav-link")).filter((link) => link.closest(".nav") === nav);
-    const availableWidth = nav.clientWidth - moreWrap.offsetWidth - 8; // gap padding
-    let used = 0;
-    let overflowStarted = false;
-
-    for (const link of navLinks) {
-      const linkWidth = link.getBoundingClientRect().width + 6; // include gap
-      if (!overflowStarted && used + linkWidth <= availableWidth) {
-        used += linkWidth;
-        continue;
-      }
-      overflowStarted = true;
-      moreMenu.appendChild(link);
-    }
-
-    moreWrap.classList.toggle("has-items", moreMenu.children.length > 0);
-    if (!moreMenu.children.length) closeMore();
-  }
-
   function updateScrollAffordance() {
     const scrollLeft = nav.scrollLeft;
     const scrollWidth = nav.scrollWidth;
@@ -1991,12 +1947,10 @@ function initNavScrollAffordance() {
 
   // Update on resize (layout + overflow redistribution)
   window.addEventListener("resize", () => {
-    redistributeNav();
     updateScrollAffordance();
   }, { passive: true });
 
   // Initial check
-  redistributeNav();
   updateScrollAffordance();
 }
 

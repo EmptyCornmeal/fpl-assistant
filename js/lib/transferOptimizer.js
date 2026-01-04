@@ -37,7 +37,7 @@ const memoizedAnalyzeExpendability = memoizeAsync(
     const bs = state.bootstrap;
     const player = (bs?.elements || []).find(p => p.id === playerId);
     if (!player) return null;
-    return analyzePlayerExpendabilityCore(player, gwIds, null, bs);
+    return analyzePlayerExpendability(player, gwIds, null, bs);
   },
   {
     keyFn: (playerId, gwIds, contextKey, bsVersion) =>
@@ -51,7 +51,7 @@ const memoizedAnalyzeExpendability = memoizeAsync(
 const memoizedBuildPlayerPool = memoizeAsync(
   async (squadIds, excludedTeamIds, excludedPlayerIds, gwIds, bsVersion) => {
     const bs = state.bootstrap;
-    return buildPlayerPoolCore(
+    return buildPlayerPool(
       bs?.elements || [],
       squadIds,
       excludedTeamIds,

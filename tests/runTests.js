@@ -8,6 +8,7 @@ import { runner } from "./testRunner.js";
 import "./transferOptimizer.test.js";
 import "./statPicker.test.js";
 import "./benchOptimizer.test.js";
+import "./images.test.js";
 
 // Run tests and output results
 async function main() {

@@ -23,6 +23,7 @@ const mockBootstrap = {
     { id: 11, web_name: "Saka", element_type: 3, team: 1, now_cost: 100, selling_price: 100, status: "a", form: "7.0" },
     { id: 12, web_name: "Gordon", element_type: 3, team: 6, now_cost: 75, selling_price: 75, status: "a", form: "6.0" },
     { id: 13, web_name: "Martinelli", element_type: 3, team: 1, now_cost: 70, selling_price: 70, status: "i", form: "4.0" },
+    { id: 18, web_name: "Maddison", element_type: 3, team: 7, now_cost: 78, selling_price: 78, status: "a", form: "6.5" },
     // Forwards
     { id: 14, web_name: "Haaland", element_type: 4, team: 4, now_cost: 150, selling_price: 150, status: "a", form: "9.0" },
     { id: 15, web_name: "Watkins", element_type: 4, team: 7, now_cost: 90, selling_price: 90, status: "a", form: "7.0" },
@@ -55,23 +56,24 @@ const mockBootstrap = {
 // Helper function to build a valid squad
 function createMockSquad() {
   const bs = mockBootstrap;
+  const byId = (id) => bs.elements.find((p) => p.id === id);
   return [
-    bs.elements[0], // GKP: Raya
-    bs.elements[2], // DEF: Saliba
-    bs.elements[3], // DEF: Gabriel
-    bs.elements[4], // DEF: VanDijk
-    bs.elements[5], // DEF: TAA
-    bs.elements[8], // MID: Salah
-    bs.elements[9], // MID: Palmer
-    bs.elements[10], // MID: Saka
-    bs.elements[11], // MID: Gordon
-    bs.elements[13], // FWD: Haaland
-    bs.elements[14], // FWD: Watkins
+    byId(1),  // GKP: Raya (ARS)
+    byId(4),  // DEF: Gabriel (ARS)
+    byId(5),  // DEF: VanDijk (LIV)
+    byId(6),  // DEF: TAA (LIV)
+    byId(8),  // DEF: Cucurella (CHE)
+    byId(9),  // MID: Salah (LIV)
+    byId(10), // MID: Palmer (CHE)
+    byId(11), // MID: Saka (ARS)
+    byId(12), // MID: Gordon (NEW)
+    byId(14), // FWD: Haaland (MCI)
+    byId(15), // FWD: Watkins (AVL)
     // Bench
-    bs.elements[1], // GKP: Henderson
-    bs.elements[6], // DEF: Walker
-    bs.elements[15], // FWD: Isak
-    bs.elements[16], // FWD: Cunha
+    byId(2),  // GKP: Henderson (CRY)
+    byId(7),  // DEF: Walker (MCI)
+    byId(18), // MID: Maddison (AVL)
+    byId(16), // FWD: Isak (NEW)
   ];
 }
 
@@ -105,8 +107,8 @@ describe("Formation Validity", () => {
     // Valid squad: 2 GKP, 5 DEF, 5 MID, 3 FWD
     assert.equal(counts[1], 2, "Squad should have exactly 2 GKPs");
     assert.equal(counts[2], 5, "Squad should have exactly 5 DEFs");
-    assert.equal(counts[3], 4, "Squad should have exactly 4 MIDs");
-    assert.equal(counts[4], 4, "Squad should have exactly 4 FWDs");
+    assert.equal(counts[3], 5, "Squad should have exactly 5 MIDs");
+    assert.equal(counts[4], 3, "Squad should have exactly 3 FWDs");
   });
 
   it("should enforce max 3 players per club", () => {
@@ -137,7 +139,7 @@ describe("Formation Validity", () => {
     const counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
     squad.forEach(p => counts[p.element_type]++);
 
-    // A squad can't have 6+ DEFs (max is 5)
+    // A squad can't exceed positional caps (FPL rules)
     assert.ok(counts[2] <= 5, "Squad cannot have more than 5 DEFs");
     assert.ok(counts[3] <= 5, "Squad cannot have more than 5 MIDs");
     assert.ok(counts[4] <= 3, "Squad cannot have more than 3 FWDs");

@@ -32,7 +32,8 @@ function normalize(base) {
   const trimmed = base.trim();
   if (!trimmed) return null;
   try {
-    const url = new URL(trimmed, typeof window !== "undefined" ? window.location.origin : undefined);
+    const origin = (typeof window !== "undefined" && window?.location?.origin) ? window.location.origin : undefined;
+    const url = origin ? new URL(trimmed, origin) : new URL(trimmed);
     return url.toString().replace(/\/+$/, "");
   } catch {
     return null;

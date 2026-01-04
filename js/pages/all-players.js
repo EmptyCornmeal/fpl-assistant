@@ -959,8 +959,15 @@ export async function renderAllPlayers(main, options = {}){
         { header:"", cell:compareCell, thClass:"select-cell", tdClass:"select-cell" },
         { header:"Name", accessor:r=>r.web_name, sortBy:r=>r.web_name, cell:r=>{
             const w = utils.el("div",{class:"name-cell"});
+            const link = utils.el("a", {
+              class: "nm player-link",
+              href: `#/player/${r.id}`,
+              "data-player-link": "true",
+              "data-player-id": r.id,
+              title: `Open ${r.web_name}'s profile`
+            }, r.web_name);
             w.append(utils.el("span",{class:"team-chip"}, r.team_short));
-            w.append(utils.el("span",{class:"nm"}, r.web_name));
+            w.append(link);
             return w;
         }},
         { header:"Pos", accessor:r=>r.pos_name, sortBy:r=>r.pos_name },

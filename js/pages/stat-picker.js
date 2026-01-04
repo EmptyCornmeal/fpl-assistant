@@ -1364,8 +1364,8 @@ function renderPasswordGate(container) {
           <input type="password" id="gatePassword" placeholder="Password" autocomplete="off" />
           <button id="gateUnlockBtn" class="btn-primary">Unlock</button>
         </div>
-        <p id="gateCapsHint" class="sp-gate-caps" style="display:none;">⚠️ Caps Lock is on</p>
-        <p id="gateError" class="sp-gate-error" style="display:none;">Incorrect password</p>
+        <p id="gateCapsHint" class="sp-gate-caps is-hidden">⚠️ Caps Lock is on</p>
+        <p id="gateError" class="sp-gate-error is-hidden">Incorrect password</p>
         ${devModeHtml}
       </div>
     </div>
@@ -1505,7 +1505,7 @@ async function renderDashboard(container) {
       </div>
     </div>
     <div id="spSnapshotCard" class="sp-snapshot-container"></div>
-    <div id="spRecalcBanner" class="sp-recalc-banner" style="display:none;"></div>
+    <div id="spRecalcBanner" class="sp-recalc-banner is-hidden"></div>
     <div class="sp-grid" id="spContent">
       <div class="sp-loading">
         <div class="sp-loading-spinner"></div>

@@ -39,8 +39,8 @@ function renderSkeleton() {
   for (let i = 0; i < 6; i++) {
     const tile = utils.el("div", { class: "portal-tile skeleton" });
     tile.innerHTML = `
-      <div class="skeleton-header" style="height:24px;width:60%;margin-bottom:12px;"></div>
-      <div class="skeleton-body" style="height:80px;"></div>
+      <div class="skeleton-header"></div>
+      <div class="skeleton-body"></div>
     `;
     grid.append(tile);
   }
