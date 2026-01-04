@@ -10,17 +10,21 @@ import { openModal } from "../components/modal.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey, getCacheAge, formatCacheAge } from "../api/fetchHelper.js";
 import { getApiBaseInfo, setApiBaseOverride, validateApiBase } from "../config.js";
+import { getPlayerImage, PLAYER_PLACEHOLDER_SRC, getTeamBadgeUrl } from "../lib/images.js";
 
-/* ───────────────── Constants ───────────────── */
-const TEAM_BADGE_URL = (teamCode) =>
-  `https://resources.premierleague.com/premierleague/badges/70/t${teamCode}.png`;
+/* ───────────────── Helpers ───────────────── */
+function badgeImg(team, className = "fixture-badge") {
+  const src = getTeamBadgeUrl(team?.code || team?.teamCode);
+  if (!src) return "";
+  const alt = team?.name || team?.shortName || team?.short_name || "";
+  return `<img class="${className}" src="${src}" alt="${alt}" onerror="this.style.display='none'">`;
+}
 
-const PLAYER_PLACEHOLDER_SRC = "/assets/placeholder-player.svg";
-const PLAYER_PHOTO_URL = (photoId) => {
-  if (!photoId) return PLAYER_PLACEHOLDER_SRC;
-  const cleanId = String(photoId).replace(/\.(png|jpg)$/i, '').replace(/^p/, '');
-  return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
-};
+function playerImg(player, className = "captain-photo") {
+  const src = getPlayerImage(player?._raw?.photo || player?.photo);
+  const alt = player?.webName || player?.web_name || player?.name || "Player";
+  return `<img class="${className}" src="${src}" alt="${alt}" onerror="this.onerror=null;this.src='${PLAYER_PLACEHOLDER_SRC}';">`;
+}
 
 /* ───────────────── Skeleton Loading ───────────────── */
 function renderSkeleton() {
@@ -180,7 +184,7 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
       ${candidates.length === 0 ? '<p class="tile-desc">No captain picks available</p>' : candidates.map((p, i) => `
         <div class="captain-option-row" data-player-id="${p.id}">
           <span class="captain-rank">${i + 1}</span>
-          <img class="captain-photo" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.onerror=null;this.src='${PLAYER_PLACEHOLDER_SRC}';">
+          ${playerImg(p, "captain-photo")}
           <div class="captain-details">
             <span class="captain-name">${p.webName || p.web_name || 'Unknown'}</span>
             <div class="captain-meta">
@@ -205,7 +209,7 @@ function buildCaptainTile(players, fixtures, currentGw, teams, meta = {}) {
         ${candidates.length === 0 ? '<p>No captain picks available</p>' : candidates.map((p, i) => `
           <div class="captain-modal-row">
             <div class="captain-rank-lg">${i + 1}</div>
-            <img class="captain-photo-lg" src="${p.photoUrl || PLAYER_PHOTO_URL(p._raw?.photo || p.photo)}" alt="${p.webName || p.web_name}" onerror="this.onerror=null;this.src='${PLAYER_PLACEHOLDER_SRC}';">
+            ${playerImg(p, "captain-photo-lg")}
             <div class="captain-info">
               <div class="captain-name-lg">${p.webName || p.web_name || 'Unknown'}</div>
               <div class="captain-meta-lg">
@@ -295,7 +299,7 @@ function buildFixturesTile(teams, fixtures, currentGw) {
         <h4 class="fixtures-label good" data-tooltip="Teams with lowest average FDR over the next ${windowSize} GWs. Target their assets for transfers.">Easiest Run</h4>
         ${easiest.map(t => `
           <div class="fixture-team-row">
-            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.name || t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            ${badgeImg(t.team)}
             <span class="fixture-team-name">${t.team.name || t.team.shortName || t.team.short_name || '???'}</span>
             <span class="fixture-score score-good" data-tooltip="Ease score: ${t.easeScore}/100">${t.easeScore}</span>
           </div>
@@ -305,7 +309,7 @@ function buildFixturesTile(teams, fixtures, currentGw) {
         <h4 class="fixtures-label bad" data-tooltip="Teams with highest average FDR. Consider benching or selling their players.">Toughest Run</h4>
         ${hardest.map(t => `
           <div class="fixture-team-row">
-            <img class="fixture-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.name || t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            ${badgeImg(t.team)}
             <span class="fixture-team-name">${t.team.name || t.team.shortName || t.team.short_name || '???'}</span>
             <span class="fixture-score score-bad" data-tooltip="Ease score: ${t.easeScore}/100">${t.easeScore}</span>
           </div>
@@ -328,7 +332,7 @@ function buildFixturesTile(teams, fixtures, currentGw) {
           ${allTeams.map((t, i) => `
             <div class="fixture-modal-row ${i < 5 ? 'fixture-easy' : i >= allTeams.length - 5 ? 'fixture-hard' : ''}">
               <span class="fixture-rank">${i + 1}</span>
-              <img class="fixture-badge-sm" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+              ${badgeImg(t.team, "fixture-badge-sm")}
               <span class="fixture-team">${t.team.shortName || t.team.short_name || '???'}</span>
               <span class="fixture-score ${t.easeScore >= 60 ? 'score-good' : t.easeScore <= 40 ? 'score-bad' : ''}">${t.easeScore}</span>
             </div>
@@ -919,7 +923,7 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
         <h4 class="swing-label good" data-tooltip="Fixtures getting easier - consider buying these teams' players">Getting Easier</h4>
         ${gettingEasier.length === 0 ? '<p class="tile-desc">No significant improvements</p>' : gettingEasier.map(t => `
           <div class="swing-row">
-            <img class="swing-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            ${badgeImg(t.team, "swing-badge")}
             <span class="swing-name">${t.team.shortName || t.team.short_name || '???'}</span>
             <span class="swing-change good" data-tooltip="FDR dropping from ${t.recentAvg.toFixed(1)} to ${t.upcomingAvg.toFixed(1)}">↓${t.swing.toFixed(1)}</span>
           </div>
@@ -929,7 +933,7 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
         <h4 class="swing-label bad" data-tooltip="Fixtures getting harder - consider selling or benching these teams' players">Getting Harder</h4>
         ${gettingHarder.length === 0 ? '<p class="tile-desc">No significant worsening</p>' : gettingHarder.map(t => `
           <div class="swing-row">
-            <img class="swing-badge" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+            ${badgeImg(t.team, "swing-badge")}
             <span class="swing-name">${t.team.shortName || t.team.short_name || '???'}</span>
             <span class="swing-change bad" data-tooltip="FDR rising from ${t.recentAvg.toFixed(1)} to ${t.upcomingAvg.toFixed(1)}">↑${Math.abs(t.swing).toFixed(1)}</span>
           </div>
@@ -954,7 +958,7 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
           ${allEasier.length === 0 ? '<p>No improvements</p>' : allEasier.map((t, i) => `
             <div class="swing-modal-row">
               <span class="swing-rank">${i + 1}</span>
-              <img class="swing-badge-sm" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+              ${badgeImg(t.team, "swing-badge-sm")}
               <span class="swing-team">${t.team.shortName || t.team.short_name || '???'}</span>
               <span class="swing-fdr">FDR: ${t.recentAvg.toFixed(1)} → ${t.upcomingAvg.toFixed(1)}</span>
               <span class="swing-delta good">↓${t.swing.toFixed(1)}</span>
@@ -966,7 +970,7 @@ function buildFixtureSwingsTile(teams, fixtures, currentGw) {
           ${allHarder.length === 0 ? '<p>No worsening</p>' : allHarder.map((t, i) => `
             <div class="swing-modal-row">
               <span class="swing-rank">${i + 1}</span>
-              <img class="swing-badge-sm" src="${TEAM_BADGE_URL(t.team.code)}" alt="${t.team.shortName || t.team.short_name}" onerror="this.style.display='none'">
+              ${badgeImg(t.team, "swing-badge-sm")}
               <span class="swing-team">${t.team.shortName || t.team.short_name || '???'}</span>
               <span class="swing-fdr">FDR: ${t.recentAvg.toFixed(1)} → ${t.upcomingAvg.toFixed(1)}</span>
               <span class="swing-delta bad">↑${Math.abs(t.swing).toFixed(1)}</span>

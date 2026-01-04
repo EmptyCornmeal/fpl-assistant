@@ -10,6 +10,7 @@ const CORE_ASSETS = [
   "./js/api/fplClient.js",
   "./js/api/fetchHelper.js",
   "./js/config.js",
+  "./js/lib/images.js",
   "./js/state.js",
   "./js/utils.js",
   "./js/logger.js",
@@ -26,6 +27,7 @@ const CORE_ASSETS = [
   "./js/pages/help.js",
   "./js/pages/index.js",
   "./favicon.png",
+  "./assets/placeholder-player.svg",
 ];
 
 // Known API path patterns to intercept (cross-origin or same-origin)

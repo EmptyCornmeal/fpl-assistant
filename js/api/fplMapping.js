@@ -1,6 +1,8 @@
 // js/api/fplMapping.js
 // Normalize raw FPL API payloads to consistent app models
 
+import { getPlayerImage, getTeamBadgeUrl as getBadgeProxyUrl } from "../lib/images.js";
+
 /**
  * Status codes and their meanings
  */
@@ -40,17 +42,14 @@ export const FDR_COLORS = {
  * Returns: Full CDN URL
  */
 export function getPlayerPhotoUrl(photoId, size = "110x140") {
-  if (!photoId) return null;
-  const cleanId = String(photoId).replace(/\.(png|jpg)$/i, "").replace(/^p/, "");
-  return `https://resources.premierleague.com/premierleague/photos/players/${size}/p${cleanId}.png`;
+  return getPlayerImage(photoId, size);
 }
 
 /**
  * Construct team badge URL
  */
 export function getTeamBadgeUrl(teamCode, size = 70) {
-  if (!teamCode) return null;
-  return `https://resources.premierleague.com/premierleague/badges/${size}/t${teamCode}.png`;
+  return getBadgeProxyUrl(teamCode, size);
 }
 
 /**

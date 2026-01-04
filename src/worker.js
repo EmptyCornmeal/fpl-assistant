@@ -6,6 +6,23 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:4173",
 ];
 
+const IMAGE_ROUTES = [
+  {
+    type: "player",
+    re: /^\/img\/player\/(\d+x\d+)\/p?(\d+)\.png$/i,
+    to: (m) => `https://resources.premierleague.com/premierleague/photos/players/${m[1]}/p${m[2]}.png`,
+    cacheSeconds: 60 * 60 * 24, // 1 day
+    contentType: "image/png",
+  },
+  {
+    type: "badge",
+    re: /^\/img\/badge\/(\d+)\/t(\d+)\.png$/i,
+    to: (m) => `https://resources.premierleague.com/premierleague/badges/${m[1]}/t${m[2]}.png`,
+    cacheSeconds: 60 * 60 * 24,
+    contentType: "image/png",
+  },
+];
+
 function resolveOrigin(request) {
   const origin = request.headers.get("Origin");
   if (!origin) return "*";
@@ -41,6 +58,11 @@ export default {
     // Health ping
     if (url.pathname === "/api/up") {
       return json(request, 200, { ok: true, ts: Date.now() });
+    }
+
+    const imgRoute = matchImageRoute(url.pathname);
+    if (imgRoute) {
+      return proxyImage(request, imgRoute);
     }
 
     // Non-API paths → simple OK
@@ -107,6 +129,50 @@ function json(request, status, obj) {
       "CDN-Cache-Control": "no-store",
     })
   });
+}
+
+function matchImageRoute(pathname) {
+  for (const route of IMAGE_ROUTES) {
+    const match = pathname.match(route.re);
+    if (match) return { ...route, match };
+  }
+  return null;
+}
+
+async function proxyImage(request, route) {
+  const cacheSeconds = route.cacheSeconds || 3600;
+  const upstream = route.to(route.match);
+
+  try {
+    const r = await fetch(upstream, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; FPL-Dashboard/1.0)",
+        "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+        "Origin": "https://fantasy.premierleague.com",
+        "Referer": "https://fantasy.premierleague.com/"
+      },
+      cf: { cacheTtl: cacheSeconds, cacheEverything: true }
+    });
+
+    const headers = buildCorsHeaders(request, {
+      "Content-Type": r.headers.get("Content-Type") || route.contentType || "image/png",
+      "Cache-Control": `public, max-age=${cacheSeconds}`,
+      "CDN-Cache-Control": `max-age=${cacheSeconds}`,
+    });
+
+    return new Response(r.body, { status: r.status, statusText: r.statusText, headers });
+  } catch (err) {
+    return new Response("Image fetch failed", {
+      status: 502,
+      headers: buildCorsHeaders(request, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        "CDN-Cache-Control": "no-store",
+      })
+    });
+  }
 }
 
 /**

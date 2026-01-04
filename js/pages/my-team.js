@@ -7,6 +7,7 @@ import { openModal } from "../components/modal.js";
 import { xPWindow, estimateXMinsForPlayer } from "../lib/xp.js";
 import { log } from "../logger.js";
 import { hasCachedData, CacheKey } from "../api/fetchHelper.js";
+import { applyImageFallback, getPlayerImage, getTeamBadgeUrl, hideOnError, PLAYER_PLACEHOLDER_SRC } from "../lib/images.js";
 
 /* ───────────────── constants ───────────────── */
 const STATUS_MAP = {
@@ -32,19 +33,6 @@ const STAT_LABEL = {
   bonus: "Bonus",
   bps: "BPS",
 };
-
-// FPL photo URL template - photo field is like "12345.png" or "12345.jpg", need to extract just the number
-const PLAYER_PLACEHOLDER_SRC = "/assets/placeholder-player.svg";
-const PLAYER_PHOTO_URL = (photoId) => {
-  if (!photoId) return PLAYER_PLACEHOLDER_SRC;
-  // FPL API may supply .jpg or .png - strip either extension and any leading 'p'
-  const cleanId = String(photoId).replace(/\.(png|jpg)$/i, '').replace(/^p/, '');
-  return `https://resources.premierleague.com/premierleague/photos/players/110x140/p${cleanId}.png`;
-};
-
-// Team badge URL
-const TEAM_BADGE_URL = (teamCode) =>
-  `https://resources.premierleague.com/premierleague/badges/70/t${teamCode}.png`;
 
 const posKey = p => POS_ORDER[p] ?? 99;
 
@@ -269,34 +257,34 @@ function createPlayerCard(player, captain, viceCaptain, playerById, teamById, on
   // Bench position
   if (benchPos) {
     const benchBadge = utils.el("div", { class: "bench-pos-badge" }, String(benchPos));
-    card.append(benchBadge);
+  card.append(benchBadge);
   }
 
   // Player photo
   const photoWrapper = utils.el("div", { class: "player-photo-wrapper" });
-  const resolvedPhoto = PLAYER_PHOTO_URL(pl?.photo);
+  const resolvedPhoto = getPlayerImage(pl?.photo);
   const photo = utils.el("img", {
     class: "player-photo",
     src: resolvedPhoto || PLAYER_PLACEHOLDER_SRC,
     alt: player.name,
     loading: "lazy"
   });
-  photo.onerror = () => {
-    photo.onerror = null;
-    photo.src = PLAYER_PLACEHOLDER_SRC;
-    photo.dataset.placeholder = "true";
-  };
+  applyImageFallback(photo, PLAYER_PLACEHOLDER_SRC);
   
   // Team badge overlay
-  const teamBadge = utils.el("img", {
+  const teamBadgeSrc = getTeamBadgeUrl(team?.code);
+  const teamBadge = teamBadgeSrc ? utils.el("img", {
     class: "player-team-badge",
-    src: TEAM_BADGE_URL(team?.code),
+    src: teamBadgeSrc,
     alt: team?.short_name || "",
     loading: "lazy"
-  });
-  teamBadge.onerror = () => { teamBadge.style.display = "none"; };
-  
-  photoWrapper.append(photo, teamBadge);
+  }) : null;
+  if (teamBadge) {
+    hideOnError(teamBadge);
+    photoWrapper.append(photo, teamBadge);
+  } else {
+    photoWrapper.append(photo);
+  }
   
   // Info section
   const info = utils.el("div", { class: "player-info" });
@@ -1064,10 +1052,19 @@ async function renderMyTeamWithData(main, bootstrapResult, options = {}) {
     for (const teamId of uniqueTeams) {
       const team = teamById.get(teamId);
       const teamRow = utils.el("div", { class: "fixture-team-row" });
-      teamRow.innerHTML = `
-        <img class="fixture-team-badge" src="${TEAM_BADGE_URL(team?.code)}" alt="${team?.short_name}" onerror="this.style.display='none'">
-        <span class="fixture-team-name">${team?.short_name || '?'}</span>
-      `;
+      const badgeSrc = getTeamBadgeUrl(team?.code);
+      if (badgeSrc) {
+        const badge = utils.el("img", {
+          class: "fixture-team-badge",
+          src: badgeSrc,
+          alt: team?.short_name || "",
+          loading: "lazy"
+        });
+        hideOnError(badge);
+        teamRow.append(badge);
+      }
+
+      teamRow.append(utils.el("span", { class: "fixture-team-name" }, team?.short_name || "?"));
       teamRow.append(fixturesStrip(teamId, windowGwIds()));
       fixturesGrid.append(teamRow);
     }
